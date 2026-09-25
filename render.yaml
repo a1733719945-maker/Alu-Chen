@@ -1,0 +1,11 @@
+# Render 一键部署：在 Render 后台选 New → Blueprint，选这个仓库即可
+services:
+  - type: web
+    name: douluo-relay
+    runtime: node
+    region: frankfurt
+    plan: free
+    rootDir: server
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /health

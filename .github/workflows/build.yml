@@ -1,0 +1,107 @@
+name: 测试并打包
+
+on:
+  push:
+    paths:
+      - 'game/**'
+      - 'server/**'
+      - '.github/workflows/build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GODOT_VERSION: 4.7.2
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: 中继服务器测试
+        working-directory: server
+        run: |
+          npm ci
+          npm test
+
+      - name: 缓存 Godot 和导出模板
+        id: cache-godot
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/godot
+            ~/.local/share/godot/export_templates
+          key: godot-${{ env.GODOT_VERSION }}-win-linux
+
+      - name: 下载 Godot
+        if: steps.cache-godot.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/godot && cd ~/godot
+          base=https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable
+          curl -sSL -o g.zip "$base/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -q g.zip && mv Godot_v${GODOT_VERSION}-stable_linux.x86_64 godot && rm g.zip
+          curl -sSL -o t.tpz "$base/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+          T=~/.local/share/godot/export_templates/${GODOT_VERSION}.stable
+          mkdir -p "$T"
+          unzip -q -j t.tpz templates/version.txt \
+            templates/windows_release_x86_64.exe templates/windows_debug_x86_64.exe \
+            templates/linux_release.x86_64 templates/linux_debug.x86_64 -d "$T"
+          rm t.tpz
+
+      - name: 导入资源
+        run: ~/godot/godot --headless --path game --import
+
+      - name: 自动测试 · 单人（四种栖息地 + 千年拉扯）
+        run: ~/godot/godot --headless --path game -- --autotest=solo
+
+      - name: 自动测试 · 联机（房主 + 客人）
+        run: |
+          (cd server && PORT=18931 node server.js > /tmp/relay.log 2>&1 &)
+          sleep 1
+          ~/godot/godot --headless --path game -- --autotest=host --server=ws://127.0.0.1:18931 --room=TEST > /tmp/host.log 2>&1 &
+          HOST=$!
+          sleep 4
+          ~/godot/godot --headless --path game -- --autotest=client --server=ws://127.0.0.1:18931 --room=TEST
+          wait $HOST || (cat /tmp/host.log; exit 1)
+          cat /tmp/host.log
+
+      - name: 打包 Windows 版
+        run: |
+          mkdir -p build/windows
+          ~/godot/godot --headless --path game --export-release "Windows" ../build/windows/DouluoHunter.exe
+          test -s build/windows/DouluoHunter.exe
+          cp docs/玩家说明.txt build/windows/
+          cd build && zip -r -q DouluoHunter-Windows.zip windows
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DouluoHunter-Windows
+          path: build/DouluoHunter-Windows.zip
+          retention-days: 14
+
+      - name: 发布到 Releases（每个分支一个最新测试版）
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="latest-${GITHUB_REF_NAME//\//-}"
+          gh release delete "$tag" --cleanup-tag -y || true
+          gh release create "$tag" build/DouluoHunter-Windows.zip \
+            --prerelease --target "$GITHUB_SHA" \
+            --title "斗罗大陆·猎魂 测试版（${GITHUB_SHA::7}）" \
+            --notes "下载下面的 DouluoHunter-Windows.zip，解压后双击 DouluoHunter.exe。
+
+          第一次运行时 Windows 可能提示“已保护你的电脑”：点“更多信息”→“仍要运行”。
+          联机：一个人点“创建联机房间”，按 Esc 看房间码，发给朋友；朋友在主菜单输入房间码加入。
+
+          分支：${GITHUB_REF_NAME}，提交：${GITHUB_SHA}"

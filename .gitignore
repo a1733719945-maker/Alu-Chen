@@ -1,0 +1,9 @@
+# Godot
+game/.godot/
+game/*.translation
+build/
+*.tmp
+# Node
+server/node_modules/
+# 本地测试输出
+tests_out/
