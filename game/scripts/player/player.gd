@@ -561,6 +561,22 @@ func _physics_process(dt: float) -> void:
 		velocity.y = move_toward(velocity.y, vy, 10.0 * dt)
 		# 靠岸：顶着岸往前游或者按空格，就能爬上去（岸再陡也能出来）
 		var pushing := is_on_wall() and (jump_held or (wish.length() > 0.1 and wish.dot(get_wall_normal()) < -0.3))
+		# 水里按空格：旁边 5 米内有岸就直接爬上去（沼泽、陡岸都能出来）
+		if jump_pressed:
+			var best := Vector3.INF
+			for r in [1.5, 3.0, 4.5]:
+				for k in 12:
+					var a := TAU * k / 12.0
+					var q := global_position + Vector3(cos(a) * r, 0, sin(a) * r)
+					if world.island.is_land(q.x, q.z):
+						var qy: float = world.island.height_at(q.x, q.z)
+						if qy < global_position.y + 4.0 and (best == Vector3.INF or q.distance_to(global_position) < best.distance_to(global_position)):
+							best = Vector3(q.x, qy + 0.3, q.z)
+				if best != Vector3.INF:
+					break
+			if best != Vector3.INF:
+				teleport(best)
+				Sfx.play("splash_small", -4.0)
 		if pushing:
 			_climb_t = 0.7
 			velocity.y = 5.5
