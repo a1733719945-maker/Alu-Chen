@@ -1,18 +1,22 @@
 class_name Boss
 extends Node3D
-## Boss：房主算 AI 和血量，客人按快照插值显示。
+## Boss：房主算 AI 和血量，客人按快照插值显示。模型和数值在 Data.BOSSES 里。
 ##
-## mandala 千年曼陀罗蛇：待在湖里，头露出水面。
-##   喷毒 —— 毒液落地变成毒池；蛇尾砸 —— 地上先出红圈，1.3 秒后砸下；
-##   潜水 —— 沉下去，从玩家附近的水里跃出；半血以下召唤小蛇
-## spider 人面魔蛛：在古树林里爬。
-##   吐网 —— 被网到会减速；跳砸 —— 红圈预警后跳过来；喷毒；半血以下更快
-## 打头（脸）是弱点，伤害 ×2；打身体 ×0.6
+## ai = water（千年曼陀罗蛇、深海魔鲸）：待在水里，头露出水面。
+##   喷毒 —— 毒液落地变成毒池；尾巴砸 —— 地上先出红圈，1.3 秒后砸下；
+##   潜水 —— 沉下去，从玩家附近的水里跃出；半血以下召唤小怪
+## ai = land（人面魔蛛、泰坦巨猿）：在空地上绕着玩家走。
+##   吐网 / 扔石头；跳砸 —— 红圈预警后跳过来；喷毒；半血以下更快
+## ai = air（冰霜巨龙）：在天上盘旋。
+##   冰息 —— 冻住的地方会减速；俯冲 —— 红圈预警后冲下来；半血以下召唤雪原狼
+## 打头是弱点，伤害 ×1.7；打身体 ×0.6
 
 const INTERP_DELAY := 0.1
 
 var world: Node
 var kind := "mandala"
+var cfg: Dictionary
+var ai := "water"
 var proxy := false
 var max_hp := 3000.0
 var hp := 3000.0
@@ -22,13 +26,11 @@ var phase := 1
 var damagers := {}
 var dead := false
 
-var head: Node3D                 # 头（也是整体位置）
+var head: Node3D                 # 整个 Boss 的位置（模型中心）
+var model: Node3D
 var parts: Array[StaticBody3D] = []
-var segs: Array[Node3D] = []     # 蛇身
-var legs: Array[Node3D] = []     # 蛛腿
-var body_node: Node3D
-var _path: Array[Vector3] = []   # 头走过的路径，蛇身跟着
-var _path_t := 0.0
+var size := Vector3(4, 4, 4)     # 缩放后的宽、高、长
+var _upright := false
 var _move_to := Vector3.ZERO
 var _anchor := Vector3.ZERO
 var _atk_cd := 3.0
@@ -38,133 +40,88 @@ var _yaw := 0.0
 var _t := 0.0
 var _snaps: Array = []
 var _root_t := 0.0
+var _orbit := 0.0
+var _last_pos := Vector3.ZERO
+var _speed := 0.0
+var _dying := -1.0
+var _fall_v := 0.0
 
 
 func setup(p_world: Node, p_kind: String, p_hp: float, p_proxy: bool, anchor: Vector3) -> void:
 	world = p_world
 	kind = p_kind
+	cfg = Data.BOSSES[kind]
+	ai = str(cfg.get("ai", "land"))
 	proxy = p_proxy
 	max_hp = p_hp
 	hp = p_hp
 	_anchor = anchor
 	name = "Boss"
-	if kind == "mandala":
-		_build_snake()
-	else:
-		_build_spider()
+	_build()
 
 
-# ------------------------------------------------------------------ 模型
+# ------------------------------------------------------------------ 模型和碰撞
 
-func _part_body(parent: Node3D, r: float, weak: bool) -> StaticBody3D:
+func _part_body(r: float, weak: bool, offset: Vector3) -> void:
 	var b := StaticBody3D.new()
 	b.collision_layer = U.LAYER_BEAST
 	b.collision_mask = 0
 	b.set_meta("boss", true)
 	b.set_meta("weak", weak)
+	b.set_meta("offset", offset)
 	var cs := CollisionShape3D.new()
 	var sh := SphereShape3D.new()
 	sh.radius = r
 	cs.shape = sh
 	b.add_child(cs)
 	b.top_level = true
-	parent.add_child(b)
+	add_child(b)
 	parts.append(b)
-	return b
 
 
-func _build_snake() -> void:
-	var skin := U.mat(Color(0.22, 0.08, 0.28), 0.45)
-	var belly := U.mat(Color(0.7, 0.55, 0.3), 0.6)
-	var mark := U.glow(Color(1.0, 0.3, 0.7), 2.5)
-	var eye := U.glow(Color(0.9, 1.0, 0.25), 5.0)
-	var fang := U.mat(Color(0.95, 0.95, 0.9), 0.4)
+func _build() -> void:
 	head = Node3D.new()
 	head.name = "Head"
 	head.top_level = true
 	add_child(head)
-	U.part(head, U.sphere(1.3, 18, 12), skin, Vector3.ZERO, Vector3.ZERO, Vector3(1.1, 0.75, 1.5))
-	U.part(head, U.sphere(0.95, 14, 10), belly, Vector3(0, -0.35, -0.2), Vector3.ZERO, Vector3(1.0, 0.5, 1.3))
-	for side in [-1.0, 1.0]:
-		U.part(head, U.sphere(0.2, 8, 6), eye, Vector3(0.68 * side, 0.35, -1.0))
-		U.part(head, U.cyl(0.0, 0.1, 0.55, 6), fang, Vector3(0.35 * side, -0.55, -1.45), Vector3(0.15, 0, 0))
-	# 曼陀罗花冠
-	for k in 8:
-		var a := TAU * k / 8.0
-		U.part(head, U.cyl(0.0, 0.32, 1.2, 5), mark, Vector3(cos(a) * 0.9, 0.9, 0.4 + sin(a) * 0.6), Vector3(-0.7 + sin(a) * 0.3, a, 0))
-	var ring := U.part(head, U.torus(2.4, 2.6, 64, 6), U.glow(Data.age_color(2), 4.0), Vector3(0, -0.6, 0.6), Vector3.ZERO, Vector3.ONE, false)
+	model = BeastModels.instance_model(cfg)
+	head.add_child(model)
+	var d := BeastModels._dims(str(cfg["model"]))
+	var k := BeastModels._model_scale(cfg)
+	size = Vector3(float(d["w"]), float(d["h"]), float(d["l"])) * k
+	_upright = size.y > size.z * 1.15
+	# 年份光环
+	var r := maxf(size.x, size.z) * 0.55
+	var ring := U.part(head, U.torus(r, r + 0.25, 64, 6), U.glow(Data.age_color(2), 4.0), Vector3(0, -size.y * 0.35, 0), Vector3.ZERO, Vector3.ONE, false)
 	ring.name = "Ring"
-	var hb := _part_body(self, 1.35, true)
-	hb.set_meta("follow", head)
-	for i in 16:
-		var t := float(i) / 15.0
-		var seg := Node3D.new()
-		seg.top_level = true
-		add_child(seg)
-		var r := lerpf(1.15, 0.45, t)
-		U.part(seg, U.sphere(r, 14, 10), skin)
-		U.part(seg, U.sphere(r * 0.85, 10, 6), belly, Vector3(0, -r * 0.35, 0), Vector3.ZERO, Vector3(1.0, 0.6, 1.0))
-		if i % 2 == 0:
-			U.part(seg, U.sphere(r * 0.3, 6, 4), mark, Vector3(0, r * 0.85, 0))
-		segs.append(seg)
-		var sb := _part_body(self, r, false)
-		sb.set_meta("follow", seg)
-	head.global_position = _anchor + Vector3(0, -6, 0)
-	for i in 60:
-		_path.append(head.global_position)
+	# 碰撞：身体几个球，头是弱点
+	if _upright:
+		var rb := minf(size.x, size.z) * 0.45
+		_part_body(rb, false, Vector3(0, -size.y * 0.2, 0))
+		_part_body(rb * 0.9, false, Vector3(0, size.y * 0.05, 0))
+		_part_body(rb * 0.75, true, Vector3(0, size.y * 0.3, -size.z * 0.1))
+	else:
+		var rb := minf(size.x, size.y) * 0.45
+		_part_body(rb, false, Vector3(0, 0, size.z * 0.05))
+		_part_body(rb * 0.85, false, Vector3(0, 0, size.z * 0.3))
+		_part_body(rb * 0.7, true, Vector3(0, size.y * 0.1, -size.z * 0.36))
+	match ai:
+		"water":
+			head.global_position = _anchor + Vector3(0, -size.y, 0)
+		"land":
+			head.global_position = _anchor + Vector3(0, 14, 0)
+		"air":
+			head.global_position = _anchor + Vector3(0, 40, 0)
 
 
-func _build_spider() -> void:
-	var shell := U.mat(Color(0.12, 0.08, 0.14), 0.4)
-	var hairy := U.mat(Color(0.2, 0.14, 0.18), 0.9)
-	var face := U.mat(Color(0.88, 0.82, 0.78), 0.6)
-	var mark := U.glow(Color(0.7, 0.2, 1.0), 2.5)
-	var eye := U.glow(Color(1.0, 0.2, 0.2), 5.0)
-	head = Node3D.new()
-	head.name = "Head"
-	head.top_level = true
-	add_child(head)
-	body_node = Node3D.new()
-	head.add_child(body_node)
-	U.part(body_node, U.sphere(1.6, 18, 12), shell, Vector3(0, 0.6, 1.6), Vector3.ZERO, Vector3(1.0, 0.85, 1.2))
-	U.part(body_node, U.sphere(0.45, 10, 6), mark, Vector3(0, 1.8, 1.4))
-	U.part(body_node, U.sphere(1.0, 14, 10), hairy, Vector3(0, 0.3, -0.1), Vector3.ZERO, Vector3(1.0, 0.8, 1.0))
-	# 人面：一张苍白的脸
-	U.part(body_node, U.sphere(0.62, 14, 10), face, Vector3(0, 0.35, -0.95), Vector3.ZERO, Vector3(1.0, 1.1, 0.6))
-	for side in [-1.0, 1.0]:
-		U.part(body_node, U.sphere(0.1, 8, 6), eye, Vector3(0.22 * side, 0.5, -1.28))
-		U.part(body_node, U.sphere(0.06, 6, 4), eye, Vector3(0.45 * side, 0.75, -1.15))
-	U.part(body_node, U.box(Vector3(0.3, 0.05, 0.05)), U.mat(Color(0.3, 0.05, 0.08)), Vector3(0, 0.12, -1.3))
-	var ring := U.part(body_node, U.torus(2.6, 2.8, 64, 6), U.glow(Data.age_color(2), 4.0), Vector3(0, -0.4, 0.4), Vector3.ZERO, Vector3.ONE, false)
-	ring.name = "Ring"
-	for k in 8:
-		var side := -1.0 if k % 2 == 0 else 1.0
-		var zz := -0.6 + (k / 2) * 0.55
-		var leg := Node3D.new()
-		leg.position = Vector3(0.7 * side, 0.4, zz)
-		body_node.add_child(leg)
-		var upper := Node3D.new()
-		upper.rotation = Vector3(0, 0, -0.9 * side)
-		leg.add_child(upper)
-		U.part(upper, U.capsule(0.13, 1.6), hairy, Vector3(0.7 * side, 0, 0), Vector3(0, 0, PI / 2))
-		var lower := Node3D.new()
-		lower.position = Vector3(1.45 * side, 0, 0)
-		lower.rotation = Vector3(0, 0, 1.9 * side)
-		upper.add_child(lower)
-		U.part(lower, U.capsule(0.1, 1.9), shell, Vector3(0.85 * side, 0, 0), Vector3(0, 0, PI / 2))
-		leg.set_meta("side", side)
-		leg.set_meta("phase", float(k) * 0.8)
-		legs.append(leg)
-	var hb := _part_body(self, 0.75, true)
-	hb.set_meta("follow", head)
-	hb.set_meta("offset", Vector3(0, 0.35, -0.95))
-	var bb := _part_body(self, 1.7, false)
-	bb.set_meta("follow", head)
-	bb.set_meta("offset", Vector3(0, 0.6, 1.2))
-	var cb := _part_body(self, 1.1, false)
-	cb.set_meta("follow", head)
-	cb.set_meta("offset", Vector3(0, 0.3, 0.0))
-	head.global_position = _anchor + Vector3(0, 12, 0)
+## 露出水面 / 离地多高（模型中心）
+func _hover() -> float:
+	match ai:
+		"water":
+			return size.y * (0.35 if _upright else 0.18)
+		"air":
+			return 14.0
+	return size.y * 0.5
 
 
 # ------------------------------------------------------------------ 房主：受伤
@@ -193,15 +150,61 @@ func center() -> Vector3:
 	return head.global_position
 
 
+## 弱点（头）的位置
+func weak_point() -> Vector3:
+	for b in parts:
+		if b.get_meta("weak"):
+			return b.global_position
+	return head.global_position
+
+
 # ------------------------------------------------------------------ 房主：AI
 
 func _set_state(s: String) -> void:
 	state = s
 	state_t = 0.0
+	if s in ["leap", "dive_attack"]:
+		BeastModels.play_role(model, "attack")
+
+
+## 死了：不能再被打中，播死亡动画；飞的摔下来，水里的沉下去，最后炸成魂光
+func die_visual() -> void:
+	dead = true
+	_dying = 0.0
+	for b in parts:
+		b.collision_layer = 0
+	head.get_node("Ring").visible = false
+	BeastModels.play_role(model, "death")
+
+
+func _dying_tick(dt: float) -> void:
+	_dying += dt
+	var p := head.global_position
+	if ai == "water":
+		p.y -= dt * size.y * 0.35
+	else:
+		var rest := maxf(world.island.height_at(p.x, p.z), Island.WATER_Y - size.y * 0.3) + size.y * 0.5
+		if p.y > rest:
+			_fall_v += 9.8 * 1.6 * dt
+			p.y = maxf(p.y - _fall_v * dt, rest)
+			if p.y <= rest:
+				world.fx.explosion(p + Vector3(0, -size.y * 0.4, 0), size.x * 0.6, Color(0.75, 0.7, 0.6))
+				Sfx.play_at("slam", p, 2.0)
+	head.global_position = p
+	if _dying > 2.4:
+		_dying = -100.0
+		world.fx.death_burst(p, Data.age_color(2), 3)
+		world.fx.explosion(p, 8.0, Color(0.8, 0.3, 1.0))
+		queue_free()
 
 
 func _process(dt: float) -> void:
 	_t += dt
+	if _dying >= 0.0:
+		_dying_tick(dt)
+		return
+	if _dying < -1.0:
+		return
 	if proxy:
 		_interpolate()
 	elif not dead:
@@ -224,17 +227,34 @@ func _think(dt: float) -> void:
 	state_t += dt
 	var speed_k := 0.5 if _root_t > 0.0 else (1.35 if phase == 2 else 1.0)
 	_root_t = maxf(_root_t - dt, 0.0)
-	if kind == "mandala":
-		_think_snake(dt, speed_k)
-	else:
-		_think_spider(dt, speed_k)
+	match ai:
+		"water":
+			_think_water(dt, speed_k)
+		"air":
+			_think_air(dt, speed_k)
+		_:
+			_think_land(dt, speed_k)
 
 
-func _think_snake(dt: float, speed_k: float) -> void:
+func _summon_tick(dt: float) -> void:
+	if phase != 2:
+		return
+	_summon_cd -= dt
+	if _summon_cd <= 0.0:
+		_summon_cd = 11.0
+		world.boss_summon(self, str(cfg.get("summon", "wolf")), 2)
+
+
+func _mouth() -> Vector3:
+	return weak_point() - head.global_basis.z * size.z * 0.1
+
+
+func _think_water(dt: float, speed_k: float) -> void:
 	var h := head.global_position
+	var surf := _anchor.y + _hover()
 	match state:
 		"emerge":
-			var target := _anchor + Vector3(0, 4.5, 0)
+			var target := Vector3(_anchor.x, surf, _anchor.z)
 			head.global_position = h.lerp(target, 1.0 - exp(-2.0 * dt))
 			if state_t > 2.5:
 				_set_state("idle")
@@ -242,47 +262,46 @@ func _think_snake(dt: float, speed_k: float) -> void:
 		"idle":
 			_atk_cd -= dt * speed_k
 			_dive_cd -= dt * speed_k
-			if phase == 2:
-				_summon_cd -= dt
-				if _summon_cd <= 0.0:
-					_summon_cd = 11.0
-					world.boss_summon(self, "snake", 2)
+			_summon_tick(dt)
 			var to := _move_to - h
+			to.y = 0
 			if to.length() < 1.5:
 				_move_to = _patrol_point()
-			head.global_position = h + to.limit_length(3.2 * speed_k * dt)
-			head.global_position.y = _anchor.y + 4.5 + sin(_t * 1.3) * 0.8
-			_face_toward(world.nearest_player_pos(h), dt)
+			var np := h + to.limit_length(3.2 * speed_k * dt)
+			np.y = surf + sin(_t * 1.3) * 0.8
+			head.global_position = np
+			_face_toward(world.nearest_player_pos(h) if _upright else _move_to, dt)
 			if _dive_cd <= 0.0:
 				_dive_cd = 16.0
 				_set_state("dive")
 			elif _atk_cd <= 0.0:
 				var tp := _pick_target()
 				if not tp.is_empty():
-					var near: bool = Vector2(tp["pos"].x - h.x, tp["pos"].z - h.z).length() < 22.0
+					var near: bool = Vector2(tp["pos"].x - h.x, tp["pos"].z - h.z).length() < 22.0 + size.z * 0.5
 					if near and randf() < 0.55:
 						_atk_cd = 3.2
 						world.boss_telegraph(tp["pos"], 5.5, 1.3, 32.0, "slam", h)
+						BeastModels.play_role(model, "attack")
 					else:
 						_atk_cd = 3.0 if phase == 1 else 2.2
 						var n := 1 if phase == 1 else 3
 						for i in n:
 							var off := Vector3(randf_range(-3, 3), 0, randf_range(-3, 3)) * (0 if i == 0 else 1)
-							world.boss_projectile("spit", h + Vector3(0, -0.5, 0) - head.global_basis.z * 1.5, tp["pos"] + off, 1.2, 3.5, 14.0)
+							world.boss_projectile("spit", _mouth(), tp["pos"] + off, 1.2, 3.5, 14.0)
 		"dive":
-			head.global_position.y = move_toward(h.y, _anchor.y - 6.0, 6.0 * dt)
+			head.global_position.y = move_toward(h.y, _anchor.y - size.y, 6.0 * dt)
 			if state_t > 1.6:
 				var tp := _pick_target()
 				var pos := _anchor
 				if not tp.is_empty():
 					pos = world.water_point_near(tp["pos"])
-				head.global_position = Vector3(pos.x, _anchor.y - 6.0, pos.z)
+				head.global_position = Vector3(pos.x, _anchor.y - size.y, pos.z)
 				_move_to = pos
-				world.boss_telegraph(Vector3(pos.x, 0.0, pos.z), 6.5, 1.3, 30.0, "leap", pos)
+				world.boss_telegraph(Vector3(pos.x, 0.0, pos.z), 6.5 + size.z * 0.15, 1.3, 30.0, "leap", pos)
 				_set_state("leap")
 		"leap":
 			if state_t > 1.2:
-				head.global_position = head.global_position.lerp(Vector3(_move_to.x, _anchor.y + 5.0, _move_to.z), 1.0 - exp(-6.0 * dt))
+				head.global_position = head.global_position.lerp(Vector3(_move_to.x, surf + 1.5, _move_to.z), 1.0 - exp(-6.0 * dt))
 			if state_t > 2.4:
 				_anchor = Vector3(head.global_position.x, _anchor.y, head.global_position.z)
 				_set_state("idle")
@@ -293,17 +312,20 @@ func _patrol_point() -> Vector3:
 	return _anchor + Vector3(randf_range(-14, 14), 0, randf_range(-8, 8))
 
 
-func _think_spider(dt: float, speed_k: float) -> void:
+func _think_land(dt: float, speed_k: float) -> void:
 	var h := head.global_position
 	var ground: float = world.island.height_at(h.x, h.z)
+	var off := _hover()
 	match state:
 		"emerge":
-			# 从树冠上掉下来
-			head.global_position.y = move_toward(h.y, ground + 1.6, 14.0 * dt)
+			# 从天上 / 树冠上落下来
+			head.global_position.y = move_toward(h.y, ground + off, 14.0 * dt)
 			if state_t > 1.5:
 				_set_state("idle")
+				world.boss_telegraph(Vector3(h.x, ground, h.z), size.x * 0.6 + 3.0, 0.1, 0.0, "slam", h)
 		"idle":
 			_atk_cd -= dt * speed_k
+			_summon_tick(dt)
 			var tp: Dictionary = world.nearest_player(h)
 			if tp.is_empty():
 				return
@@ -312,36 +334,90 @@ func _think_spider(dt: float, speed_k: float) -> void:
 			var dist := to.length()
 			var dir := to.normalized()
 			var side := dir.cross(Vector3.UP)
-			var want := dir * (1.0 if dist > 14.0 else (-1.0 if dist < 9.0 else 0.0)) + side * 0.6
+			var keep := 11.0 + size.z * 0.4
+			var want := dir * (1.0 if dist > keep + 4.0 else (-1.0 if dist < keep else 0.0)) + side * 0.6
 			var np := h + want.normalized() * 4.5 * speed_k * dt
 			var c := Vector3(_anchor.x, 0, _anchor.z)
 			if Vector3(np.x, 0, np.z).distance_to(c) < 30.0:
-				head.global_position = Vector3(np.x, world.island.height_at(np.x, np.z) + 1.6, np.z)
+				head.global_position = Vector3(np.x, world.island.height_at(np.x, np.z) + off, np.z)
 			_face_toward(tp["pos"], dt)
 			if _atk_cd <= 0.0:
 				var r := randf()
 				if r < 0.35:
 					_atk_cd = 2.2 if phase == 1 else 1.6
 					var n := 1 if phase == 1 else 3
+					var kind2 := "rock" if cfg.get("throws", false) else "web"
 					for i in n:
-						var off := Vector3(randf_range(-2.5, 2.5), 0, randf_range(-2.5, 2.5)) * (0 if i == 0 else 1)
-						world.boss_projectile("web", h + Vector3(0, 0.4, 0) - head.global_basis.z * 1.2, tp["pos"] + off, 0.9, 2.2, 10.0)
+						var o := Vector3(randf_range(-2.5, 2.5), 0, randf_range(-2.5, 2.5)) * (0 if i == 0 else 1)
+						world.boss_projectile(kind2, _mouth() + Vector3(0, 1, 0), tp["pos"] + o, 0.9 if kind2 == "web" else 1.1, 2.2 if kind2 == "web" else 2.8, 10.0 if kind2 == "web" else 22.0)
+					BeastModels.play_role(model, "attack")
 				elif r < 0.65:
 					_atk_cd = 2.6
-					world.boss_projectile("spit", h + Vector3(0, 0.4, 0) - head.global_basis.z * 1.2, tp["pos"], 1.1, 3.5, 14.0)
+					world.boss_projectile("spit", _mouth(), tp["pos"], 1.1, 3.5, 14.0)
+					BeastModels.play_role(model, "attack")
 				else:
 					_atk_cd = 3.4
 					_move_to = tp["pos"]
-					world.boss_telegraph(tp["pos"], 5.0, 1.3, 40.0, "leap", tp["pos"])
+					world.boss_telegraph(tp["pos"], 5.0 + size.x * 0.2, 1.3, 40.0, "leap", tp["pos"])
 					_set_state("leap")
 		"leap":
 			if state_t < 1.3:
-				head.global_position.y = world.island.height_at(h.x, h.z) + 1.6 - sin(state_t / 1.3 * PI) * 0.4
+				head.global_position.y = ground + off - sin(state_t / 1.3 * PI) * 0.4
 			elif state_t < 1.8:
 				var k := (state_t - 1.3) / 0.5
 				var p := h.lerp(Vector3(_move_to.x, h.y, _move_to.z), k)
-				p.y = world.island.height_at(p.x, p.z) + 1.6 + sin(k * PI) * 6.0
+				p.y = world.island.height_at(p.x, p.z) + off + sin(k * PI) * 6.0
 				head.global_position = p
+			else:
+				_set_state("idle")
+
+
+func _think_air(dt: float, speed_k: float) -> void:
+	var h := head.global_position
+	var c := _anchor
+	var fly_y := _anchor.y + _hover() + 6.0
+	match state:
+		"emerge":
+			head.global_position = h.lerp(Vector3(c.x, fly_y, c.z), 1.0 - exp(-1.5 * dt))
+			_face_toward(world.nearest_player_pos(h), dt)
+			if state_t > 3.0:
+				_set_state("idle")
+		"idle":
+			_atk_cd -= dt * speed_k
+			_summon_tick(dt)
+			_orbit += dt * 0.28 * speed_k
+			var tp: Vector3 = world.nearest_player_pos(h)
+			var rad := 26.0
+			var goal := Vector3(tp.x + cos(_orbit) * rad, fly_y + sin(_t * 0.7) * 3.0, tp.z + sin(_orbit) * rad)
+			var np := h.lerp(goal, 1.0 - exp(-0.8 * dt))
+			head.global_position = np
+			var vel := np - h
+			_face_toward(h + vel * 10.0 if vel.length() > 0.02 else tp, dt)
+			if _atk_cd <= 0.0:
+				var t2 := _pick_target()
+				if t2.is_empty():
+					return
+				if randf() < 0.6:
+					# 冰息：一串冰球，落地的地方结冰减速
+					_atk_cd = 2.6 if phase == 1 else 1.8
+					var n := 3 if phase == 1 else 5
+					for i in n:
+						var o := Vector3(randf_range(-4, 4), 0, randf_range(-4, 4)) * (0 if i == 0 else 1)
+						world.boss_projectile("web", _mouth(), t2["pos"] + o, 1.0 + i * 0.12, 3.0, 16.0)
+					BeastModels.play_role(model, "attack")
+				else:
+					_atk_cd = 4.0
+					_move_to = t2["pos"]
+					world.boss_telegraph(t2["pos"], 7.0, 1.6, 45.0, "leap", t2["pos"])
+					_set_state("dive_attack")
+		"dive_attack":
+			if state_t < 1.4:
+				var to := _move_to - h
+				to.y = 0
+				_face_toward(_move_to, dt * 3.0)
+				head.global_position = h.lerp(_move_to + Vector3(0, 3.0 + size.y * 0.3, 0) - to.normalized() * 6.0, 1.0 - exp(-2.5 * dt))
+			elif state_t < 2.4:
+				head.global_position = h.lerp(Vector3(h.x, fly_y, h.z), 1.0 - exp(-2.0 * dt))
 			else:
 				_set_state("idle")
 
@@ -364,7 +440,10 @@ func snapshot() -> Array:
 func push_snapshot(s: Array) -> void:
 	_snaps.append([Time.get_ticks_msec() / 1000.0, s[0], float(s[1])])
 	hp = float(s[2]) * max_hp
-	state = str(s[3])
+	var ns := str(s[3])
+	if ns != state and ns in ["leap", "dive_attack"]:
+		BeastModels.play_role(model, "attack")
+	state = ns
 	if _snaps.size() > 12:
 		_snaps.pop_front()
 
@@ -390,32 +469,13 @@ func _interpolate() -> void:
 
 func _update_visual(dt: float) -> void:
 	head.global_basis = Basis(Vector3.UP, _yaw)
-	if kind == "mandala":
-		_path_t += dt
-		if _path_t > 0.06:
-			_path_t = 0.0
-			_path.push_front(head.global_position)
-			if _path.size() > 80:
-				_path.pop_back()
-		for i in segs.size():
-			var idx := mini((i + 1) * 3, _path.size() - 1)
-			var p: Vector3 = _path[idx]
-			# 越往后越沉进水里
-			p.y = lerpf(p.y - 1.0, _anchor.y - 1.2, clampf(float(i) / segs.size() * 1.6, 0.0, 1.0))
-			p.y += sin(_t * 2.0 + i * 0.7) * 0.25
-			segs[i].global_position = p
-		var ring := head.get_node("Ring")
-		ring.rotation.y += dt * 0.8
-	else:
-		var moving := state == "idle"
-		for leg in legs:
-			var ph: float = leg.get_meta("phase")
-			var sd: float = leg.get_meta("side")
-			leg.rotation.y = sin(_t * 8.0 + ph) * (0.35 if moving else 0.08)
-			leg.rotation.z = sin(_t * 8.0 + ph + PI / 2) * (0.2 if moving else 0.05) * sd
-		body_node.position.y = sin(_t * 3.0) * 0.1
-		body_node.get_node("Ring").rotation.y += dt * 0.8
+	var ring := head.get_node("Ring")
+	ring.rotation.y += dt * 0.8
+	var p := head.global_position
+	if dt > 0.0:
+		_speed = lerpf(_speed, p.distance_to(_last_pos) / dt, 1.0 - exp(-5.0 * dt))
+	_last_pos = p
+	var airborne := ai == "air" or state == "leap"
+	BeastModels._animate_model(model, airborne, _speed, "fly" if ai == "air" else "run")
 	for b in parts:
-		var f: Node3D = b.get_meta("follow")
-		var off: Vector3 = b.get_meta("offset", Vector3.ZERO)
-		b.global_position = f.global_transform * off
+		b.global_position = head.global_transform * (b.get_meta("offset") as Vector3)

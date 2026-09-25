@@ -68,21 +68,13 @@ func open() -> void:
 	var tree: Array = Data.SKILL_TREE[w["id"]]
 	for i in tree.size():
 		var row := PanelContainer.new()
-		var st := StyleBoxFlat.new()
-		st.bg_color = Color(0.06, 0.16, 0.14, 0.9)
-		st.set_corner_radius_all(8)
-		st.content_margin_left = 12
-		st.content_margin_right = 12
-		st.content_margin_top = 8
-		st.content_margin_bottom = 8
 		var have := i < Profile.rings.size()
-		st.set_border_width_all(2)
-		st.border_color = Data.age_color(int(Profile.rings[i]["age"])) if have else Color(0.25, 0.3, 0.3)
+		var st := UiKit.row_style(Data.age_color(int(Profile.rings[i]["age"])) if have else Color(1, 1, 1, 0.15))
 		row.add_theme_stylebox_override("panel", st)
 		mid.add_child(row)
 		var rv := VBoxContainer.new()
 		row.add_child(rv)
-		var head := "第%s魂环（%s）" % [["一", "二", "三"][i], Data.SKILL_KEYS[i]]
+		var head := "第%s魂环（%s）" % [Data.RING_NAMES[i], Data.SKILL_KEYS[i]]
 		if have:
 			var r: Dictionary = Profile.rings[i]
 			var s: Dictionary = Data.SKILLS[r["skill"]]

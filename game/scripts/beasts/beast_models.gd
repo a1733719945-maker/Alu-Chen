@@ -1,23 +1,150 @@
 class_name BeastModels
 extends RefCounted
-## 魂兽的模型：先用简单几何体拼。以后拿到 AI 生成的 .glb 模型，
-## 放到 assets/models/<species>.glb 就会自动替换（见 build()）。
+## 魂兽的模型。大部分用 Quaternius 的 CC0 带动画模型（assets/models/creatures），
+## 按 Data.BEASTS 里的 model / fit / size / tint 缩放、上色；没有模型的（鬼藤）用几何体拼。
 ##
 ## 模型朝向：-Z 是头的方向。原点在身体中心（也是刚体的重心）。
+## tools/fetch_models.py 下载模型，measure.json 是每个模型量出来的尺寸（宽 w、高 h、长 l、底 bottom、中心 cx/cz）
 
-const GLB_DIR := "res://assets/models/"
+const CREATURE_DIR := "res://assets/models/creatures/"
+const ROLE_KEYS := {
+	"idle": ["idle", "flying_idle", "flying", "swim"],
+	"run": ["gallop", "run", "fast_flying", "walk", "flying", "swim"],
+	"air": ["gallop_jump", "jump_idle", "jump", "fast_flying", "flying", "swim"],
+	"attack": ["attack_headbutt", "attack", "headbutt", "punch", "bite_front"],
+	"hit": ["idle_hitreact1", "hitreact", "hit"],
+	"death": ["death", "die"],
+}
+
+static var _measure := {}
+static var _mat_cache := {}
+
+
+static func _dims(key: String) -> Dictionary:
+	if _measure.is_empty():
+		var f := FileAccess.open(CREATURE_DIR + "measure.json", FileAccess.READ)
+		if f:
+			_measure = JSON.parse_string(f.get_as_text())
+	return _measure.get(key, {})
+
+
+static func _model_scale(cfg: Dictionary) -> float:
+	var d := _dims(str(cfg["model"]))
+	if d.is_empty():
+		return 1.0
+	return float(cfg["size"]) / maxf(float(d[str(cfg.get("fit", "l"))]), 0.001)
+
+
+static func has_model(cfg: Dictionary) -> bool:
+	return cfg.has("model") and not _dims(str(cfg["model"])).is_empty()
+
+
+## 缩放后的身体大小（米）：宽、高、长
+static func body_size(species: String) -> Vector3:
+	var cfg: Dictionary = Data.BEASTS[species]
+	if not has_model(cfg):
+		return Vector3(0.6, 0.5, 1.6)
+	var d := _dims(str(cfg["model"]))
+	return Vector3(float(d["w"]), float(d["h"]), float(d["l"])) * _model_scale(cfg)
+
+
+static func upright(species: String) -> bool:
+	var b := body_size(species)
+	return b.y > b.z * 1.15
+
+
+## 血条和名字显示的高度（乘年份缩放前）
+static func label_height(species: String) -> float:
+	return body_size(species).y * 0.5 + 0.45
+
+
+## 实例化一个模型：转成 -Z 朝前、按尺寸缩放、中心放在原点、上色，找到动画
+static func instance_model(cfg: Dictionary) -> Node3D:
+	var key := str(cfg["model"])
+	var path := CREATURE_DIR + key + ".gltf"
+	if not ResourceLoader.exists(path):
+		path = CREATURE_DIR + key + ".fbx"
+	var inst: Node3D = (load(path) as PackedScene).instantiate()
+	var d := _dims(key)
+	var k := _model_scale(cfg)
+	var holder := Node3D.new()
+	holder.name = "Mesh"
+	holder.add_child(inst)
+	inst.rotation.y = PI
+	inst.scale = Vector3.ONE * k
+	var c := Vector3(float(d["cx"]), float(d["bottom"]) + float(d["h"]) * 0.5, float(d["cz"]))
+	inst.position = -(Basis(Vector3.UP, PI) * c) * k
+	_tint(inst, cfg, key)
+	var aps := inst.find_children("*", "AnimationPlayer", true, false)
+	if aps.size() > 0:
+		var ap: AnimationPlayer = aps[0]
+		var roles := {}
+		var names := ap.get_animation_list()
+		for role in ROLE_KEYS:
+			roles[role] = _pick_anim(names, ROLE_KEYS[role])
+			if roles[role] != "" and role in ["idle", "run", "air"]:
+				ap.get_animation(roles[role]).loop_mode = Animation.LOOP_LINEAR
+		holder.set_meta("ap", ap)
+		holder.set_meta("roles", roles)
+		if roles["idle"] != "":
+			ap.play(roles["idle"])
+			ap.seek(randf() * 0.8, true)
+	for gi: GeometryInstance3D in inst.find_children("*", "GeometryInstance3D", true, false):
+		gi.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
+	return holder
+
+
+static func _pick_anim(names: PackedStringArray, keys: Array) -> String:
+	for k in keys:
+		for n in names:
+			var short := n.get_slice("|", n.get_slice_count("|") - 1).to_lower()
+			if short == k or short.ends_with("_" + k):
+				return n
+	for k in keys:
+		for n in names:
+			if k in n.to_lower():
+				return n
+	return ""
+
+
+static func _tint(inst: Node, cfg: Dictionary, key: String) -> void:
+	var tint: Color = cfg.get("tint", Color.WHITE)
+	var glow: Color = cfg.get("glow", Color.BLACK)
+	if tint == Color.WHITE and glow == Color.BLACK:
+		return
+	for mi: MeshInstance3D in inst.find_children("*", "MeshInstance3D", true, false):
+		if mi.mesh == null:
+			continue
+		for i in mi.mesh.get_surface_count():
+			var base := mi.get_active_material(i)
+			if not base is BaseMaterial3D:
+				continue
+			var mk := "%s|%s|%s|%d" % [key, tint.to_html(), glow.to_html(), base.get_instance_id()]
+			var m: BaseMaterial3D
+			if _mat_cache.has(mk):
+				m = _mat_cache[mk]
+			else:
+				m = base.duplicate() as BaseMaterial3D
+				var a := m.albedo_color
+				m.albedo_color = Color(a.r * tint.r, a.g * tint.g, a.b * tint.b, a.a)
+				if glow != Color.BLACK:
+					m.emission_enabled = true
+					m.emission = glow
+					m.emission_energy_multiplier = 1.0
+				_mat_cache[mk] = m
+			mi.set_surface_override_material(i, m)
 
 
 static func build(species: String, age: int) -> Node3D:
 	var root := Node3D.new()
 	root.name = "Model"
 	root.set_meta("species", species)
-	var glb_path := GLB_DIR + species + ".glb"
-	if ResourceLoader.exists(glb_path):
-		var scene: PackedScene = load(glb_path)
-		var inst := scene.instantiate()
-		root.add_child(inst)
-		root.set_meta("glb", true)
+	var cfg: Dictionary = Data.BEASTS[species]
+	if has_model(cfg):
+		var holder := instance_model(cfg)
+		root.add_child(holder)
+		root.set_meta("holder", holder)
+		root.set_meta("motion", str(cfg["motion"]))
 	else:
 		match species:
 			"rabbit":
@@ -43,6 +170,22 @@ static func build(species: String, age: int) -> Node3D:
 
 ## 碰撞形状：[{shape, xform, head}]，已经按年份缩放
 static func shapes(species: String, age: int) -> Array:
+	var s: float = Data.AGES[age]["scale"]
+	if has_model(Data.BEASTS[species]):
+		var b := body_size(species) * s
+		var out := []
+		var body := BoxShape3D.new()
+		body.size = Vector3(maxf(b.x * 0.6, 0.25), maxf(b.y * 0.6, 0.25), maxf(b.z * 0.7, 0.25))
+		out.append({"shape": body, "xform": Transform3D(), "head": false})
+		var r := clampf(minf(b.x, minf(b.y, b.z)) * 0.32, 0.12, 1.2)
+		var hp := Vector3(0, b.y * 0.3, -b.z * 0.1) if upright(species) else Vector3(0, b.y * 0.18, -b.z * 0.38)
+		out.append({"shape": _sphere_shape(r), "xform": Transform3D(Basis(), hp), "head": true})
+		return out
+	return _proc_shapes(species, age)
+
+
+## 几何体模型的碰撞形状
+static func _proc_shapes(species: String, age: int) -> Array:
 	var s: float = Data.AGES[age]["scale"]
 	var out := []
 	match species:
@@ -103,14 +246,8 @@ static func aura(age: int, species: String) -> Node3D:
 	var n := Node3D.new()
 	n.name = "Aura"
 	var s: float = Data.AGES[age]["scale"]
-	var r := 0.55
-	match species:
-		"vine", "snake", "wolf":
-			r = 0.85
-		"rhino":
-			r = 1.1
-		"ape":
-			r = 0.8
+	var bs := body_size(species)
+	var r := clampf(maxf(bs.x, bs.z) * 0.42, 0.5, 1.6)
 	var c: Color = Data.AGES[age]["color"]
 	var energy := 1.6 if age == 0 else (2.6 if age == 1 else 3.6)
 	var ring := U.part(n, U.torus(r * s - 0.03, r * s + 0.03, 48, 6), U.glow(c, energy), Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
@@ -384,7 +521,8 @@ static func _snake(root: Node3D) -> void:
 # ------------------------------------------------------------------ 动画（不管是房主算的还是客人看到的，都用这个）
 
 static func animate(model: Node3D, t: float, airborne: bool, speed := 0.0) -> void:
-	if model.has_meta("glb"):
+	if model.has_meta("holder"):
+		_animate_model(model.get_meta("holder"), airborne, speed, str(model.get_meta("motion", "")))
 		return
 	var species: String = model.get_meta("species", "")
 	match species:
@@ -438,3 +576,47 @@ static func animate(model: Node3D, t: float, airborne: bool, speed := 0.0) -> vo
 					el.rotation.x = 0.35 + sin(t * 11.0) * 0.12 + k
 				if er:
 					er.rotation.x = 0.35 + sin(t * 11.0 + 1.3) * 0.12 + k
+
+
+
+# ------------------------------------------------------------------ 带骨骼动画的模型
+
+static func _animate_model(holder: Node3D, airborne: bool, speed: float, motion: String) -> void:
+	if not holder.has_meta("ap"):
+		return
+	var ap: AnimationPlayer = holder.get_meta("ap")
+	if Time.get_ticks_msec() / 1000.0 < float(holder.get_meta("busy_until", 0.0)):
+		return
+	var roles: Dictionary = holder.get_meta("roles")
+	var role := "air" if airborne else ("run" if speed > 1.2 else "idle")
+	if motion in ["fly", "flutter"]:
+		role = "run" if airborne or speed > 1.2 else "idle"
+	var anim: String = roles.get(role, "")
+	if anim == "":
+		anim = roles.get("idle", "")
+	if anim != "" and ap.current_animation != anim:
+		ap.play(anim, 0.2)
+	ap.speed_scale = clampf(speed / 5.0, 0.8, 1.8) if role == "run" and motion not in ["fly", "flutter"] else 1.0
+
+
+## 攻击动作（咬、撞、扔）
+static func play_attack(model: Node3D) -> void:
+	if model == null or not model.has_meta("holder"):
+		return
+	play_role(model.get_meta("holder"), "attack")
+
+
+static func has_death(holder: Node3D) -> bool:
+	return holder.has_meta("roles") and str((holder.get_meta("roles") as Dictionary).get("death", "")) != ""
+
+
+static func play_role(holder: Node3D, role: String) -> void:
+	if not holder.has_meta("ap"):
+		return
+	var ap: AnimationPlayer = holder.get_meta("ap")
+	var anim: String = (holder.get_meta("roles") as Dictionary).get(role, "")
+	if anim == "":
+		return
+	ap.play(anim, 0.1)
+	ap.speed_scale = 1.0
+	holder.set_meta("busy_until", Time.get_ticks_msec() / 1000.0 + ap.get_animation(anim).length * 0.9)

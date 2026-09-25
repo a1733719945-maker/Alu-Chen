@@ -79,14 +79,7 @@ func refresh() -> void:
 
 func _row() -> HBoxContainer:
 	var p := PanelContainer.new()
-	var st := StyleBoxFlat.new()
-	st.bg_color = Color(0.06, 0.16, 0.14, 0.9)
-	st.set_corner_radius_all(8)
-	st.content_margin_left = 14
-	st.content_margin_right = 14
-	st.content_margin_top = 8
-	st.content_margin_bottom = 8
-	p.add_theme_stylebox_override("panel", st)
+	p.add_theme_stylebox_override("panel", UiKit.row_style())
 	_list.add_child(p)
 	var h := HBoxContainer.new()
 	h.add_theme_constant_override("separation", 14)

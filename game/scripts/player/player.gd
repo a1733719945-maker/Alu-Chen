@@ -381,7 +381,7 @@ func _process(dt: float) -> void:
 		viewmodel.throw_anim()
 	viewmodel.pull_anim(1.0 if lure.state == Lure.S.REELING and lp else 0.0)
 	if active:
-		for i in 3:
+		for i in Data.SKILL_KEYS.size():
 			if Input.is_action_just_pressed("skill_%d" % (i + 1)):
 				world.skills.cast(i)
 		if Input.is_action_just_pressed("grenade"):

@@ -9,6 +9,7 @@ uniform float fade_start = 35.0;
 uniform float fade_end = 55.0;
 uniform vec3 root_dark : source_color = vec3(0.45, 0.5, 0.4);
 uniform vec3 backlight : source_color = vec3(0.35, 0.42, 0.15);
+uniform vec3 glow : source_color = vec3(0.0);      // 蓝银草：自己发光
 
 varying float tip;
 
@@ -37,6 +38,7 @@ void fragment() {
 	ALPHA_TEXTURE_COORDINATE = UV * 256.0;
 	ROUGHNESS = 0.85;
 	BACKLIGHT = backlight;
+	EMISSION = glow * c.rgb * (0.4 + tip * 1.2);
 	// 法线大部分朝上，草地整体明暗跟地面接近，不会一片黑一片白
 	NORMAL = normalize(mix(NORMAL, (VIEW_MATRIX * vec4(0.0, 1.0, 0.0, 0.0)).xyz, 0.7));
 }

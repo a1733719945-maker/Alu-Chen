@@ -135,6 +135,49 @@ def grass_card(blades, out, size=256, n=16, bright=(0.7, 1.05)):
     print("生成", out)
 
 
+def palm_card(out, size=512):
+    """棕榈叶：一根弯弯的叶脉，两边一排排细长的小叶"""
+    import numpy as np
+    card = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    d = ImageDraw.Draw(card)
+    pts = []
+    for i in range(41):
+        t = i / 40
+        x = size * 0.5 + math.sin(t * 1.6) * size * 0.06
+        y = size * (0.98 - t * 0.94)
+        pts.append((x, y))
+    for i in range(3, 40):
+        t = i / 40
+        x, y = pts[i]
+        L = size * 0.34 * math.sin(math.pi * min(1.0, t * 1.05)) ** 0.7
+        for side in (-1, 1):
+            ang = math.radians(90 + side * (58 - t * 20)) 
+            ex = x + side * abs(math.cos(ang)) * L
+            ey = y - math.sin(math.radians(28)) * L * (0.6 + t * 0.4)
+            w = max(2, int(size * 0.018 * (1.1 - t * 0.5)))
+            g = int(rng.uniform(95, 150) * (0.8 + t * 0.3))
+            col = (int(g * 0.45), g, int(g * 0.28), 255)
+            d.line([(x, y), ((x + ex) / 2, (y + ey) / 2 - 4), (ex, ey)], fill=col, width=w, joint="curve")
+    d.line(pts, fill=(120, 110, 60, 255), width=int(size * 0.012))
+    card = card.filter(ImageFilter.SMOOTH)
+    card.save(out)
+    print("生成", out)
+
+
+def snowy(src, out):
+    """给松针贴片加雪：上面的针叶盖一层白"""
+    import numpy as np
+    im = np.asarray(Image.open(src).convert("RGBA")).astype(np.float32)
+    h, w = im.shape[:2]
+    noise = np.asarray(Image.effect_noise((w // 8, h // 8), 80).resize((w, h), Image.BILINEAR)).astype(np.float32) / 255.0
+    yy = np.linspace(1, 0, h)[:, None]
+    k = np.clip((noise * 0.9 + yy * 0.5 - 0.55) * 3.0, 0, 1) * (im[..., 3] > 30)
+    for c in range(3):
+        im[..., c] = im[..., c] * (1 - k) + 235 * k
+    Image.fromarray(im.clip(0, 255).astype(np.uint8), "RGBA").save(out)
+    print("生成", out)
+
+
 def main():
     ft = os.path.join(OUT, "textures", "foliage")
     os.makedirs(ft, exist_ok=True)
@@ -151,6 +194,8 @@ def main():
     leaf_card([colorize(l, (0.35, 0.6, 0.3)) for l in needles], os.path.join(ft, "leaf_pine.png"), n=220, leaf_scale=(0.16, 0.26), branch=(70, 50, 30))
     grass_card(blades, os.path.join(ft, "grass_tuft.png"))
     grass_card(blades, os.path.join(ft, "grass_tuft_dry.png"), bright=(0.9, 1.2))
+    palm_card(os.path.join(ft, "palm_frond.png"))
+    snowy(os.path.join(ft, "leaf_pine.png"), os.path.join(ft, "leaf_pine_snow.png"))
 
     tt = os.path.join(OUT, "textures", "ground")
     os.makedirs(tt, exist_ok=True)

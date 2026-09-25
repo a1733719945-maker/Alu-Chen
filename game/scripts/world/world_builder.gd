@@ -4,6 +4,9 @@ extends RefCounted
 ##
 ## 第一章 湖心岛：晴天、草地、松树和阔叶树、兔子洞、月光花丛、码头、暗器铺小屋、北坡祭坛、乌篷船。
 ## 第二章 落日森林：黄昏、秋天的落叶林、狼穴、泥潭、毒沼、古树林和千年古树、商人帐篷。
+## 第三章 星斗大森林：月夜、巨树、发光的蓝银草和蘑菇、魔蛛巢、蝠巢枯林、星斗古树。
+## 第四章 极北之地：雪天、雪松、冰晶、冰湖浮冰、雪狼洞和冰窟、飘雪。
+## 第五章 海神岛：正午、椰子树、金沙滩、浅海珊瑚、海崖。
 ##
 ## 素材全是 CC0 免费素材：天空 HDR 和植物、石头模型来自 Poly Haven，地面和树皮贴图来自 ambientCG。
 ## 树是程序生成的：树皮圆管做树干树枝，再插上几十张“一簇树叶”的贴片（tools/prepare_assets.py 生成）。
@@ -13,18 +16,36 @@ const TERRAIN_SHADER := preload("res://shaders/terrain.gdshader")
 const WATER_SHADER := preload("res://shaders/water.gdshader")
 const GRASS_SHADER := preload("res://shaders/grass.gdshader")
 const FOLIAGE_SHADER := preload("res://shaders/foliage.gdshader")
+const SNOW_OVERLAY := preload("res://shaders/snow_overlay.gdshader")
 const GROUND := "res://assets/textures/ground/"
 const FOLIAGE := "res://assets/textures/foliage/"
 const MODELS := "res://assets/models/env/"
 
-# 天空 HDR 里太阳的位置（tools 里量出来的）：u 是全景图横坐标，elev 是太阳高度角
-const SKY_DAY := {"file": "res://assets/sky/sky_day.hdr", "u": 0.595, "elev": 48.0}
-const SKY_DUSK := {"file": "res://assets/sky/sky_dusk.hdr", "u": 0.613, "elev": 4.7}
+# 每张地图的天空和光。sky：天空 HDR；u / elev：HDR 里太阳（月亮）的位置（tools 里量出来的）；
+# heading：把太阳转到哪个方向（999 = 不转）；light_elev：灯光的高度角（太阳贴地平线时抬高一点）
+const ENV := {
+	"island": {"sky": "sky_day", "u": 0.595, "elev": 48.0, "heading": 999.0, "light_elev": 48.0, "sun": Color(1.0, 0.95, 0.86), "energy": 1.25,
+		"ambient": 0.7, "exposure": 0.95, "white": 6.0, "glow": 0.5, "bloom": 0.03, "fog": Color(0.68, 0.76, 0.86), "fog_d": 0.00095,
+		"scatter": 0.12, "aerial": 0.45, "fog_sky": 0.1, "sat": 1.08, "contrast": 1.04},
+	"forest": {"sky": "sky_dusk", "u": 0.613, "elev": 4.7, "heading": -70.0, "light_elev": 17.0, "sun": Color(1.0, 0.72, 0.45), "energy": 1.55,
+		"ambient": 0.75, "exposure": 1.05, "white": 5.0, "glow": 0.7, "bloom": 0.08, "fog": Color(0.86, 0.66, 0.5), "fog_d": 0.006,
+		"scatter": 0.35, "aerial": 0.5, "fog_sky": 0.25, "vol": 0.012, "vol_albedo": Color(1.0, 0.85, 0.7), "sat": 1.12, "contrast": 1.06},
+	"deepforest": {"sky": "sky_night", "u": 0.600, "elev": 13.8, "heading": -40.0, "light_elev": 40.0, "sun": Color(0.6, 0.72, 1.0), "energy": 1.0,
+		"ambient": 0.75, "exposure": 1.3, "white": 4.0, "glow": 0.95, "bloom": 0.1, "fog": Color(0.1, 0.15, 0.26), "fog_d": 0.006,
+		"scatter": 0.2, "aerial": 0.3, "fog_sky": 0.3, "vol": 0.012, "vol_albedo": Color(0.6, 0.72, 1.0), "sat": 1.1, "contrast": 1.08},
+	"snow": {"sky": "sky_snow", "u": 0.62, "elev": 16.6, "heading": 999.0, "light_elev": 32.0, "sun": Color(0.95, 0.97, 1.0), "energy": 1.0,
+		"ambient": 0.95, "exposure": 0.85, "white": 6.0, "glow": 0.4, "bloom": 0.03, "fog": Color(0.82, 0.86, 0.92), "fog_d": 0.003,
+		"scatter": 0.1, "aerial": 0.6, "fog_sky": 0.4, "sat": 1.0, "contrast": 1.05},
+	"sea": {"sky": "sky_sea", "u": 0.600, "elev": 49.8, "heading": 999.0, "light_elev": 49.8, "sun": Color(1.0, 0.96, 0.88), "energy": 1.35,
+		"ambient": 0.75, "exposure": 0.95, "white": 6.0, "glow": 0.5, "bloom": 0.03, "fog": Color(0.7, 0.82, 0.92), "fog_d": 0.0007,
+		"scatter": 0.12, "aerial": 0.5, "fog_sky": 0.1, "sat": 1.12, "contrast": 1.04},
+}
 
 var island: Island
 var root: Node3D
 var chapter := 1
-var forest := false
+var forest := false                    # 森林类地图（四周环山）
+var biome := "island"                  # 地图 id，决定天空、地面、树
 var quality := 2
 var rng := RandomNumberGenerator.new()
 var colliders: StaticBody3D
@@ -45,13 +66,16 @@ var _birds: Array[Node3D] = []
 var _moths: Array[Node3D] = []
 var _bubbles: Array[MeshInstance3D] = []
 var _altar_flame: Node3D
+var _snowfall: GPUParticles3D
+var _ice_floes: Array[Node3D] = []
 
 
 func _init(p_island: Island, p_root: Node3D, p_chapter := 1) -> void:
 	island = p_island
 	root = p_root
 	chapter = p_chapter
-	forest = island.map_id == "forest"
+	biome = island.map_id
+	forest = island.style == "forest"
 	rng.seed = island.map_seed + 100
 	quality = Settings.quality
 	_patch.seed = island.map_seed + 11
@@ -72,18 +96,37 @@ func build() -> void:
 	_terrain()
 	_water()
 	_mountains()
+	if forest:
+		_grove()
 	_trees()
 	_props()
 	_grass()
-	if forest:
-		_dens()
-		_mud()
-		_grove()
-		_swamp_plants()
-	else:
-		_burrows()
-		_moon_flowers()
-		_reeds()
+	match biome:
+		"island":
+			_burrows()
+			_moon_flowers("flowers")
+			_reeds()
+		"forest":
+			_dens_for("den", 1.0, false)
+			_mud()
+			_swamp_plants()
+		"deepforest":
+			_dens_for("nest", 0.9, false)
+			_webs("nest")
+			_dens_for("roost", 1.2, false)
+			_moon_flowers("glade")
+			_blue_silver_grass()
+			_swamp_plants()
+		"snow":
+			_dens_for("snowden", 1.0, true)
+			_dens_for("icecave", 1.5, true)
+			_ice_crystals("icefield", 70, 1.0)
+			_ice_crystals("frostgrove", 50, 0.6)
+			_ice_floes_build()
+			_snowfall_build()
+		"sea":
+			_corals()
+			_beach()
 	_dock()
 	_boat()
 	_shop()
@@ -98,7 +141,7 @@ func apply_quality() -> void:
 	var q := Settings.quality
 	env.ssao_enabled = q >= 1
 	env.ssil_enabled = q >= 2
-	env.volumetric_fog_enabled = forest and q >= 2
+	env.volumetric_fog_enabled = (ENV[biome] as Dictionary).has("vol") and q >= 2
 	sun.directional_shadow_max_distance = [70.0, 120.0, 170.0][q]
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS if q == 0 else DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
 
@@ -110,9 +153,9 @@ func _density() -> float:
 # ------------------------------------------------------------------ 天空与光照
 
 func _environment() -> void:
-	var sky_info: Dictionary = SKY_DUSK if forest else SKY_DAY
+	var e: Dictionary = ENV[biome]
 	var pano := PanoramaSkyMaterial.new()
-	pano.panorama = load(sky_info["file"])
+	pano.panorama = load("res://assets/sky/%s.hdr" % e["sky"])
 	var sky := Sky.new()
 	sky.sky_material = pano
 	sky.radiance_size = Sky.RADIANCE_SIZE_256
@@ -131,14 +174,14 @@ func _environment() -> void:
 	env.ssil_radius = 4.0
 	env.adjustment_enabled = true
 
-	# 太阳方向：跟天空图里的太阳对上。森林的太阳贴着地平线，灯光抬高一点，不然全被山挡住
-	var dir := _sky_dir(float(sky_info["u"]), float(sky_info["elev"]))
+	# 太阳方向：跟天空图里的太阳对上。太阳贴着地平线时，灯光抬高一点，不然全被山挡住
+	var dir := _sky_dir(float(e["u"]), float(e["elev"]))
 	var heading := atan2(dir.x, -dir.z)
-	var want := heading if not forest else deg_to_rad(-70.0)
+	var want := heading if float(e["heading"]) > 900.0 else deg_to_rad(float(e["heading"]))
 	var rot := heading - want
 	dir = Basis(Vector3.UP, rot) * dir
 	env.sky_rotation = Vector3(0, rot, 0)
-	var light_elev := deg_to_rad(float(sky_info["elev"]) if not forest else 17.0)
+	var light_elev := deg_to_rad(float(e["light_elev"]))
 	var flat := Vector3(dir.x, 0, dir.z).normalized()
 	var light_dir := (flat * cos(light_elev) + Vector3.UP * sin(light_elev)).normalized()
 
@@ -149,43 +192,27 @@ func _environment() -> void:
 	sun.shadow_blur = 1.0
 	sun.directional_shadow_blend_splits = true
 	sun.directional_shadow_fade_start = 0.85
-
-	if forest:
-		sun.light_color = Color(1.0, 0.72, 0.45)
-		sun.light_energy = 1.55
+	sun.light_color = e["sun"]
+	sun.light_energy = e["energy"]
+	env.ambient_light_energy = e["ambient"]
+	env.tonemap_exposure = e["exposure"]
+	env.tonemap_white = e["white"]
+	env.glow_intensity = e["glow"]
+	env.glow_bloom = e["bloom"]
+	env.fog_light_color = e["fog"]
+	env.fog_density = e["fog_d"]
+	env.fog_sun_scatter = e["scatter"]
+	env.fog_aerial_perspective = e["aerial"]
+	env.fog_sky_affect = e["fog_sky"]
+	env.adjustment_saturation = e["sat"]
+	env.adjustment_contrast = e["contrast"]
+	if e.has("vol"):
 		sun.light_volumetric_fog_energy = 2.2
-		env.ambient_light_energy = 0.75
-		env.tonemap_exposure = 1.05
-		env.tonemap_white = 5.0
-		env.glow_intensity = 0.7
-		env.glow_bloom = 0.08
-		env.fog_light_color = Color(0.86, 0.66, 0.5)
-		env.fog_density = 0.006
-		env.fog_sun_scatter = 0.35
-		env.fog_aerial_perspective = 0.5
-		env.fog_sky_affect = 0.25
-		env.volumetric_fog_density = 0.012
-		env.volumetric_fog_albedo = Color(1.0, 0.85, 0.7)
+		env.volumetric_fog_density = e["vol"]
+		env.volumetric_fog_albedo = e["vol_albedo"]
 		env.volumetric_fog_anisotropy = 0.6
 		env.volumetric_fog_length = 80.0
 		env.volumetric_fog_ambient_inject = 0.35
-		env.adjustment_saturation = 1.12
-		env.adjustment_contrast = 1.06
-	else:
-		sun.light_color = Color(1.0, 0.95, 0.86)
-		sun.light_energy = 1.25
-		env.ambient_light_energy = 0.7
-		env.tonemap_exposure = 0.95
-		env.tonemap_white = 6.0
-		env.glow_intensity = 0.5
-		env.glow_bloom = 0.03
-		env.fog_light_color = Color(0.68, 0.76, 0.86)
-		env.fog_density = 0.00095
-		env.fog_sun_scatter = 0.12
-		env.fog_aerial_perspective = 0.45
-		env.fog_sky_affect = 0.1
-		env.adjustment_saturation = 1.08
-		env.adjustment_contrast = 1.04
 	var we := WorldEnvironment.new()
 	we.environment = env
 	root.add_child(we)
@@ -286,50 +313,86 @@ static func _one(i: int) -> Color:
 	return Color(0, 0, 0, 1)
 
 
-## 地形每个点四层贴图的权重
-## 岛：0 草 / 1 土 / 2 石 / 3 沙      森林：0 落叶 / 1 泥 / 2 石 / 3 苔藓
+## 地形每个点四层贴图的权重（四层是什么见 _ground_material）
 func _weights(x: float, z: float, h: float, slope: float) -> Color:
 	var n := _patch.get_noise_2d(x, z) * 0.5 + 0.5
 	var p2 := Vector2(x, z)
 	var w := _one(0)
 	var pd := path_d(x, z)
-	if forest:
-		w = w.lerp(_one(3), smoothstep(0.56, 0.74, n) * 0.85)
-		for p in island.ponds:
-			var d := p2.distance_to(p["center"])
-			w = w.lerp(_one(1), smoothstep(p["radius"] + 7.0, p["radius"] + 1.0, d) * 0.9)
-			w = w.lerp(_one(3), smoothstep(p["radius"] + 9.0, p["radius"] + 6.0, d) * (1.0 - smoothstep(p["radius"] + 6.0, p["radius"] + 3.0, d)) * 0.7)
-		for hb in island.habitats:
-			var d := p2.distance_to(hb["center"])
-			var k := smoothstep(hb["radius"] + 5.0, hb["radius"] - 3.0, d)
-			if k <= 0.0:
-				continue
-			match hb["type"]:
-				"mud":
-					w = w.lerp(_one(1), k)
-				"grove":
-					w = w.lerp(_one(3), k * 0.75)
-				"den":
-					w = w.lerp(_one(2), k * 0.35 * n)
+	match biome:
+		"forest", "deepforest":
+			# 0 落叶 / 1 泥 / 2 石 / 3 苔藓
+			w = w.lerp(_one(3), smoothstep(0.56, 0.74, n) * 0.85)
+			for p in island.ponds:
+				var d := p2.distance_to(p["center"])
+				w = w.lerp(_one(1), smoothstep(p["radius"] + 7.0, p["radius"] + 1.0, d) * 0.9)
+				w = w.lerp(_one(3), smoothstep(p["radius"] + 9.0, p["radius"] + 6.0, d) * (1.0 - smoothstep(p["radius"] + 6.0, p["radius"] + 3.0, d)) * 0.7)
+			for hb in island.habitats:
+				var d := p2.distance_to(hb["center"])
+				var k := smoothstep(hb["radius"] + 5.0, hb["radius"] - 3.0, d)
+				if k <= 0.0:
+					continue
+				match hb["type"]:
+					"mud":
+						w = w.lerp(_one(1), k)
+					"grove", "clearing", "glade":
+						w = w.lerp(_one(3), k * 0.75)
+					"roost":
+						w = w.lerp(_one(2), k * 0.4 * n)
+					"den", "nest":
+						w = w.lerp(_one(2), k * 0.35 * n)
+						for b in hb["points"]:
+							w = w.lerp(_one(1), smoothstep(4.5, 1.5, p2.distance_to(Vector2(b.x, b.z))) * 0.8)
+			w = w.lerp(_one(1), smoothstep(2.4, 0.9, pd) * 0.75)
+			w = w.lerp(_one(1), 1.0 - smoothstep(0.4, 1.4, h))
+		"snow":
+			# 0 雪 / 1 岩石 / 2 冻土 / 3 冰
+			w = w.lerp(_one(2), smoothstep(2.2, 0.8, pd) * 0.7)
+			w = w.lerp(_one(3), 1.0 - smoothstep(0.3, 1.2, h + (n - 0.5) * 0.6))
+			for hb in island.habitats:
+				var d := p2.distance_to(hb["center"])
+				var k := smoothstep(hb["radius"] + 4.0, hb["radius"] - 3.0, d)
+				if k <= 0.0:
+					continue
+				match hb["type"]:
+					"icefield":
+						w = w.lerp(_one(3), k * clampf(0.5 + n, 0.0, 1.0))
+					"snowden", "icecave":
+						for b in hb["points"]:
+							w = w.lerp(_one(1), smoothstep(4.5, 1.8, p2.distance_to(Vector2(b.x, b.z))) * 0.8)
+			w = w.lerp(_one(1), smoothstep(12.0, 18.0, h) * 0.4 * n)
+		"sea":
+			# 0 沙 / 1 草 / 2 石 / 3 土
+			w = w.lerp(_one(1), smoothstep(2.0, 3.2, h + (n - 0.5) * 1.6))
+			for hb in island.habitats:
+				var d := p2.distance_to(hb["center"])
+				var k := smoothstep(hb["radius"] + 5.0, hb["radius"] - 3.0, d)
+				if k <= 0.0:
+					continue
+				match hb["type"]:
+					"beach":
+						w = w.lerp(_one(0), k)
+					"cliff":
+						w = w.lerp(_one(2), k * 0.5 * n)
+			w = w.lerp(_one(3), smoothstep(2.2, 0.8, pd) * 0.8 * smoothstep(2.0, 3.0, h))
+		_:
+			# 岛：0 草 / 1 土 / 2 石 / 3 沙
+			w = w.lerp(_one(1), smoothstep(0.64, 0.82, n) * 0.6)
+			w = w.lerp(_one(3), 1.0 - smoothstep(0.55, 1.5, h + (n - 0.5) * 0.8))
+			w = w.lerp(Color(0, 0.4, 0, 0.6), smoothstep(-0.4, -1.8, h))
+			for hb in island.habitats:
+				if hb["type"] == "burrow":
 					for b in hb["points"]:
-						w = w.lerp(_one(1), smoothstep(4.5, 1.5, p2.distance_to(Vector2(b.x, b.z))) * 0.8)
-		w = w.lerp(_one(1), smoothstep(2.4, 0.9, pd) * 0.75)
-		w = w.lerp(_one(1), 1.0 - smoothstep(0.4, 1.4, h))
-	else:
-		w = w.lerp(_one(1), smoothstep(0.64, 0.82, n) * 0.6)
-		w = w.lerp(_one(3), 1.0 - smoothstep(0.55, 1.5, h + (n - 0.5) * 0.8))
-		w = w.lerp(Color(0, 0.4, 0, 0.6), smoothstep(-0.4, -1.8, h))
-		for hb in island.habitats:
-			if hb["type"] == "burrow":
-				for b in hb["points"]:
-					w = w.lerp(_one(1), smoothstep(3.6, 1.3, p2.distance_to(Vector2(b.x, b.z))))
-		w = w.lerp(_one(1), smoothstep(2.2, 0.8, pd) * 0.85)
+						w = w.lerp(_one(1), smoothstep(3.6, 1.3, p2.distance_to(Vector2(b.x, b.z))))
+			w = w.lerp(_one(1), smoothstep(2.2, 0.8, pd) * 0.85)
+			w = w.lerp(_one(2), smoothstep(9.0, 15.0, h) * 0.45 * n)
+	if not forest:
 		var altar := Vector2(island.altar_pos.x, island.altar_pos.z)
-		w = w.lerp(_one(2), smoothstep(7.5, 5.0, p2.distance_to(altar)) * 0.6)
-		w = w.lerp(_one(2), smoothstep(9.0, 15.0, h) * 0.45 * n)
+		w = w.lerp(_one(2 if biome != "snow" else 1), smoothstep(7.5, 5.0, p2.distance_to(altar)) * 0.6)
 	var shop := Vector2(island.shop_pos.x, island.shop_pos.z)
-	w = w.lerp(_one(1), smoothstep(7.0, 4.0, p2.distance_to(shop)) * 0.8)
-	w = w.lerp(_one(2), smoothstep(0.5, 0.95, slope))
+	var dirt := 2 if biome == "snow" else (3 if biome == "sea" else 1)
+	w = w.lerp(_one(dirt), smoothstep(7.0, 4.0, p2.distance_to(shop)) * 0.8)
+	w = w.lerp(_one(2 if biome != "snow" else 1), smoothstep(0.5, 0.95, slope))
 	return w
 
 
@@ -346,10 +409,27 @@ func _terrain_material(layers: Array, tints: Array, scales: Vector4, roughs: Vec
 
 
 func _ground_material() -> ShaderMaterial:
-	if forest:
-		return _terrain_material(["forest", "mud", "rock", "moss"],
-			[Color(0.95, 0.88, 0.8), Color(0.8, 0.74, 0.66), Color(0.95, 0.93, 0.88), Color(0.8, 0.86, 0.62)],
-			Vector4(0.3, 0.26, 0.16, 0.22), Vector4(0.92, 0.38, 0.8, 0.9))
+	match biome:
+		"forest":
+			return _terrain_material(["forest", "mud", "rock", "moss"],
+				[Color(0.95, 0.88, 0.8), Color(0.8, 0.74, 0.66), Color(0.95, 0.93, 0.88), Color(0.8, 0.86, 0.62)],
+				Vector4(0.3, 0.26, 0.16, 0.22), Vector4(0.92, 0.38, 0.8, 0.9))
+		"deepforest":
+			return _terrain_material(["forest", "mud", "rock", "moss"],
+				[Color(0.5, 0.55, 0.62), Color(0.55, 0.55, 0.6), Color(0.75, 0.78, 0.85), Color(0.45, 0.68, 0.62)],
+				Vector4(0.3, 0.26, 0.16, 0.22), Vector4(0.92, 0.35, 0.8, 0.9))
+		"snow":
+			var sm := _terrain_material(["snow", "rock", "dirt", "ice"],
+				[Color(1.0, 1.0, 1.0), Color(0.82, 0.84, 0.9), Color(0.78, 0.76, 0.76), Color(0.85, 0.95, 1.05)],
+				Vector4(0.2, 0.16, 0.24, 0.12), Vector4(0.75, 0.8, 0.9, 0.12))
+			sm.set_shader_parameter("wet_level", -3.0)
+			return sm
+		"sea":
+			var sm := _terrain_material(["sand", "grass", "rock", "dirt"],
+				[Color(1.08, 1.02, 0.9), Color(0.95, 1.05, 0.8), Color(1.0, 0.98, 0.95), Color(0.95, 0.9, 0.8)],
+				Vector4(0.2, 0.3, 0.16, 0.24), Vector4(0.9, 0.95, 0.8, 0.92))
+			sm.set_shader_parameter("wet_level", 0.9)
+			return sm
 	return _terrain_material(["grass", "dirt", "rock", "sand"],
 		[Color(0.95, 1.0, 0.9), Color(0.95, 0.92, 0.85), Color(1.05, 1.03, 1.0), Color(1.0, 0.97, 0.92)],
 		Vector4(0.3, 0.24, 0.16, 0.22), Vector4(0.95, 0.92, 0.8, 0.9))
@@ -439,13 +519,31 @@ func _water() -> void:
 	fn.fractal_octaves = 3
 	nt.noise = fn
 	sm.set_shader_parameter("ripple_tex", nt)
-	if forest:
-		sm.set_shader_parameter("shallow_color", Color(0.36, 0.42, 0.26))
-		sm.set_shader_parameter("deep_color", Color(0.07, 0.12, 0.08))
-		sm.set_shader_parameter("foam_color", Color(0.75, 0.72, 0.6))
-		sm.set_shader_parameter("depth_fade", 2.5)
-		sm.set_shader_parameter("murk", 0.8)
-		sm.set_shader_parameter("foam_width", 0.35)
+	match biome:
+		"forest":
+			sm.set_shader_parameter("shallow_color", Color(0.36, 0.42, 0.26))
+			sm.set_shader_parameter("deep_color", Color(0.07, 0.12, 0.08))
+			sm.set_shader_parameter("foam_color", Color(0.75, 0.72, 0.6))
+			sm.set_shader_parameter("depth_fade", 2.5)
+			sm.set_shader_parameter("murk", 0.8)
+			sm.set_shader_parameter("foam_width", 0.35)
+		"deepforest":
+			sm.set_shader_parameter("shallow_color", Color(0.14, 0.3, 0.3))
+			sm.set_shader_parameter("deep_color", Color(0.02, 0.06, 0.1))
+			sm.set_shader_parameter("foam_color", Color(0.5, 0.75, 0.8))
+			sm.set_shader_parameter("depth_fade", 2.5)
+			sm.set_shader_parameter("murk", 0.7)
+			sm.set_shader_parameter("foam_width", 0.3)
+		"snow":
+			sm.set_shader_parameter("shallow_color", Color(0.55, 0.78, 0.85))
+			sm.set_shader_parameter("deep_color", Color(0.08, 0.22, 0.34))
+			sm.set_shader_parameter("foam_color", Color(0.95, 0.98, 1.0))
+			sm.set_shader_parameter("foam_width", 1.0)
+		"sea":
+			sm.set_shader_parameter("shallow_color", Color(0.2, 0.85, 0.8))
+			sm.set_shader_parameter("deep_color", Color(0.02, 0.2, 0.42))
+			sm.set_shader_parameter("depth_fade", 8.0)
+			sm.set_shader_parameter("foam_width", 1.0)
 	var mi := MeshInstance3D.new()
 	mi.name = "Water"
 	mi.mesh = pm
@@ -459,6 +557,8 @@ func _water() -> void:
 	fp.size = Vector2(2400, 2400)
 	floor_mi.mesh = fp
 	floor_mi.material_override = _surface("mud" if forest else "sand", Color(0.55, 0.55, 0.5), 0.1, 0.9)
+	if biome == "sea":
+		floor_mi.position.y = -24.0
 	floor_mi.position.y = -13.0
 	floor_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	root.add_child(floor_mi)
@@ -472,11 +572,11 @@ func _mountains() -> void:
 	nz.fractal_type = FastNoiseLite.FRACTAL_RIDGED
 	nz.fractal_octaves = 5
 	var A := 256
-	var r0 := 290.0 if forest else 340.0
+	var r0 := 290.0 if forest else (560.0 if biome == "sea" else 340.0)
 	var radii: Array[float] = []
 	for i in 30:
 		radii.append(r0 + pow(i / 29.0, 1.5) * 1000.0)
-	var peak := 150.0 if forest else 220.0
+	var peak: float = {"island": 220.0, "forest": 150.0, "deepforest": 170.0, "snow": 280.0, "sea": 70.0}[biome]
 	var verts := PackedVector3Array()
 	var cols := PackedColorArray()
 	var grid := []
@@ -532,7 +632,16 @@ func _mountains() -> void:
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	var sm: ShaderMaterial
-	if forest:
+	if biome == "deepforest":
+		sm = _terrain_material(["moss", "forest", "rock", "mud"],
+			[Color(0.25, 0.38, 0.4), Color(0.3, 0.35, 0.42), Color(0.55, 0.6, 0.7), Color(0.3, 0.32, 0.35)],
+			Vector4(0.05, 0.05, 0.03, 0.05), Vector4(0.95, 0.95, 0.85, 0.9))
+	elif biome == "snow":
+		sm = _terrain_material(["snow", "snow", "rock", "ice"],
+			[Color(0.95, 0.97, 1.0), Color(0.9, 0.93, 0.98), Color(0.7, 0.74, 0.8), Color(0.8, 0.9, 1.0)],
+			Vector4(0.05, 0.05, 0.03, 0.05), Vector4(0.8, 0.8, 0.85, 0.2))
+		sm.set_shader_parameter("snow_height", 40.0)
+	elif forest:
 		sm = _terrain_material(["forest", "moss", "rock", "mud"],
 			[Color(0.75, 0.5, 0.32), Color(0.55, 0.45, 0.3), Color(0.8, 0.78, 0.75), Color(0.6, 0.55, 0.45)],
 			Vector4(0.05, 0.05, 0.03, 0.05), Vector4(0.95, 0.95, 0.85, 0.9))
@@ -553,7 +662,16 @@ func _mountains() -> void:
 
 # ------------------------------------------------------------------ 批量绘制
 
-func _multimesh(mesh: Mesh, xforms: Array, colors: Array = [], shadows := true, material: Material = null) -> MultiMeshInstance3D:
+## 盖在东西上面的一层雪（极北之地）
+func _snow_overlay() -> ShaderMaterial:
+	if not _tex_cache.has("snow_overlay"):
+		var m := ShaderMaterial.new()
+		m.shader = SNOW_OVERLAY
+		_tex_cache["snow_overlay"] = m
+	return _tex_cache["snow_overlay"]
+
+
+func _multimesh(mesh: Mesh, xforms: Array, colors: Array = [], shadows := true, material: Material = null, overlay: Material = null) -> MultiMeshInstance3D:
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.use_colors = colors.size() > 0
@@ -567,6 +685,8 @@ func _multimesh(mesh: Mesh, xforms: Array, colors: Array = [], shadows := true, 
 	mmi.multimesh = mm
 	if material:
 		mmi.material_override = material
+	if overlay:
+		mmi.material_overlay = overlay
 	if not shadows:
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	root.add_child(mmi)
@@ -574,7 +694,7 @@ func _multimesh(mesh: Mesh, xforms: Array, colors: Array = [], shadows := true, 
 
 
 ## 按区块分组画，每块单独做视锥剔除；vis_end > 0 时远处整块隐藏
-func _scatter(mesh: Mesh, xforms: Array, colors: Array = [], vis_end := 0.0, shadows := true, chunk := 48.0, material: Material = null) -> void:
+func _scatter(mesh: Mesh, xforms: Array, colors: Array = [], vis_end := 0.0, shadows := true, chunk := 48.0, material: Material = null, overlay: Material = null) -> void:
 	if xforms.is_empty():
 		return
 	var buckets := {}
@@ -587,7 +707,7 @@ func _scatter(mesh: Mesh, xforms: Array, colors: Array = [], vis_end := 0.0, sha
 		if colors.size() > 0:
 			buckets[key][1].append(colors[i])
 	for key in buckets:
-		var mmi := _multimesh(mesh, buckets[key][0], buckets[key][1], shadows, material)
+		var mmi := _multimesh(mesh, buckets[key][0], buckets[key][1], shadows, material, overlay)
 		if vis_end > 0.0:
 			mmi.visibility_range_end = vis_end
 			mmi.visibility_range_end_margin = vis_end * 0.12
@@ -601,7 +721,7 @@ func _free(x: float, z: float, margin: float) -> bool:
 	var p := Vector2(x, z)
 	for hb in island.habitats:
 		var r: float = hb["radius"]
-		if hb["type"] == "grove":
+		if hb["type"] in ["grove", "clearing"]:
 			r -= 2.0
 		if p.distance_to(hb["center"]) < r + margin:
 			return false
@@ -705,11 +825,12 @@ func _tube(st: SurfaceTool, cnt: Array, pts: Array, radii: Array, sides: int, sw
 
 
 ## 一张树叶贴片：底边中点在 base，沿 up_dir 长 h，宽 w。法线指向 nc 外侧（整棵树像一团蓬松的球）
-func _card(st: SurfaceTool, cnt: Array, base: Vector3, up_dir: Vector3, right: Vector3, w: float, h: float, nc: Vector3, sway: float, col: Color) -> void:
+## v0 / v1：贴图底边和顶边的 V 坐标（棕榈叶分两段弯折时用半张贴图）
+func _card(st: SurfaceTool, cnt: Array, base: Vector3, up_dir: Vector3, right: Vector3, w: float, h: float, nc: Vector3, sway: float, col: Color, v0 := 1.0, v1 := 0.0) -> void:
 	var r := right * (w * 0.5)
 	var u := up_dir * h
 	var pts := [base - r, base + r, base + r + u, base - r + u]
-	var uvs := [Vector2(0, 1), Vector2(1, 1), Vector2(1, 0), Vector2(0, 0)]
+	var uvs := [Vector2(0, v0), Vector2(1, v0), Vector2(1, v1), Vector2(0, v1)]
 	var start: int = cnt[0]
 	for i in 4:
 		var p: Vector3 = pts[i]
@@ -787,14 +908,15 @@ func _broad_tree(r: RandomNumberGenerator, H: float, spread: float, bark: Materi
 	for i in 14:
 		var d := Vector3(r.randf_range(-1, 1), r.randf_range(-0.5, 1), r.randf_range(-1, 1)).normalized() * R * r.randf_range(0.45, 0.95)
 		clusters.append(crown + Vector3(d.x, d.y * 0.8, d.z))
-	for c in clusters:
-		_cluster(sl, cl, r, c, crown, R, R * r.randf_range(0.62, 0.85))
 	var mesh := ArrayMesh.new()
 	sb.generate_tangents()
 	sb.commit(mesh)
-	sl.commit(mesh)
 	mesh.surface_set_material(0, bark)
-	mesh.surface_set_material(1, leaves)
+	if leaves:
+		for c in clusters:
+			_cluster(sl, cl, r, c, crown, R, R * r.randf_range(0.62, 0.85))
+		sl.commit(mesh)
+		mesh.surface_set_material(1, leaves)
 	return {"mesh": mesh, "radius": r0}
 
 
@@ -845,6 +967,49 @@ func _pine_tree(r: RandomNumberGenerator, H: float, bark: Material, needles: Mat
 	return {"mesh": mesh, "radius": r0}
 
 
+## 椰子树：弯弯的树干，顶上一圈往下垂的大叶子（每片叶子两段，先往上再往下弯）
+func _palm_tree(r: RandomNumberGenerator, H: float, bark: Material, fronds: Material) -> Dictionary:
+	var sb := SurfaceTool.new()
+	sb.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var sl := SurfaceTool.new()
+	sl.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var cb := [0]
+	var cl := [0]
+	var lean_dir := Vector3(r.randf_range(-1, 1), 0, r.randf_range(-1, 1)).normalized()
+	var lean := r.randf_range(0.8, 2.6)
+	var pts := []
+	var rad := []
+	for i in 9:
+		var t := i / 8.0
+		pts.append(Vector3(0, t * H - 0.3, 0) + lean_dir * lean * t * t)
+		rad.append(lerpf(0.26, 0.15, t) * (1.0 + 0.4 * pow(1.0 - t, 8.0)))
+	_tube(sb, cb, pts, rad, 8, 0.0, 0.5)
+	var top: Vector3 = pts[8]
+	var nc := top - Vector3(0, 2.0, 0)
+	var n := r.randi_range(10, 13)
+	for k in n:
+		var az := TAU * k / n + r.randf_range(-0.2, 0.2)
+		var out := Vector3(cos(az), 0, sin(az))
+		var side := out.cross(Vector3.UP).normalized()
+		var L := r.randf_range(3.2, 4.4)
+		var el1 := deg_to_rad(r.randf_range(15.0, 40.0))
+		var d1 := (out * cos(el1) + Vector3.UP * sin(el1)).normalized()
+		var p1 := top + d1 * L * 0.5
+		var el2 := deg_to_rad(r.randf_range(-45.0, -20.0))
+		var d2 := (out * cos(el2) + Vector3.UP * sin(el2)).normalized()
+		var sh := r.randf_range(0.85, 1.05)
+		var col := Color(sh, sh, sh)
+		_card(sl, cl, top, d1, side.rotated(d1, r.randf_range(-0.3, 0.3)), 1.5, L * 0.5, nc, 0.8, col, 1.0, 0.5)
+		_card(sl, cl, p1, d2, side.rotated(d2, r.randf_range(-0.3, 0.3)), 1.5, L * 0.5, nc, 1.0, col, 0.5, 0.0)
+	var mesh := ArrayMesh.new()
+	sb.generate_tangents()
+	sb.commit(mesh)
+	sl.commit(mesh)
+	mesh.surface_set_material(0, bark)
+	mesh.surface_set_material(1, fronds)
+	return {"mesh": mesh, "radius": 0.26}
+
+
 func _bark(tint: Color) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
 	m.albedo_texture = _tex("bark_albedo")
@@ -866,37 +1031,85 @@ func _leaves(tex: String, tint: Color, backlight: Color) -> ShaderMaterial:
 	return m
 
 
+## 每张地图有哪几种树：[{mesh, radius, kind}]
+func _tree_kinds(r: RandomNumberGenerator) -> Array:
+	var kinds: Array = []
+	match biome:
+		"forest":
+			var bark := _bark(Color(0.72, 0.62, 0.55))
+			var autumn := _leaves("leaf_autumn", Color(1.0, 0.92, 0.85), Color(0.7, 0.35, 0.1))
+			var dark := _leaves("leaf_dark", Color(0.95, 0.9, 0.7), Color(0.4, 0.4, 0.12))
+			var gold := _leaves("leaf_green", Color(1.15, 0.95, 0.45), Color(0.6, 0.45, 0.1))
+			var pine := _leaves("leaf_pine", Color(0.8, 0.85, 0.7), Color(0.25, 0.35, 0.12))
+			for i in 3:
+				kinds.append(_broad_tree(r, r.randf_range(14, 18), 1.0, bark, autumn).merged({"kind": "broad"}))
+			for i in 2:
+				kinds.append(_broad_tree(r, r.randf_range(13, 17), 0.95, bark, dark).merged({"kind": "broad"}))
+			kinds.append(_broad_tree(r, r.randf_range(12, 15), 1.05, bark, gold).merged({"kind": "broad"}))
+			for i in 2:
+				kinds.append(_pine_tree(r, r.randf_range(16, 21), _bark(Color(0.6, 0.5, 0.45)), pine).merged({"kind": "pine"}))
+		"deepforest":
+			var bark := _bark(Color(0.42, 0.4, 0.46))
+			var dark := _leaves("leaf_dark", Color(0.55, 0.8, 0.85), Color(0.1, 0.3, 0.45))
+			var blue := _leaves("leaf_green", Color(0.45, 0.7, 0.9), Color(0.1, 0.35, 0.6))
+			var pine := _leaves("leaf_pine", Color(0.55, 0.72, 0.75), Color(0.1, 0.2, 0.28))
+			for i in 3:
+				kinds.append(_broad_tree(r, r.randf_range(18, 25), 1.1, bark, dark).merged({"kind": "broad"}))
+			for i in 2:
+				kinds.append(_broad_tree(r, r.randf_range(16, 22), 1.0, bark, blue).merged({"kind": "broad"}))
+			for i in 2:
+				kinds.append(_pine_tree(r, r.randf_range(20, 27), bark, pine).merged({"kind": "pine"}))
+		"snow":
+			var bark := _bark(Color(0.6, 0.55, 0.52))
+			var snowpine := _leaves("leaf_pine_snow", Color(0.95, 1.0, 1.0), Color(0.2, 0.25, 0.3))
+			for i in 4:
+				kinds.append(_pine_tree(r, r.randf_range(11, 19), bark, snowpine).merged({"kind": "pine"}))
+			for i in 2:
+				kinds.append(_broad_tree(r, r.randf_range(7, 10), 0.9, _bark(Color(0.55, 0.52, 0.5)), null).merged({"kind": "dead"}))
+		"sea":
+			var bark := _bark(Color(0.9, 0.78, 0.62))
+			var frond := _leaves("palm_frond", Color(1.0, 1.02, 0.95), Color(0.4, 0.5, 0.15))
+			for i in 4:
+				kinds.append(_palm_tree(r, r.randf_range(7, 11), bark, frond).merged({"kind": "palm"}))
+			var green := _leaves("leaf_green", Color(1.05, 1.05, 0.95), Color(0.45, 0.55, 0.15))
+			for i in 2:
+				kinds.append(_broad_tree(r, r.randf_range(8, 11), 1.1, _bark(Color(0.85, 0.78, 0.72)), green).merged({"kind": "broad"}))
+		_:
+			var bark := _bark(Color(0.85, 0.78, 0.72))
+			var green := _leaves("leaf_green", Color(1.0, 1.0, 1.0), Color(0.45, 0.55, 0.15))
+			var dark := _leaves("leaf_dark", Color(1.05, 1.08, 1.0), Color(0.3, 0.4, 0.12))
+			var pine := _leaves("leaf_pine", Color(1.0, 1.0, 1.0), Color(0.25, 0.35, 0.12))
+			for i in 2:
+				kinds.append(_broad_tree(r, r.randf_range(8, 11), 1.0, bark, green).merged({"kind": "broad"}))
+			kinds.append(_broad_tree(r, r.randf_range(9, 12), 1.1, bark, dark).merged({"kind": "broad"}))
+			for i in 3:
+				kinds.append(_pine_tree(r, r.randf_range(11, 16), _bark(Color(0.9, 0.8, 0.72)), pine).merged({"kind": "pine"}))
+	return kinds
+
+
+## 这个位置长哪种树
+func _tree_kind_at(r: RandomNumberGenerator, h: float) -> String:
+	match biome:
+		"forest":
+			return "pine" if r.randf() < 0.25 else "broad"
+		"deepforest":
+			return "pine" if r.randf() < 0.3 else "broad"
+		"snow":
+			return "dead" if r.randf() < 0.15 else "pine"
+		"sea":
+			return "palm" if h < 5.5 or r.randf() < 0.5 else "broad"
+	return "pine" if r.randf() < clampf(0.35 + (h - 5.0) * 0.08, 0.2, 0.85) else "broad"
+
+
 func _trees() -> void:
 	var r := RandomNumberGenerator.new()
 	r.seed = island.map_seed + 300
-	var kinds: Array = []    # {mesh, radius, pine}
-	if forest:
-		var bark := _bark(Color(0.72, 0.62, 0.55))
-		var autumn := _leaves("leaf_autumn", Color(1.0, 0.92, 0.85), Color(0.7, 0.35, 0.1))
-		var dark := _leaves("leaf_dark", Color(0.95, 0.9, 0.7), Color(0.4, 0.4, 0.12))
-		var gold := _leaves("leaf_green", Color(1.15, 0.95, 0.45), Color(0.6, 0.45, 0.1))
-		var pine := _leaves("leaf_pine", Color(0.8, 0.85, 0.7), Color(0.25, 0.35, 0.12))
-		for i in 3:
-			kinds.append(_broad_tree(r, r.randf_range(14, 18), 1.0, bark, autumn).merged({"pine": false}))
-		for i in 2:
-			kinds.append(_broad_tree(r, r.randf_range(13, 17), 0.95, bark, dark).merged({"pine": false}))
-		kinds.append(_broad_tree(r, r.randf_range(12, 15), 1.05, bark, gold).merged({"pine": false}))
-		for i in 2:
-			kinds.append(_pine_tree(r, r.randf_range(16, 21), _bark(Color(0.6, 0.5, 0.45)), pine).merged({"pine": true}))
-	else:
-		var bark := _bark(Color(0.85, 0.78, 0.72))
-		var green := _leaves("leaf_green", Color(1.0, 1.0, 1.0), Color(0.45, 0.55, 0.15))
-		var dark := _leaves("leaf_dark", Color(1.05, 1.08, 1.0), Color(0.3, 0.4, 0.12))
-		var pine := _leaves("leaf_pine", Color(1.0, 1.0, 1.0), Color(0.25, 0.35, 0.12))
-		for i in 2:
-			kinds.append(_broad_tree(r, r.randf_range(8, 11), 1.0, bark, green).merged({"pine": false}))
-		kinds.append(_broad_tree(r, r.randf_range(9, 12), 1.1, bark, dark).merged({"pine": false}))
-		for i in 3:
-			kinds.append(_pine_tree(r, r.randf_range(11, 16), _bark(Color(0.9, 0.8, 0.72)), pine).merged({"pine": true}))
+	var kinds := _tree_kinds(r)
 	var xforms := []
 	for k in kinds:
 		xforms.append([])
-	var target := 700 if forest else 240
+	var target: int = {"island": 240, "forest": 700, "deepforest": 850, "snow": 380, "sea": 230}[biome]
+	var min_h := 0.9 if biome == "sea" else 1.2
 	var tree_noise := FastNoiseLite.new()
 	tree_noise.seed = island.map_seed + 301
 	tree_noise.frequency = 0.02
@@ -907,7 +1120,7 @@ func _trees() -> void:
 		var x := r.randf_range(-158, 158)
 		var z := r.randf_range(-158, 158)
 		var h := island.height_at(x, z)
-		if h < 1.2 or island.slope_at(x, z) > 0.85 or not _free(x, z, 2.5):
+		if h < min_h or island.slope_at(x, z) > 0.85 or not _free(x, z, 2.5):
 			continue
 		# 树成片长：噪声低的地方是空地
 		var dens := tree_noise.get_noise_2d(x, z) * 0.5 + 0.5
@@ -915,11 +1128,13 @@ func _trees() -> void:
 			continue
 		if _near_trunk(x, z, 2.2 if forest else 3.0):
 			continue
-		var want_pine := r.randf() < (0.25 if forest else clampf(0.35 + (h - 5.0) * 0.08, 0.2, 0.85))
+		var want := _tree_kind_at(r, h)
 		var choices := []
 		for i in kinds.size():
-			if bool(kinds[i]["pine"]) == want_pine:
+			if str(kinds[i]["kind"]) == want:
 				choices.append(i)
+		if choices.is_empty():
+			continue
 		var ki: int = choices[r.randi() % choices.size()]
 		var s := r.randf_range(0.8, 1.25)
 		var b := Basis(Vector3.UP, r.randf() * TAU).scaled(Vector3(s, s * r.randf_range(0.92, 1.08), s))
@@ -964,7 +1179,7 @@ func _collect(n: Node, parent_xf: Transform3D, out: Array) -> void:
 
 
 ## 在地图上撒一种模型。where(rng) 返回位置（Vector3.INF 表示这次不放）
-func _scatter_prop(name: String, count: int, where: Callable, smin: float, smax: float, vis_end := 0.0, shadows := true, collide := 0.0, sink := 0.05) -> void:
+func _scatter_prop(name: String, count: int, where: Callable, smin: float, smax: float, vis_end := 0.0, shadows := true, collide := 0.0, sink := 0.05, overlay: Material = null) -> void:
 	var variants := _prop(name)
 	if variants.is_empty():
 		return
@@ -997,7 +1212,7 @@ func _scatter_prop(name: String, count: int, where: Callable, smin: float, smax:
 				_add_collider(sh, Transform3D(Basis(), p + Vector3(0, size.y * 0.5 - foot * 0.35, 0)))
 		placed += 1
 	for i in variants.size():
-		_scatter(variants[i]["mesh"], per[i], [], vis_end, shadows, 40.0)
+		_scatter(variants[i]["mesh"], per[i], [], vis_end, shadows, 40.0, null, overlay)
 
 
 ## 常用的放置规则
@@ -1044,36 +1259,65 @@ func _spot_in(center: Vector2, radius: float, min_h := 0.6) -> Callable:
 
 func _props() -> void:
 	var dn := _density()
-	if forest:
-		_scatter_prop("rock_moss_set_01", 70, _spot_land(0.5, 1.2, 0.5), 0.6, 2.2, 0.0, true, 0.8)
-		_scatter_prop("rock_moss_set_02", 70, _spot_land(0.5, 1.2, 0.5), 0.6, 2.2, 0.0, true, 0.8)
-		_scatter_prop("boulder_01", 20, _spot_land(1.0, 1.0, 2.0), 2.0, 4.0, 0.0, true, 0.9)
-		_scatter_prop("fern_02", int(700 * dn), _spot_under_trees(6.0), 1.0, 1.8, 55.0, false)
-		_scatter_prop("shrub_02", int(140 * dn), _spot_under_trees(7.0), 0.9, 1.5, 90.0, true)
-		_scatter_prop("nettle_plant", int(400 * dn), _spot_under_trees(8.0), 2.5, 4.5, 45.0, false)
-		_scatter_prop("shrub_sorrel_01", int(500 * dn), _spot_land(0.8, 0.8, 0.0, 0.5), 4.0, 7.0, 35.0, false)
-		_scatter_prop("tree_stump_01", 28, _spot_land(1.0, 0.7, 1.0), 1.0, 1.6, 0.0, true, 0.8)
-		_scatter_prop("dead_tree_trunk", 14, _spot_land(1.0, 0.5, 2.0, 2.5), 1.3, 2.0, 0.0, true)
-		_scatter_prop("dead_tree_trunk_02", 12, _spot_land(1.0, 0.5, 2.0, 2.5), 1.0, 1.5, 0.0, true)
-	else:
-		_scatter_prop("rock_moss_set_01", 45, _spot_land(-0.5, 1.2, 0.5), 0.6, 2.0, 0.0, true, 0.8)
-		_scatter_prop("rock_moss_set_02", 45, _spot_land(-0.5, 1.2, 0.5), 0.6, 2.0, 0.0, true, 0.8)
-		var hill := func(r: RandomNumberGenerator) -> Vector3:
-			var p: Vector3 = _spot_land(3.0, 1.2, 1.5).call(r)
-			return p if p != Vector3.INF and Vector2(p.x, p.z).distance_to(island.hill) < 45.0 else Vector3.INF
-		_scatter_prop("boulder_01", 14, hill, 2.0, 3.6, 0.0, true, 0.9)
-		_scatter_prop("boulder_01", 6, _spot_land(0.2, 1.0, 1.0), 1.5, 2.5, 0.0, true, 0.9)
-		_scatter_prop("shrub_02", int(90 * dn), _spot_under_trees(6.0), 0.8, 1.3, 90.0, true)
-		_scatter_prop("fern_02", int(300 * dn), _spot_under_trees(5.0), 0.9, 1.5, 50.0, false)
-		_scatter_prop("shrub_03", int(250 * dn), _spot_land(1.0, 0.8, 0.0, 0.5), 2.0, 3.5, 40.0, false)
-		_scatter_prop("shrub_sorrel_01", int(400 * dn), _spot_land(1.0, 0.8, 0.0, 0.5), 4.0, 7.0, 35.0, false)
-		var m := island.habitat("meadow")
-		_scatter_prop("dandelion_01", int(450 * dn), _spot_in(m["center"], m["radius"], 1.0), 2.5, 4.0, 45.0, false)
-		_scatter_prop("flower_ursinia", int(350 * dn), _spot_in(m["center"], m["radius"] + 6.0, 1.0), 2.0, 3.2, 45.0, false)
-		var b := island.habitat("burrow")
-		_scatter_prop("nettle_plant", int(160 * dn), _spot_in(b["center"], b["radius"] + 4.0, 1.0), 2.5, 4.0, 45.0, false)
-		_scatter_prop("tree_stump_01", 10, _spot_land(1.2, 0.6, 1.0), 1.0, 1.4, 0.0, true, 0.8)
-		_scatter_prop("dead_tree_trunk", 6, _spot_land(1.2, 0.5, 2.0, 2.5), 1.2, 1.8, 0.0, true)
+	match biome:
+		"forest", "deepforest":
+			var k := 1.2 if biome == "deepforest" else 1.0
+			_scatter_prop("rock_moss_set_01", 70, _spot_land(0.5, 1.2, 0.5), 0.6, 2.2, 0.0, true, 0.8)
+			_scatter_prop("rock_moss_set_02", 70, _spot_land(0.5, 1.2, 0.5), 0.6, 2.2, 0.0, true, 0.8)
+			_scatter_prop("boulder_01", 20, _spot_land(1.0, 1.0, 2.0), 2.0, 4.0, 0.0, true, 0.9)
+			_scatter_prop("fern_02", int(700 * dn * k), _spot_under_trees(6.0), 1.0, 1.8, 55.0, false)
+			_scatter_prop("shrub_02", int(140 * dn * k), _spot_under_trees(7.0), 0.9, 1.5, 90.0, true)
+			_scatter_prop("nettle_plant", int(400 * dn), _spot_under_trees(8.0), 2.5, 4.5, 45.0, false)
+			_scatter_prop("shrub_sorrel_01", int(500 * dn), _spot_land(0.8, 0.8, 0.0, 0.5), 4.0, 7.0, 35.0, false)
+			_scatter_prop("tree_stump_01", 28, _spot_land(1.0, 0.7, 1.0), 1.0, 1.6, 0.0, true, 0.8)
+			_scatter_prop("dead_tree_trunk", 14, _spot_land(1.0, 0.5, 2.0, 2.5), 1.3, 2.0, 0.0, true)
+			_scatter_prop("dead_tree_trunk_02", 12, _spot_land(1.0, 0.5, 2.0, 2.5), 1.0, 1.5, 0.0, true)
+			if biome == "deepforest":
+				var t := island.habitat("thicket")
+				_scatter_prop("shrub_02", int(90 * dn) + 20, _spot_in(t["center"], t["radius"] + 4.0, 1.0), 1.2, 2.0, 90.0, true)
+				_scatter_prop("fern_02", int(200 * dn) + 40, _spot_in(t["center"], t["radius"] + 4.0, 1.0), 1.6, 2.4, 60.0, false)
+		"snow":
+			var snow := _snow_overlay()
+			_scatter_prop("rock_moss_set_01", 60, _spot_land(0.3, 1.2, 0.5), 0.6, 2.2, 0.0, true, 0.8, 0.05, snow)
+			_scatter_prop("rock_moss_set_02", 60, _spot_land(0.3, 1.2, 0.5), 0.6, 2.2, 0.0, true, 0.8, 0.05, snow)
+			_scatter_prop("boulder_01", 26, _spot_land(0.5, 1.2, 1.5), 2.0, 4.5, 0.0, true, 0.9, 0.05, snow)
+			_scatter_prop("tree_stump_01", 20, _spot_land(1.0, 0.7, 1.0), 1.0, 1.5, 0.0, true, 0.8, 0.05, snow)
+			_scatter_prop("dead_tree_trunk", 12, _spot_land(1.0, 0.5, 2.0, 2.5), 1.3, 2.0, 0.0, true, 0.0, 0.05, snow)
+			_scatter_prop("shrub_04", int(120 * dn), _spot_land(1.0, 0.8, 0.0, 0.5), 2.5, 4.0, 40.0, false)
+		"sea":
+			var inland := func(rr: RandomNumberGenerator) -> Vector3:
+				var q: Vector3 = _spot_land(3.0, 0.8, 0.5).call(rr)
+				return q
+			var shore := func(rr: RandomNumberGenerator) -> Vector3:
+				var q: Vector3 = _spot_land(0.5, 0.8, 1.0).call(rr)
+				return q if q != Vector3.INF and q.y < 2.2 else Vector3.INF
+			_scatter_prop("rock_moss_set_01", 45, _spot_land(-0.8, 1.2, 0.5), 0.6, 2.2, 0.0, true, 0.8)
+			_scatter_prop("rock_moss_set_02", 45, _spot_land(-0.8, 1.2, 0.5), 0.6, 2.2, 0.0, true, 0.8)
+			var c := island.habitat("cliff")
+			_scatter_prop("boulder_01", 16, _spot_in(c["center"], c["radius"] + 6.0, 1.0), 2.0, 4.0, 0.0, true, 0.9)
+			_scatter_prop("shrub_02", int(80 * dn), inland, 0.8, 1.3, 90.0, true)
+			_scatter_prop("shrub_sorrel_01", int(300 * dn), inland, 4.0, 7.0, 35.0, false)
+			_scatter_prop("dead_tree_trunk", 10, shore, 1.0, 1.6, 0.0, true)
+			_scatter_prop("dead_tree_trunk_02", 8, shore, 0.8, 1.2, 0.0, true)
+		_:
+			_scatter_prop("rock_moss_set_01", 45, _spot_land(-0.5, 1.2, 0.5), 0.6, 2.0, 0.0, true, 0.8)
+			_scatter_prop("rock_moss_set_02", 45, _spot_land(-0.5, 1.2, 0.5), 0.6, 2.0, 0.0, true, 0.8)
+			var hill := func(r: RandomNumberGenerator) -> Vector3:
+				var p: Vector3 = _spot_land(3.0, 1.2, 1.5).call(r)
+				return p if p != Vector3.INF and Vector2(p.x, p.z).distance_to(island.hill) < 45.0 else Vector3.INF
+			_scatter_prop("boulder_01", 14, hill, 2.0, 3.6, 0.0, true, 0.9)
+			_scatter_prop("boulder_01", 6, _spot_land(0.2, 1.0, 1.0), 1.5, 2.5, 0.0, true, 0.9)
+			_scatter_prop("shrub_02", int(90 * dn), _spot_under_trees(6.0), 0.8, 1.3, 90.0, true)
+			_scatter_prop("fern_02", int(300 * dn), _spot_under_trees(5.0), 0.9, 1.5, 50.0, false)
+			_scatter_prop("shrub_03", int(250 * dn), _spot_land(1.0, 0.8, 0.0, 0.5), 2.0, 3.5, 40.0, false)
+			_scatter_prop("shrub_sorrel_01", int(400 * dn), _spot_land(1.0, 0.8, 0.0, 0.5), 4.0, 7.0, 35.0, false)
+			var m := island.habitat("meadow")
+			_scatter_prop("dandelion_01", int(450 * dn), _spot_in(m["center"], m["radius"], 1.0), 2.5, 4.0, 45.0, false)
+			_scatter_prop("flower_ursinia", int(350 * dn), _spot_in(m["center"], m["radius"] + 6.0, 1.0), 2.0, 3.2, 45.0, false)
+			var b := island.habitat("burrow")
+			_scatter_prop("nettle_plant", int(160 * dn), _spot_in(b["center"], b["radius"] + 4.0, 1.0), 2.5, 4.0, 45.0, false)
+			_scatter_prop("tree_stump_01", 10, _spot_land(1.2, 0.6, 1.0), 1.0, 1.4, 0.0, true, 0.8)
+			_scatter_prop("dead_tree_trunk", 6, _spot_land(1.2, 0.5, 2.0, 2.5), 1.2, 1.8, 0.0, true)
 
 
 # ------------------------------------------------------------------ 草
@@ -1090,9 +1334,10 @@ func _tuft_mesh(w: float, h: float) -> ArrayMesh:
 	return st.commit()
 
 
-func _grass_mat(tex: String, sway: float, fade: float) -> ShaderMaterial:
+func _grass_mat(tex: String, sway: float, fade: float, glow := Color.BLACK) -> ShaderMaterial:
 	var sm := ShaderMaterial.new()
 	sm.shader = GRASS_SHADER
+	sm.set_shader_parameter("glow", glow)
 	sm.set_shader_parameter("grass_tex", load(FOLIAGE + tex + ".png"))
 	sm.set_shader_parameter("sway", sway)
 	sm.set_shader_parameter("fade_start", fade * 0.65)
@@ -1106,7 +1351,8 @@ func _grass() -> void:
 	r.seed = island.map_seed + 400
 	var xs := []
 	var cols := []
-	var target := int((22000 if forest else 50000) * _density())
+	var base_count: int = {"island": 50000, "forest": 22000, "deepforest": 20000, "snow": 7000, "sea": 32000}[biome]
+	var target := int(base_count * _density())
 	var tries := 0
 	var meadow := island.habitat("meadow")
 	var grove := island.habitat("grove")
@@ -1123,9 +1369,19 @@ func _grass() -> void:
 		var s := r.randf_range(0.7, 1.25)
 		var c := Color(1, 1, 1).lerp(Color(0.82, 0.92, 0.7), r.randf())
 		var p2 := Vector2(x, z)
-		if forest:
+		if biome == "snow":
+			# 雪地：只有几丛枯黄的草从雪里冒出来，冰原上没有
+			if h < 1.4 or _patch.get_noise_2d(x * 2.0, z * 2.0) < 0.1 or island.habitat_at(Vector3(x, h, z)) == "icefield":
+				continue
+			s *= 0.75
+			c = Color(1.75, 1.0, 1.3).lerp(Color(1.55, 1.05, 1.15), r.randf())
+		elif biome == "sea":
+			if h < 2.6:
+				continue
+			c = Color(1.05, 1.05, 0.8).lerp(Color(0.85, 1.0, 0.7), r.randf())
+		elif forest:
 			# 森林里草只长在有光的地方：古树林空地、水边、小路两旁
-			var near := grove.size() > 0 and p2.distance_to(grove["center"]) < float(grove["radius"]) + 4.0
+			var near := island.arena != Vector2.INF and p2.distance_to(island.arena) < 26.0
 			for pd2 in island.ponds:
 				if p2.distance_to(pd2["center"]) < float(pd2["radius"]) + 9.0:
 					near = true
@@ -1134,6 +1390,8 @@ func _grass() -> void:
 			if not near and r.randf() > 0.12:
 				continue
 			c = Color(1.0, 0.92, 0.78).lerp(Color(0.85, 0.95, 0.65), r.randf())
+			if biome == "deepforest":
+				c = Color(0.5, 0.75, 0.75).lerp(Color(0.4, 0.62, 0.7), r.randf())
 		else:
 			if meadow.size() > 0 and p2.distance_to(meadow["center"]) < float(meadow["radius"]):
 				s *= 1.5
@@ -1143,7 +1401,7 @@ func _grass() -> void:
 		var b := Basis(Vector3.UP, r.randf() * TAU).scaled(Vector3(s, s * r.randf_range(0.8, 1.2), s))
 		xs.append(Transform3D(b, Vector3(x, h - 0.04, z)))
 		cols.append(c)
-	var mat := _grass_mat("grass_tuft_dry" if forest else "grass_tuft", 0.22, fade)
+	var mat := _grass_mat("grass_tuft_dry" if (biome in ["forest", "snow"]) else "grass_tuft", 0.22, fade)
 	_scatter(_tuft_mesh(0.95, 0.62), xs, cols, fade + 6.0, false, 32.0, mat)
 
 
@@ -1163,8 +1421,8 @@ func _burrows() -> void:
 			U.part(root, U.sphere(0.25, 8, 5), _stone(), rp, Vector3(rng.randf(), rng.randf(), 0), Vector3(1.3, 0.7, 1.0))
 
 
-func _moon_flowers() -> void:
-	var hb := island.habitat("flowers")
+func _moon_flowers(type: String) -> void:
+	var hb := island.habitat(type)
 	var c: Vector2 = hb["center"]
 	var rad: float = hb["radius"]
 	_scatter_prop("periwinkle_plant", int(260 * _density()) + 60, _spot_in(c, rad, 0.8), 2.0, 3.2, 60.0, false)
@@ -1217,23 +1475,26 @@ func _reeds() -> void:
 
 # ------------------------------------------------------------------ 第二章：狼穴、泥潭、古树林、毒沼
 
-func _dens() -> void:
-	var hb := island.habitat("den")
+## 一片“洞口”栖息地：每个洞口背后堆三块大石头围成半圆，中间一个黑洞
+func _dens_for(type: String, scale: float, snowy: bool) -> void:
+	var hb := island.habitat(type)
+	if hb.is_empty():
+		return
 	var hc: Vector2 = hb["center"]
 	var rocks := _prop("boulder_01")
 	var hole := U.mat(Color(0.02, 0.015, 0.01), 1.0)
+	var snow := _snow_overlay() if snowy else null
 	for b in hb["points"]:
 		var p: Vector3 = b
 		var out := Vector2(p.x, p.z) - hc
 		out = out.normalized() if out.length() > 0.5 else Vector2(1, 0)
 		var back := Vector3(out.x, 0, out.y)
 		var yaw := atan2(back.x, back.z)
-		# 洞口背后堆三块大石头，围成一个半圆的洞
 		for k in 3:
 			var a := yaw + (k - 1) * 0.9
-			var q := p + Vector3(sin(a), 0, cos(a)) * 2.6
+			var q := p + Vector3(sin(a), 0, cos(a)) * 2.6 * scale
 			q.y = island.height_at(q.x, q.z)
-			var s := rng.randf_range(2.6, 3.4)
+			var s := rng.randf_range(2.6, 3.4) * scale
 			if rocks.size() > 0:
 				var v: Dictionary = rocks[0]
 				var ry := Basis(Vector3.UP, rng.randf() * TAU)
@@ -1241,17 +1502,18 @@ func _dens() -> void:
 				var mi := MeshInstance3D.new()
 				mi.mesh = v["mesh"]
 				mi.transform = Transform3D(ry.scaled(sc) * (v["basis"] as Basis), q + ry * ((v["offset"] as Vector3) * sc) - Vector3(0, 0.3, 0))
+				if snow:
+					mi.material_overlay = snow
 				root.add_child(mi)
 			var sh := SphereShape3D.new()
 			sh.radius = 1.3 * s * 0.5
 			_add_collider(sh, Transform3D(Basis(), q + Vector3(0, 0.6, 0)))
-		# 黑洞洞的洞口
-		var hm := U.part(root, U.sphere(1.0, 16, 8), hole, p + back * 1.2 + Vector3(0, 0.3, 0), Vector3(0, yaw, 0), Vector3(1.2, 0.9, 0.5), false)
+		var hm := U.part(root, U.sphere(1.0, 16, 8), hole, p + back * 1.2 * scale + Vector3(0, 0.3, 0), Vector3(0, yaw, 0), Vector3(1.2, 0.9, 0.5) * scale, false)
 		hm.name = "DenHole"
-		# 骨头
-		for k in 2:
-			var bp := p + Vector3(rng.randf_range(-1.5, 1.5), 0.05, rng.randf_range(-1.5, 1.5))
-			U.part(root, U.cyl(0.03, 0.03, 0.5, 5), U.mat(Color(0.85, 0.82, 0.72)), bp, Vector3(PI * 0.5, rng.randf() * TAU, 0), Vector3.ONE, false)
+		if type in ["den", "nest", "snowden"]:
+			for k in 2:
+				var bp := p + Vector3(rng.randf_range(-1.5, 1.5), 0.05, rng.randf_range(-1.5, 1.5))
+				U.part(root, U.cyl(0.03, 0.03, 0.5, 5), U.mat(Color(0.85, 0.82, 0.72)), bp, Vector3(PI * 0.5, rng.randf() * TAU, 0), Vector3.ONE, false)
 
 
 func _mud() -> void:
@@ -1280,9 +1542,12 @@ func _grove() -> void:
 	var t := island.ancient_tree
 	var r := RandomNumberGenerator.new()
 	r.seed = island.map_seed + 500
-	var bark := _bark(Color(0.62, 0.55, 0.5))
+	var star := biome == "deepforest"
+	var bark := _bark(Color(0.62, 0.55, 0.5) if not star else Color(0.4, 0.42, 0.5))
 	var leaves := _leaves("leaf_autumn", Color(1.05, 0.95, 0.8), Color(0.8, 0.4, 0.1))
-	var tree: Dictionary = _broad_tree(r, 34.0, 1.25, bark, leaves)
+	if star:
+		leaves = _leaves("leaf_dark", Color(0.5, 0.85, 1.1), Color(0.2, 0.5, 1.0))
+	var tree: Dictionary = _broad_tree(r, 40.0 if star else 34.0, 1.3 if star else 1.25, bark, leaves)
 	var mi := MeshInstance3D.new()
 	mi.name = "AncientTree"
 	mi.mesh = tree["mesh"]
@@ -1304,13 +1569,13 @@ func _grove() -> void:
 			rm.transform = Transform3D(yaw.scaled(Vector3(s, s, s)) * (v["basis"] as Basis), t + off + yaw * ((v["offset"] as Vector3) * s) - Vector3(0, 0.25, 0))
 			root.add_child(rm)
 	# 古树林里一圈发光的蘑菇
-	var g := island.habitat("grove")
+	var g := {"center": island.arena, "radius": 20.0}
 	var caps := []
 	var stems := []
 	var cols := []
-	for i in 90:
+	for i in (90 if not star else 240):
 		var a := r.randf() * TAU
-		var d := r.randf_range(4.0, float(g["radius"]) + 6.0)
+		var d := r.randf_range(4.0, float(g["radius"]) + (6.0 if not star else 60.0))
 		var p := island.ground_point(g["center"].x + cos(a) * d, g["center"].y + sin(a) * d)
 		if r.randf() < 0.5:
 			var a2 := r.randf() * TAU
@@ -1368,6 +1633,214 @@ func _swamp_plants() -> void:
 			reeds.append(Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s * 0.8, s * 2.4, s * 0.8)), Vector3(x, h - 0.05, z)))
 			cols.append(Color(0.9, 0.85, 0.6))
 	_scatter(_tuft_mesh(0.8, 0.62), reeds, cols, 70.0, false, 40.0, _grass_mat("grass_tuft_dry", 0.12, 70.0))
+
+
+## 魔蛛巢：洞口拉满白色蛛丝，地上有卵囊
+func _webs(type: String) -> void:
+	var hb := island.habitat(type)
+	if hb.is_empty():
+		return
+	var silk := U.mat(Color(0.9, 0.9, 0.95, 1.0), 0.6)
+	var egg := U.mat(Color(0.9, 0.88, 0.8), 0.4, 0.3)
+	for b in hb["points"]:
+		var p: Vector3 = b
+		for k in 7:
+			var a := TAU * k / 7.0 + rng.randf_range(-0.2, 0.2)
+			var top := p + Vector3(cos(a) * 2.4, rng.randf_range(1.8, 3.2), sin(a) * 2.4)
+			var mid := (p + Vector3(0, 0.3, 0) + top) * 0.5
+			var len := (top - p).length()
+			var strand := U.part(root, U.cyl(0.012, 0.012, len, 4), silk, mid, Vector3.ZERO, Vector3.ONE, false)
+			strand.basis = Basis.looking_at((top - p).normalized(), Vector3.UP if absf((top - p).normalized().y) < 0.95 else Vector3.RIGHT) * Basis(Vector3.RIGHT, PI / 2)
+		for k in 3:
+			var ep := p + Vector3(rng.randf_range(-1.8, 1.8), 0.2, rng.randf_range(-1.8, 1.8))
+			ep.y = island.height_at(ep.x, ep.z) + 0.2
+			U.part(root, U.sphere(0.28, 10, 6), egg, ep, Vector3.ZERO, Vector3(1, 1.3, 1), false)
+
+
+## 星斗大森林：一片片会发光的蓝银草（唐三的武魂）
+func _blue_silver_grass() -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = island.map_seed + 700
+	var xs := []
+	var cols := []
+	var centers: Array[Vector2] = []
+	for i in 40:
+		var c := Vector2(r.randf_range(-130, 130), r.randf_range(-130, 130))
+		if island.height_at(c.x, c.y) > 1.2:
+			centers.append(c)
+	var g := island.habitat("glade")
+	if not g.is_empty():
+		for i in 6:
+			centers.append(g["center"] + Vector2(r.randf_range(-12, 12), r.randf_range(-12, 12)))
+	for c in centers:
+		for k in int(160 * _density()) + 30:
+			var a := r.randf() * TAU
+			var d := sqrt(r.randf()) * r.randf_range(3.0, 7.0)
+			var x := c.x + cos(a) * d
+			var z := c.y + sin(a) * d
+			var h := island.height_at(x, z)
+			if h < 1.0 or path_d(x, z) < 1.0:
+				continue
+			var s := r.randf_range(0.7, 1.2)
+			xs.append(Transform3D(Basis(Vector3.UP, r.randf() * TAU).scaled(Vector3(s * 0.8, s * 1.3, s * 0.8)), Vector3(x, h - 0.04, z)))
+			cols.append(Color(0.45, 0.75, 1.3).lerp(Color(0.6, 0.9, 1.4), r.randf()))
+	var fade: float = [32.0, 45.0, 60.0][quality]
+	_scatter(_tuft_mesh(0.8, 0.62), xs, cols, fade + 20.0, false, 32.0, _grass_mat("grass_tuft", 0.25, fade + 14.0, Color(0.15, 0.4, 1.0)))
+	for c in centers.slice(0, 12):
+		_motes(island.ground_point(c.x, c.y) + Vector3(0, 1.2, 0), Vector3(6, 1.2, 6), 20, Color(0.5, 0.8, 1.6), 0.06)
+
+
+## 冰晶：六棱柱，淡蓝色，会微微发光
+func _ice_crystals(type: String, count: int, scale: float) -> void:
+	var hb := island.habitat(type)
+	if hb.is_empty():
+		return
+	var c: Vector2 = hb["center"]
+	var xs := []
+	for i in count:
+		var a := rng.randf() * TAU
+		var d := sqrt(rng.randf()) * (float(hb["radius"]) + 6.0)
+		var x := c.x + cos(a) * d
+		var z := c.y + sin(a) * d
+		if path_d(x, z) < 1.5:
+			continue
+		var h := island.height_at(x, z)
+		for k in rng.randi_range(2, 4):
+			var s := rng.randf_range(0.6, 1.6) * scale
+			var tilt := Basis.from_euler(Vector3(rng.randf_range(-0.5, 0.5), rng.randf() * TAU, rng.randf_range(-0.5, 0.5)))
+			xs.append(Transform3D(tilt.scaled(Vector3(s, s * rng.randf_range(1.2, 2.4), s)), Vector3(x + rng.randf_range(-0.5, 0.5), h + 0.3 * s, z + rng.randf_range(-0.5, 0.5))))
+	var m := StandardMaterial3D.new()
+	m.albedo_color = Color(0.7, 0.9, 1.0, 0.75)
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.roughness = 0.05
+	m.metallic_specular = 0.9
+	m.emission_enabled = true
+	m.emission = Color(0.3, 0.65, 1.0)
+	m.emission_energy_multiplier = 0.8
+	m.rim_enabled = true
+	m.rim = 0.6
+	_multimesh(U.cyl(0.05, 0.3, 1.0, 6), xs, [], true, m)
+	_motes(island.ground_point(c.x, c.y) + Vector3(0, 2.0, 0), Vector3(hb["radius"], 2.0, hb["radius"]), 50, Color(0.8, 0.95, 1.6), 0.06)
+
+
+## 冰湖：岸边漂着一块块浮冰
+func _ice_floes_build() -> void:
+	var xs := []
+	var tries := 0
+	while xs.size() < 160 and tries < 20000:
+		tries += 1
+		var a := rng.randf() * TAU
+		var rr := rng.randf_range(80, 170)
+		var x := cos(a) * rr
+		var z := sin(a) * rr
+		var h := island.height_at(x, z)
+		if h > -0.4 or h < -5.0:
+			continue
+		if absf(x - island.dock_start.x) < 8.0 and z > 0:
+			continue
+		var s := rng.randf_range(1.2, 4.0)
+		xs.append(Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s, 1.0, s * rng.randf_range(0.6, 1.0))), Vector3(x, Island.WATER_Y + 0.05, z)))
+	var m := _surface("snow", Color(0.95, 0.98, 1.0), 0.3, 0.6)
+	_multimesh(U.cyl(1.0, 1.05, 0.3, 7), xs, [], false, m)
+
+
+## 飘雪：跟着镜头走的一团雪花
+func _snowfall_build() -> void:
+	var p := GPUParticles3D.new()
+	p.amount = [1200, 2200, 3500][quality]
+	p.lifetime = 8.0
+	p.preprocess = 8.0
+	p.visibility_aabb = AABB(Vector3(-40, -30, -40), Vector3(80, 50, 80))
+	var pm := ParticleProcessMaterial.new()
+	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
+	pm.emission_box_extents = Vector3(35, 4, 35)
+	pm.direction = Vector3(0.2, -1, 0.1)
+	pm.spread = 15.0
+	pm.initial_velocity_min = 1.2
+	pm.initial_velocity_max = 2.2
+	pm.gravity = Vector3(0, -0.4, 0)
+	pm.turbulence_enabled = true
+	pm.turbulence_noise_strength = 0.6
+	pm.turbulence_noise_scale = 6.0
+	p.process_material = pm
+	var q := QuadMesh.new()
+	q.size = Vector2(0.06, 0.06)
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.albedo_color = Color(1, 1, 1, 0.85)
+	var dot := GradientTexture2D.new()
+	dot.fill = GradientTexture2D.FILL_RADIAL
+	dot.fill_from = Vector2(0.5, 0.5)
+	dot.fill_to = Vector2(0.5, 0.0)
+	var dg := Gradient.new()
+	dg.set_color(0, Color(1, 1, 1, 1))
+	dg.set_color(1, Color(1, 1, 1, 0))
+	dot.gradient = dg
+	dot.width = 16
+	dot.height = 16
+	m.albedo_texture = dot
+	q.material = m
+	p.draw_pass_1 = q
+	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(p)
+	_snowfall = p
+
+
+## 海神岛：浅海里一丛丛珊瑚（透过海水能看到）
+func _corals() -> void:
+	var branches := []
+	var bcols := []
+	var brains := []
+	var rcols := []
+	var tries := 0
+	var pal := [Color(1.0, 0.45, 0.55), Color(1.0, 0.65, 0.3), Color(0.75, 0.45, 1.0), Color(1.0, 0.9, 0.4), Color(0.35, 0.9, 0.85)]
+	while branches.size() < 1400 and tries < 40000:
+		tries += 1
+		var x := rng.randf_range(-165, 165)
+		var z := rng.randf_range(-165, 165)
+		var h := island.height_at(x, z)
+		if h > -0.8 or h < -3.2:
+			continue
+		var col: Color = pal[rng.randi() % pal.size()]
+		for k in rng.randi_range(3, 7):
+			var s := rng.randf_range(0.5, 1.2)
+			var tilt := Basis.from_euler(Vector3(rng.randf_range(-0.6, 0.6), rng.randf() * TAU, rng.randf_range(-0.6, 0.6)))
+			branches.append(Transform3D(tilt.scaled(Vector3(s, s, s)), Vector3(x + rng.randf_range(-0.6, 0.6), h + 0.3 * s, z + rng.randf_range(-0.6, 0.6))))
+			bcols.append(col)
+		if rng.randf() < 0.5:
+			var bs := rng.randf_range(0.4, 0.9)
+			brains.append(Transform3D(Basis().scaled(Vector3(bs, bs * 0.6, bs)), Vector3(x + 0.8, h + 0.1, z - 0.5)))
+			rcols.append(pal[rng.randi() % pal.size()])
+	var m := StandardMaterial3D.new()
+	m.vertex_color_use_as_albedo = true
+	m.roughness = 0.7
+	m.emission_enabled = true
+	m.emission = Color(0.15, 0.1, 0.1)
+	_multimesh(U.cyl(0.03, 0.08, 0.7, 5), branches, bcols, false, m)
+	_multimesh(U.sphere(0.5, 10, 6), brains, rcols, false, m)
+
+
+## 海神岛：沙滩上的贝壳和海星
+func _beach() -> void:
+	var xs := []
+	var cols := []
+	var tries := 0
+	while xs.size() < 500 and tries < 20000:
+		tries += 1
+		var x := rng.randf_range(-160, 160)
+		var z := rng.randf_range(-160, 160)
+		var h := island.height_at(x, z)
+		if h < 0.3 or h > 1.6:
+			continue
+		var s := rng.randf_range(0.08, 0.16)
+		xs.append(Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s, s * 0.35, s * 1.3)), Vector3(x, h + 0.02, z)))
+		cols.append([Color(1.0, 0.95, 0.9), Color(1.0, 0.75, 0.7), Color(1.0, 0.55, 0.3)][rng.randi() % 3])
+	var m := StandardMaterial3D.new()
+	m.vertex_color_use_as_albedo = true
+	m.roughness = 0.5
+	_scatter(U.sphere(1.0, 8, 4), xs, cols, 50.0, false, 40.0, m)
 
 
 ## 萤火虫 / 花粉：慢慢飘的小光点
@@ -1549,7 +2022,7 @@ func _shop() -> void:
 	var dark := _wood(Color(0.65, 0.5, 0.38))
 	var red := U.mat(Color(0.62, 0.14, 0.1), 0.7)
 	var gold := U.mat(Color(0.95, 0.75, 0.35), 0.4, 0.0, 0.6)
-	if forest:
+	if forest or biome == "snow":
 		# 商人帐篷：四根杆子 + 布顶 + 货箱
 		var cloth := _cloth(Color(0.62, 0.2, 0.12))
 		for p in [Vector3(-2.6, 0, -2.0), Vector3(2.6, 0, -2.0), Vector3(-2.6, 0, 2.0), Vector3(2.6, 0, 2.0)]:
@@ -1604,14 +2077,15 @@ func _shop() -> void:
 		shop_door = hut.transform * Vector3(1.0, 1.0, 4.0)
 		_lantern(hut.transform * Vector3(-3.0, 2.7, 2.7), Color(1.0, 0.35, 0.18))
 		_lantern(hut.transform * Vector3(3.0, 2.7, 2.7), Color(1.0, 0.35, 0.18))
-	var sign := U.label3d("唐门 · 暗器铺", 72, Color(0.35, 0.12, 0.05) if not forest else Color(1.0, 0.86, 0.5), 6)
-	sign.position = Vector3(0, 3.35, 2.53) if not forest else Vector3(0, 3.1, 2.3)
+	var tent := forest or biome == "snow"
+	var sign := U.label3d("唐门 · 暗器铺", 72, Color(0.35, 0.12, 0.05) if not tent else Color(1.0, 0.86, 0.5), 6)
+	sign.position = Vector3(0, 3.35, 2.53) if not tent else Vector3(0, 3.1, 2.3)
 	sign.billboard = BaseMaterial3D.BILLBOARD_DISABLED
 	sign.pixel_size = 0.0065
-	sign.outline_modulate = Color(1.0, 0.85, 0.5, 0.5) if not forest else Color(0, 0, 0, 0.8)
+	sign.outline_modulate = Color(1.0, 0.85, 0.5, 0.5) if not tent else Color(0, 0, 0, 0.8)
 	hut.add_child(sign)
 	var sub := U.label3d("买暗器 · 升级 · 道具（按 F）", 40, Color(1.0, 0.95, 0.85))
-	sub.position = Vector3(1.0, 2.1, 3.4) if not forest else Vector3(0, 2.4, 2.4)
+	sub.position = Vector3(1.0, 2.1, 3.4) if not tent else Vector3(0, 2.4, 2.4)
 	sub.pixel_size = 0.006
 	hut.add_child(sub)
 
@@ -1687,24 +2161,34 @@ func _sign(pos: Vector2, title: String, sub: String, color: Color) -> void:
 
 
 func _signs() -> void:
-	if forest:
-		var d := island.habitat("den")
-		var m := island.habitat("mud")
-		var g := island.habitat("grove")
-		_sign(d["center"] + Vector2(d["radius"] + 2.0, 3.0), "狼穴", "抛到洞口附近 · 疾风魔狼（会扑人）", Color(1.0, 0.7, 0.55))
-		_sign(m["center"] + Vector2(-m["radius"] - 2.0, 3.0), "泥潭", "抛进泥里 · 铁甲犀（会冲撞，打头）", Color(0.9, 0.8, 0.6))
-		_sign(g["center"] + Vector2(4.0, g["radius"] + 2.0), "古树林", "抛到林间空地 · 金刚猿（会扔石头）", Color(0.7, 1.0, 0.7))
-		var pd: Dictionary = island.ponds[0]
-		_sign(pd["center"] + Vector2(pd["radius"] + 3.0, -2.0), "毒沼", "抛进水里 · 曼陀罗蛇", Color(0.6, 1.0, 0.6))
-		_sign(Vector2(island.shop_pos.x + 5.0, island.shop_pos.z + 3.0), "行脚商人", "唐门的暗器也能在这儿买", Color(1.0, 0.85, 0.5))
+	var hub := Vector2(island.spawn.x, island.spawn.z - 38.0)
+	var pal := [Color(0.6, 0.95, 0.85), Color(1.0, 0.8, 0.85), Color(0.85, 0.85, 1.0), Color(1.0, 0.75, 0.55), Color(0.75, 1.0, 0.7)]
+	var i := 0
+	for hb in island.habitats:
+		var t := str(hb["type"])
+		if not Data.HABITATS.has(t):
+			continue
+		var info: Dictionary = Data.HABITATS[t]
+		var sp: Dictionary = Data.BEASTS[info["beast"]]
+		var sub := "抛到这里 · %s%s" % [sp["name"], "（会反击）" if sp.has("hurt") else ""]
+		var c: Vector2 = hb["center"]
+		var dir := (hub - c).normalized()
+		_sign(c + dir * (float(hb["radius"]) + 2.5) + Vector2(-dir.y, dir.x) * 3.0, str(info["name"]), sub, pal[i % pal.size()])
+		i += 1
+	# 水边
+	var wsub := ""
+	if island.water_types.size() > 1:
+		var names := []
+		for w in island.water_types:
+			names.append("%s（%s）" % [Data.HABITATS[w]["name"], Data.BEASTS[Data.HABITATS[w]["beast"]]["name"]])
+		wsub = "越往外越深：" + " → ".join(names)
 	else:
-		var m := island.habitat("meadow")
-		var b := island.habitat("burrow")
-		var f := island.habitat("flowers")
-		_sign(m["center"] + Vector2(3.0, m["radius"] + 2.0), "风铃草原", "把引魂索抛到草原上 · 风铃鸟", Color(0.6, 0.95, 0.85))
-		_sign(b["center"] + Vector2(-b["radius"] - 1.0, 4.0), "兔子洞", "抛到洞口附近 · 柔骨兔", Color(1.0, 0.8, 0.85))
-		_sign(f["center"] + Vector2(f["radius"] + 1.5, 3.0), "月光花丛", "抛进花丛 · 月光蛾", Color(0.85, 0.85, 1.0))
-		_sign(Vector2(island.dock_start.x - 3.5, island.dock_start.z - 2.0), "湖水", "抛进水里 · 鬼藤", Color(0.55, 0.85, 1.0))
+		wsub = "抛进水里 · %s" % Data.BEASTS[Data.HABITATS[island.water_habitat]["beast"]]["name"]
+	_sign(Vector2(island.dock_start.x - 3.5, island.dock_start.z - 2.0), str(Data.HABITATS[island.water_habitat]["name"]) if island.water_types.size() == 1 else "海", wsub, Color(0.55, 0.85, 1.0))
+	for p in island.ponds.slice(0, 1):
+		_sign(p["center"] + Vector2(p["radius"] + 3.0, -2.0), str(Data.HABITATS[island.water_habitat]["name"]), wsub, Color(0.6, 1.0, 0.8))
+	if forest or biome == "snow":
+		_sign(Vector2(island.shop_pos.x + 5.0, island.shop_pos.z + 3.0), "行脚商人", "唐门的暗器也能在这儿买", Color(1.0, 0.85, 0.5))
 	_sign(Vector2(island.altar_pos.x + 4.5, island.altar_pos.z + 4.5), "祭坛", "按 F 召唤 Boss（要先完成前面的任务）", Color(1.0, 0.75, 0.45))
 
 
@@ -1712,26 +2196,32 @@ func _signs() -> void:
 
 func _ambient_life() -> void:
 	var centers: Array = []
-	if forest:
-		var g := island.habitat("grove")
-		centers = [[g["center"], "bird", 3, 26.0, 36.0, 12.0, 20.0]]
-	else:
-		var m := island.habitat("meadow")
-		var f := island.habitat("flowers")
-		centers = [[m["center"], "bird", 4, 14.0, 22.0, 10.0, 20.0], [f["center"], "moth", 3, 1.5, 3.5, 3.0, 8.0]]
+	match biome:
+		"island":
+			var m := island.habitat("meadow")
+			var f := island.habitat("flowers")
+			centers = [[m["center"], "bird", 4, 14.0, 22.0, 10.0, 20.0], [f["center"], "moth", 3, 1.5, 3.5, 3.0, 8.0]]
+		"forest":
+			centers = [[island.arena, "bird", 3, 26.0, 36.0, 12.0, 20.0]]
+		"deepforest":
+			var ro := island.habitat("roost")
+			centers = [[ro["center"], "bat", 5, 10.0, 18.0, 6.0, 14.0]]
+		"sea":
+			var c := island.habitat("cliff")
+			centers = [[c["center"], "gull", 5, 16.0, 26.0, 12.0, 24.0], [Vector2(0, 60), "gull", 3, 12.0, 20.0, 20.0, 40.0]]
 	for c in centers:
 		var cc: Vector2 = c[0]
 		for i in int(c[2]):
 			var n := BeastModels.build(str(c[1]), 0)
-			n.scale = Vector3.ONE * (0.8 if c[1] == "bird" else 0.6)
+			n.scale = Vector3.ONE * (0.6 if c[1] == "moth" else 0.8)
 			n.set_meta("orbit", Vector4(cc.x, cc.y, rng.randf_range(c[5], c[6]), rng.randf_range(0.25, 0.5)))
 			n.set_meta("phase", rng.randf() * TAU)
 			n.set_meta("height", island.height_at(cc.x, cc.y) + rng.randf_range(c[3], c[4]))
 			root.add_child(n)
-			if c[1] == "bird":
-				_birds.append(n)
-			else:
+			if c[1] == "moth":
 				_moths.append(n)
+			else:
+				_birds.append(n)
 
 
 func animate(t: float) -> void:
@@ -1753,3 +2243,7 @@ func animate(t: float) -> void:
 		b.position = (b.get_meta("base") as Vector3) + Vector3(0, s * 0.08 - 0.02, 0)
 	if _altar_flame:
 		_altar_flame.scale = Vector3.ONE * (1.0 + sin(t * 9.0) * 0.12 + sin(t * 13.0) * 0.08)
+	if _snowfall:
+		var cam := root.get_viewport().get_camera_3d()
+		if cam:
+			_snowfall.global_position = cam.global_position + Vector3(0, 10, 0)

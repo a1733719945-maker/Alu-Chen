@@ -2,13 +2,13 @@
 
 importer="font_data_dynamic"
 type="FontFile"
-uid="uid://b5iw2ucy1li66"
-path="res://.godot/imported/MaShanZheng.ttf-dd94d963a0ac4e3384c6d8de4147339c.fontdata"
+uid="uid://sykf8i7fortw"
+path="res://.godot/imported/BarlowCondensed-Bold.woff-65cefe355a1c205b7e3bf54c2629f09c.fontdata"
 
 [deps]
 
-source_file="res://assets/fonts/MaShanZheng.ttf"
-dest_files=["res://.godot/imported/MaShanZheng.ttf-dd94d963a0ac4e3384c6d8de4147339c.fontdata"]
+source_file="res://assets/fonts/BarlowCondensed-Bold.woff"
+dest_files=["res://.godot/imported/BarlowCondensed-Bold.woff-65cefe355a1c205b7e3bf54c2629f09c.fontdata"]
 
 [params]
 

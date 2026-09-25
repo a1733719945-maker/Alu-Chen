@@ -46,6 +46,8 @@ func _register_inputs() -> void:
 		"skill_1": [KEY_Q],
 		"skill_2": [KEY_C],
 		"skill_3": [KEY_X],
+		"skill_4": [KEY_Z],
+		"skill_5": [KEY_V],
 		"grenade": [KEY_G],
 		"pill": [KEY_H],
 		"wuhun_panel": [KEY_K],

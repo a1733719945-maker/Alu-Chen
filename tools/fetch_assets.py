@@ -21,6 +21,9 @@ UA = {"User-Agent": "DouluoHunter-dev/0.1"}
 HDRIS = {
     "sky_day": "kloofendal_48d_partly_cloudy_puresky",
     "sky_dusk": "kloppenheim_06_puresky",
+    "sky_night": "qwantani_moonrise_puresky",
+    "sky_snow": "snow_field_puresky",
+    "sky_sea": "qwantani_noon_puresky",
 }
 MODELS = [
     "shrub_02", "shrub_03", "shrub_04", "fern_02", "dandelion_01", "periwinkle_plant",
@@ -30,6 +33,7 @@ MODELS = [
 TEXTURES = {
     "grass": "Grass004", "dirt": "Ground037", "rock": "Rock051", "sand": "Ground054",
     "forest": "Ground078", "mud": "Ground109", "bark": "Bark014", "moss": "Moss002",
+    "snow": "Snow010A", "ice": "Ice002",
 }
 ATLASES = ["Foliage001", "Foliage006", "LeafSet024", "LeafSet030", "PineNeedles001"]
 

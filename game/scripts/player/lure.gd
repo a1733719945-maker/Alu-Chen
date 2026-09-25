@@ -173,7 +173,8 @@ func _land(p: Vector3, water: bool) -> void:
 	state = S.WAITING
 	habitat = world.island.habitat_at(Vector3(p.x, Island.WATER_Y if water else p.y, p.z))
 	if water:
-		habitat = world.island.water_habitat
+		if not world.island.is_water_habitat(habitat):
+			habitat = world.island.water_type_at(p.x, p.z)
 		world.fx.splash(p)
 		Sfx.play_at("splash_small", p, -2.0)
 	else:
@@ -195,18 +196,18 @@ func _schedule_bite() -> void:
 		age = force_age
 	elif Profile.item_count("gold_bites") > 0:
 		# 引兽香：必定百年以上
-		age = Data.roll_age(rng, 1)
+		age = Data.roll_age(rng, 1, world.chapter)
 		Profile.items["gold_bites"] = Profile.item_count("gold_bites") - 1
 		Profile.mark_dirty()
 	else:
-		age = Data.roll_age(rng)
+		age = Data.roll_age(rng, 0, world.chapter)
 
 
 func _bite() -> void:
 	state = S.BITE
 	bite_window = Data.LURE["bite_window"] * (1.2 if age >= 2 else 1.0)
 	Sfx.play("bite", 0.0, 0.03, 1.0 if age == 0 else (0.85 if age == 1 else 0.7))
-	if habitat == "water":
+	if _in_water():
 		world.fx.splash(pos)
 	var c := Data.age_color(age)
 	bang.modulate = c if age > 0 else Color(1.0, 0.85, 0.2)
@@ -274,11 +275,11 @@ func _update_visuals(dt: float) -> void:
 		_cord_mesh.clear_surfaces()
 		return
 	var p := pos
-	if state == S.WAITING and habitat == "water":
+	if state == S.WAITING and _in_water():
 		p.y = Island.WATER_Y + 0.08 + sin(_t * 3.0) * 0.04
 	if state == S.BITE:
 		p += Vector3(sin(_t * 47.0), sin(_t * 31.0), cos(_t * 41.0)) * 0.06
-		if habitat == "water":
+		if _in_water():
 			p.y = Island.WATER_Y - 0.05 + sin(_t * 20.0) * 0.08
 	if state == S.REELING:
 		p += Vector3(sin(_t * 55.0), 0, cos(_t * 49.0)) * (0.05 + _struggle * 0.12)
@@ -322,3 +323,7 @@ func _draw_cord(a: Vector3, b: Vector3) -> void:
 		_cord_mesh.surface_add_vertex(p - side)
 		_cord_mesh.surface_add_vertex(p + side)
 	_cord_mesh.surface_end()
+
+
+func _in_water() -> bool:
+	return world != null and world.island.is_water_habitat(habitat)

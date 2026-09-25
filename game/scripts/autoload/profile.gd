@@ -203,8 +203,13 @@ func level_cap() -> int:
 	return mini((rings.size() + 1) * 10, Data.MAX_LEVEL)
 
 
+func max_rings() -> int:
+	return (Data.SKILL_TREE["lyc"] as Array).size()
+
+
+## 卡在瓶颈：到了下一个魂环要求的等级，还没吸收那个魂环
 func at_bottleneck() -> bool:
-	return level >= level_cap() and level < Data.MAX_LEVEL
+	return rings.size() < max_rings() and level >= (rings.size() + 1) * 10
 
 
 ## 加修为，返回升了几级
@@ -229,8 +234,8 @@ func next_ring_index() -> int:
 
 func can_absorb(age: int) -> String:
 	## 返回空字符串表示可以；否则返回原因
-	if rings.size() >= Data.SKILL_TREE["lyc"].size():
-		return "这一版最多三个魂环"
+	if rings.size() >= max_rings():
+		return "这一版最多 %d 个魂环" % max_rings()
 	if not at_bottleneck():
 		return "要修炼到 %d 级瓶颈才能吸收魂环" % level_cap()
 	var min_age: int = Data.RING_MIN_AGE[rings.size()]

@@ -162,7 +162,8 @@ func death_burst(pos: Vector3, color: Color, age: int) -> void:
 
 ## 伤害数字：从命中点往上飘
 func damage_number(pos: Vector3, amount: float, headshot: bool, kill := false) -> void:
-	var l := U.label3d(str(roundi(amount)), 64 if headshot or kill else 48, Color(1, 0.86, 0.3) if headshot else Color(1, 1, 1), 12)
+	var l := U.label3d(str(roundi(amount)), 72 if headshot or kill else 56, Color(1, 0.86, 0.3) if headshot else Color(1, 1, 1), 12)
+	l.font = Data.font_num
 	if kill:
 		l.modulate = Color(1.0, 0.4, 0.3)
 	l.no_depth_test = true

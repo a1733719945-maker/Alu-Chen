@@ -37,6 +37,7 @@ var ui_open := false
 # 任务（房主推进，大家显示）
 var quest_idx := 0
 var quest_count := 0
+var quest_target := 1          # 当前任务要做到多少（联机按人数加量，房主算好发给大家）
 
 var rings := {}            # 地上的魂环 rid -> {"pos", "age", "species", "node", "t"}
 var next_ring_id := 1
@@ -394,20 +395,38 @@ func request_yank(pos: Vector3, habitat: String, species: String, age: int) -> v
 	Net.send_host("yank", [pos, habitat, species, age, player.global_position])
 
 
-func _launch_velocity(from: Vector3, owner_pos: Vector3, species: String) -> Vector3:
-	var g := 9.8 * float(Data.BEASTS[species]["gravity"])
+## 这一点有没有能站的东西（地面、码头、浮冰），有就返回高度，没有返回 -INF
+func _solid_y(x: float, z: float) -> float:
+	var q := PhysicsRayQueryParameters3D.create(Vector3(x, 80.0, z), Vector3(x, Island.WATER_Y - 0.4, z), U.LAYER_WORLD)
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	if hit.is_empty() or float(hit["position"].y) < Island.WATER_Y + 0.05:
+		return -INF
+	return float(hit["position"].y)
+
+
+func _launch_velocity(from: Vector3, owner_pos: Vector3, _species: String) -> Vector3:
 	var to_owner := owner_pos - from
 	to_owner.y = 0.0
 	var d := to_owner.length()
+	var dir := to_owner.normalized() if d >= 2.0 else Vector3.RIGHT
 	var land: Vector3
 	if d < 2.0:
 		land = from + Vector3(1.5, 0, 0)
 	else:
-		land = owner_pos - to_owner.normalized() * clampf(d * 0.3, 3.0, 7.0)
-	land.y = island.height_at(land.x, land.z) if island.is_land(land.x, land.z) else Island.WATER_Y
+		land = owner_pos - dir * clampf(d * 0.3, 3.0, 7.0)
+	# 落点在水里的话，沿着往玩家的方向找到岸（或码头）再落，不然魂兽一落地就逃回水里了
+	var ly := _solid_y(land.x, land.z)
+	var k := 0
+	while ly == -INF and k < 40:
+		land += dir * 0.75
+		ly = _solid_y(land.x, land.z)
+		k += 1
+		if (land - owner_pos).dot(dir) > 5.0:
+			break
+	land.y = ly if ly != -INF else Island.WATER_Y
 	var apex := maxf(from.y, land.y) + float(Data.LURE["launch_height"]) * rng.randf_range(0.85, 1.15)
-	var vy := sqrt(2.0 * g * (apex - from.y))
-	var t_total := vy / g + sqrt(2.0 * maxf(apex - land.y, 0.1) / g)
+	var vy := Beast.launch_vy(apex - from.y)
+	var t_total := Beast.flight_time(vy, from.y - land.y)
 	var hor := land - from
 	hor.y = 0.0
 	return hor / t_total + Vector3(0, vy, 0)
@@ -452,7 +471,7 @@ func host_skill_damage(b: Beast, dmg: float, imp: Vector3, caster: int) -> bool:
 		return false
 	var before := b.hp
 	if dmg > 0.0 or imp != Vector3.ZERO:
-		b.take_hit(dmg, imp, Vector3.ZERO, false, caster, 0.0)
+		b.take_hit(dmg, imp, Vector3.ZERO, false, caster, 0.0, true)
 	if dmg > 0.0:
 		var real := before - b.hp
 		Net.send(0, "dmgnum", [b.global_position + Vector3(0, 0.3, 0), real])
@@ -519,6 +538,7 @@ func _host_kill(b: Beast) -> void:
 	_on_kill(msg)
 	_host_maybe_drop_ring(b, killer)
 	_host_quest_event("kill", 1)
+	_host_quest_event("hunt", 1, b.species)
 
 
 func beast_escaped(b: Beast, reason: String) -> void:
@@ -558,9 +578,13 @@ func _on_kill(msg: Array) -> void:
 	st["earned"] = int(msg[8])
 	var b: Beast = beasts.get(id)
 	if b:
+		# 尸体摔到地上、播完死亡动画再化成魂光（Beast.die）
 		pos = b.global_position
-		_remove_beast(b)
-	fx.death_burst(pos, Data.age_color(age), age)
+		beasts.erase(id)
+		b.die()
+		fx.impact_beast(pos + Vector3(0, 0.3, 0), Vector3.UP, Data.age_color(age), true)
+	else:
+		fx.death_burst(pos, Data.age_color(age), age)
 	Sfx.play_at("kill_burst", pos, 0.0, 0.05)
 	var mine: Array = rewards.get(Net.my_id, rewards.get(str(Net.my_id), [0, 0]))
 	var who := peer_name(killer)
@@ -710,7 +734,7 @@ func interactables() -> Array:
 		{"id": "shop", "pos": builder.shop_door, "r": 3.5, "text": "按 F 打开唐门暗器铺"},
 		{"id": "altar", "pos": island.altar_pos + Vector3(0, 1, 0), "r": 3.5, "text": _altar_text()},
 	]
-	if chapter == 1:
+	if int(Data.CHAPTERS[chapter].get("next", 0)) > 0:
 		out.append({"id": "boat", "pos": builder.boat_pos + Vector3(0, 1.0, 0), "r": 4.2, "text": _boat_text()})
 	for rid in rings:
 		var r: Dictionary = rings[rid]
@@ -733,9 +757,10 @@ func _altar_text() -> String:
 
 
 func _boat_text() -> String:
-	if _cur_quest().get("type", "") == "boat":
-		return "按 F 上船，前往第二章 · 落日森林"
-	return "渡船：打败湖主之后才能出发"
+	var nxt := int(Data.CHAPTERS[chapter].get("next", 0))
+	if _cur_quest().get("type", "") == "boat" and Data.CHAPTERS.has(nxt):
+		return "按 F 上船，前往%s" % Data.CHAPTERS[nxt]["name"]
+	return "渡船：打败这里的 Boss 之后才能出发"
 
 
 func nearest_interactable() -> Dictionary:
@@ -785,15 +810,18 @@ func on_bought_weapon(id: String) -> void:
 
 func on_upgraded(_id: String) -> void:
 	player.rebuild_guns()
+	Net.send_host("qev", ["upgrade", 1])
 
 
 # ------------------------------------------------------------------ 任务（房主推进）
 
-func _host_quest_event(type: String, n: int) -> void:
+func _host_quest_event(type: String, n: int, arg := "") -> void:
 	if not Net.is_host():
 		return
 	var q := _cur_quest()
 	if q.is_empty() or q["type"] != type:
+		return
+	if type == "hunt" and str(q.get("species", "")) != arg:
 		return
 	quest_count += n
 	_host_check_quest()
@@ -806,9 +834,10 @@ func _host_check_quest() -> void:
 	if q.is_empty():
 		return
 	var done := false
+	quest_target = Data.quest_target(q, maxi(peer_info.size(), 1))
 	match str(q["type"]):
-		"kill", "buy", "altar", "boss":
-			done = quest_count >= int(q["n"])
+		"kill", "buy", "altar", "boss", "hunt", "upgrade":
+			done = quest_count >= quest_target
 		"level":
 			var mx := 0
 			for id in peer_info:
@@ -838,7 +867,7 @@ func _host_sync_quest() -> void:
 	Profile.quest = quest_idx
 	Profile.quest_count = quest_count
 	Profile.mark_dirty()
-	Net.send(0, "quest", [chapter, quest_idx, quest_count])
+	Net.send(0, "quest", [chapter, quest_idx, quest_count, quest_target])
 	hud.update_quest()
 
 
@@ -886,7 +915,7 @@ func _on_boss_spawn(msg: Array) -> void:
 	boss.setup(self, str(msg[0]), float(msg[1]), not Net.is_host(), msg[2])
 	hud.boss_bar(str(Data.BOSSES[msg[0]]["name"]))
 	Sfx.play("boss_roar", 2.0)
-	if str(msg[0]) == "mandala":
+	if str(Data.BOSSES[msg[0]].get("ai", "")) == "water":
 		fx.splash(msg[2], true)
 	player.trauma = 0.8
 
@@ -918,7 +947,7 @@ func boss_died(b: Boss) -> void:
 	Net.send(0, "bossdead", msg)
 	_on_boss_dead(msg)
 	for i in _all_peers().size():
-		_host_drop_ring(b.center() + Vector3(randf_range(-3, 3), 0, randf_range(-3, 3)), int(d["age"]), "snake" if kind == "mandala" else "wolf")
+		_host_drop_ring(b.center() + Vector3(randf_range(-3, 3), 0, randf_range(-3, 3)), int(d["age"]), str(d.get("ring_beast", "wolf")))
 	_host_quest_event("boss", 1)
 
 
@@ -928,9 +957,7 @@ func _on_boss_dead(msg: Array) -> void:
 	var rewards: Dictionary = msg[1]
 	var mine: Array = rewards.get(Net.my_id, [0, 0])
 	if boss:
-		fx.death_burst(boss.center(), Data.age_color(2), 3)
-		fx.explosion(boss.center(), 8.0, Color(0.8, 0.3, 1.0))
-		boss.queue_free()
+		boss.die_visual()     # 播死亡动画、摔下来，自己炸掉
 		boss = null
 	hud.boss_bar("")
 	_gain(int(mine[0]), int(mine[1]))
@@ -1172,10 +1199,15 @@ func _on_peer_left(id: int) -> void:
 		remotes[id].queue_free()
 		remotes.erase(id)
 	peer_info.erase(id)
+	if Net.is_host():
+		_host_check_quest.call_deferred()   # 人数变了，任务量跟着变
 
 
 func _add_remote(id: int, info: Dictionary) -> void:
+	var is_new := not peer_info.has(id)
 	peer_info[id] = info
+	if is_new and Net.is_host():
+		_host_check_quest.call_deferred()
 	if remotes.has(id):
 		remotes[id].set_info(info)
 		return
@@ -1339,12 +1371,14 @@ func on_message(from: int, type: String, data: Variant) -> void:
 			var d: Array = data
 			quest_idx = int(d[1])
 			quest_count = int(d[2])
+			quest_target = int(d[3]) if d.size() > 3 else int(_cur_quest().get("n", 1))
 			hud.update_quest()
 		"qdone":
 			_on_quest_done(data)
 		"qev":
 			if Net.is_host():
-				_host_quest_event(str(data[0]), int(data[1]))
+				var d: Array = data
+				_host_quest_event(str(d[0]), int(d[1]), str(d[2]) if d.size() > 2 else "")
 		"altar":
 			if Net.is_host() and _cur_quest().get("type", "") == "altar" and not boss:
 				_host_spawn_boss()

@@ -25,15 +25,15 @@ var _reset_armed := false
 func _ready() -> void:
 	UiKit.fill(self)
 	var bg := ColorRect.new()
-	bg.color = Color(0.06, 0.15, 0.13)
+	bg.color = Color(0.03, 0.04, 0.07)
 	add_child(bg)
 	UiKit.fill(bg)
 	# 一点点光晕
 	var glow := TextureRect.new()
 	var gt := GradientTexture2D.new()
 	var g := Gradient.new()
-	g.set_color(0, Color(0.25, 0.45, 0.4, 0.55))
-	g.set_color(1, Color(0.06, 0.15, 0.13, 0.0))
+	g.set_color(0, Color(0.22, 0.32, 0.55, 0.55))
+	g.set_color(1, Color(0.03, 0.04, 0.07, 0.0))
 	gt.gradient = g
 	gt.fill = GradientTexture2D.FILL_RADIAL
 	gt.fill_from = Vector2(0.5, 0.0)
@@ -186,7 +186,7 @@ func _pick_wuhun(i: int, silent := false) -> void:
 		var names := []
 		for sid in tree[r]:
 			names.append("【%s】" % Data.SKILLS[sid]["name"])
-		lines.append("第%s魂环：%s" % [["一", "二", "三"][r], " 或 ".join(names)])
+		lines.append("第%s魂环：%s" % [Data.RING_NAMES[r], " 或 ".join(names)])
 	if not Profile.rings.is_empty():
 		lines.append("（已经选好的魂技不会因为换武魂而改变）")
 	_skills_hint.text = "\n".join(lines)

@@ -39,6 +39,7 @@ var _soul: ProgressBar
 var _xp: ProgressBar
 var _level: Label
 var _items: Label
+var _skills_n := -1
 var _skill_boxes: Array = []
 var _boss_box: VBoxContainer
 var _boss_name: Label
@@ -205,7 +206,7 @@ func _build_top_left() -> void:
 	tl.add_theme_constant_override("separation", 2)
 	tl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(tl)
-	_money = UiKit.label("金魂币 0", 30, UiKit.GOLD, 8)
+	_money = UiKit.num("金魂币 0", 34, UiKit.GOLD, 6)
 	tl.add_child(_money)
 	_room = UiKit.label("", 16, UiKit.MIST, 6)
 	tl.add_child(_room)
@@ -258,10 +259,10 @@ func _build_bottom_right() -> void:
 	br.alignment = BoxContainer.ALIGNMENT_END
 	br.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(br)
-	_weapon = UiKit.label("袖箭", 24, UiKit.MOON, 6)
+	_weapon = UiKit.bold("袖箭", 22, UiKit.MOON, 6)
 	_weapon.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	br.add_child(_weapon)
-	_ammo = UiKit.label("10 / 10", 46, Color.WHITE, 8)
+	_ammo = UiKit.num("10 / 10", 64, Color.WHITE, 6)
 	_ammo.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	br.add_child(_ammo)
 	_reload = UiKit.label("", 18, UiKit.GOLD, 5)
@@ -301,14 +302,15 @@ func _build_bottom_center() -> void:
 	skills.alignment = BoxContainer.ALIGNMENT_CENTER
 	skills.add_theme_constant_override("separation", 10)
 	bc.add_child(skills)
-	for i in 3:
+	for i in Data.SKILL_KEYS.size():
 		var box := PanelContainer.new()
-		box.custom_minimum_size = Vector2(150, 58)
+		box.custom_minimum_size = Vector2(136, 58)
 		var st := StyleBoxFlat.new()
-		st.bg_color = Color(0.03, 0.1, 0.09, 0.7)
-		st.set_border_width_all(2)
-		st.border_color = Color(0.3, 0.35, 0.34)
-		st.set_corner_radius_all(8)
+		st.bg_color = Color(0.03, 0.04, 0.06, 0.72)
+		st.set_border_width_all(0)
+		st.border_width_bottom = 3
+		st.border_color = Color(1, 1, 1, 0.15)
+		st.set_corner_radius_all(4)
 		st.content_margin_left = 8
 		st.content_margin_right = 8
 		box.add_theme_stylebox_override("panel", st)
@@ -343,7 +345,7 @@ func _build_top_center() -> void:
 
 func _build_scores() -> void:
 	_scores = PanelContainer.new()
-	_scores.add_theme_stylebox_override("panel", UiKit.panel_style(Color(0.05, 0.14, 0.12, 0.88)))
+	_scores.add_theme_stylebox_override("panel", UiKit.panel_style())
 	UiKit.place(_scores, Vector4(0.5, 0.5, 0.5, 0.5), Vector4(-320, -240, 320, 240))
 	_scores.visible = false
 	_root.add_child(_scores)
@@ -449,7 +451,7 @@ func choose_skill(age: int, species: String) -> void:
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 16)
 	center.add_child(v)
-	var t := UiKit.title("第%s魂环 · %s魂环（%s）" % [["一", "二", "三"][slot], Data.age_name(age), Data.BEASTS.get(species, {"name": "魂兽"})["name"]], 44, Data.age_color(age))
+	var t := UiKit.title("第%s魂环 · %s魂环（%s）" % [Data.RING_NAMES[slot], Data.age_name(age), Data.BEASTS.get(species, {"name": "魂兽"})["name"]], 44, Data.age_color(age))
 	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(t)
 	var sub := UiKit.label("选一个魂技（选了就不能换，按 %s 释放）" % Data.SKILL_KEYS[slot], 20, UiKit.MIST)
@@ -584,7 +586,7 @@ func boss_defeated(name: String, money: int, bone: String) -> void:
 
 
 func skill_callout(slot: int, sid: String) -> void:
-	_callout.text = "第%s魂技 · %s" % [["一", "二", "三"][slot], Data.SKILLS[sid]["name"]]
+	_callout.text = "第%s魂技 · %s" % [Data.RING_NAMES[slot], Data.SKILLS[sid]["name"]]
 	_callout_t = 1.4
 
 
@@ -623,8 +625,8 @@ func update_quest() -> void:
 		return
 	_quest_text.text = str(q["text"])
 	match str(q["type"]):
-		"kill":
-			_quest_prog.text = "进度 %d / %d" % [world.quest_count, int(q["n"])]
+		"kill", "hunt":
+			_quest_prog.text = "进度 %d / %d" % [world.quest_count, maxi(world.quest_target, int(q["n"]))]
 		"level":
 			_quest_prog.text = "你的等级 %d / %d" % [Profile.level, int(q["n"])]
 		"rings":
@@ -634,15 +636,16 @@ func update_quest() -> void:
 
 
 func _refresh_skills() -> void:
-	for i in 3:
+	_skills_n = Profile.rings.size()
+	for i in Data.SKILL_KEYS.size():
 		var sb: Dictionary = _skill_boxes[i]
 		var sid: String = world.skills.slot_skill(i)
 		var st: StyleBoxFlat = sb["style"]
 		if sid == "":
-			sb["top"].text = "%s · 第%s魂环" % [Data.SKILL_KEYS[i], ["一", "二", "三"][i]]
+			sb["top"].text = "%s · 第%s魂环" % [Data.SKILL_KEYS[i], Data.RING_NAMES[i]]
 			sb["name"].text = "%d 级解锁" % ((i + 1) * 10)
 			sb["name"].add_theme_color_override("font_color", UiKit.MIST)
-			st.border_color = Color(0.3, 0.35, 0.34)
+			st.border_color = Color(1, 1, 1, 0.15)
 		else:
 			var age := int(Profile.rings[i]["age"])
 			sb["name"].text = str(Data.SKILLS[sid]["name"])
@@ -673,7 +676,7 @@ func _process(dt: float) -> void:
 	_items.text = "G 佛怒唐莲 ×%d    H 回血丹 ×%d%s" % [Profile.item_count("grenade"), Profile.item_count("pill"), ("    引兽香 %d 次" % gold) if gold > 0 else ""]
 
 	# 魂技冷却
-	for i in 3:
+	for i in Data.SKILL_KEYS.size():
 		var sb: Dictionary = _skill_boxes[i]
 		var sid: String = world.skills.slot_skill(i)
 		if sid == "":
@@ -686,7 +689,7 @@ func _process(dt: float) -> void:
 		else:
 			sb["top"].text = "%s · 魂力 %d" % [Data.SKILL_KEYS[i], cost]
 			sb["box"].modulate = Color.WHITE if p.soul >= cost else Color(0.6, 0.7, 1.0)
-	if _skill_boxes[0]["name"].text.ends_with("解锁") != (world.skills.slot_skill(0) == ""):
+	if Profile.rings.size() != _skills_n:
 		_refresh_skills()
 
 	var g := p.gun
@@ -807,6 +810,11 @@ func _quest_target() -> Variant:
 			return world.builder.boat_pos + Vector3(0, 1.8, 0)
 	if str(q.get("type", "")) == "boss" and world.boss:
 		return world.boss.center() + Vector3(0, 3, 0)
+	if str(q.get("type", "")) == "hunt":
+		var hb := str(Data.BEASTS[q["species"]]["habitat"])
+		var hc: Vector3 = world.island.habitat_center(hb)
+		if hc.distance_to(world.player.global_position) > 12.0:
+			return hc + Vector3(0, 2.5, 0)
 	# 地上有能吸收的魂环：标出来
 	var best: Variant = null
 	for rid in world.rings:

@@ -21,7 +21,7 @@ env:
 jobs:
   build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -62,7 +62,7 @@ jobs:
       - name: 导入资源
         run: ~/godot/godot --headless --path game --import
 
-      - name: 自动测试 · 单人（整个流程：抓魂兽、暗器铺、压枪、魂环、Boss、坐船去第二章）
+      - name: 自动测试 · 单人（物理、抓魂兽、暗器铺、压枪、魂环、五章 Boss 和坐船）
         run: ~/godot/godot --headless --path game -- --autotest=solo
 
       - name: 自动测试 · 联机（房主 + 客人）

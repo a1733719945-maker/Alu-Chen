@@ -1,13 +1,13 @@
 class_name SkillSystem
 extends Node
-## 魂技：按 Q / C / X 放第一、二、三魂环的魂技。
+## 魂技：按 Q / C / X / Z / V 放第一到第五魂环的魂技。
 ##
 ## 放技能的人：扣魂力、算目标、处理自己身上的效果（增益、冲刺、跳跃），把"对魂兽的效果"发给房主。
 ## 房主：对魂兽 / Boss 生效（炸飞、定身、易伤、牵引、光束……），再广播特效。
 ## 威力 = 魂环年份倍率（十年 1.0 / 百年 1.3 / 千年 1.7 / 万年 2.2）× (1 + 等级 × 1%)
 
 var world: Node
-var cooldowns := [0.0, 0.0, 0.0]
+var cooldowns := [0.0, 0.0, 0.0, 0.0, 0.0]
 var _leap := {}                  # 凤翼天翔 / 天使之翼 落地时触发
 var _projectiles: Array = []     # 本地模拟的飞弹 {sid, pos, vel, power, caster, life, mi}
 var _rains: Array = []           # 房主排队的连击 {sid, center, power, caster, waves, t}
@@ -266,7 +266,7 @@ func _launch(center: Vector3, radius: float, dmg: float, up: float, caster: int,
 		away.y = 0
 		var imp: Vector3 = (away.normalized() * up * 0.25 + Vector3.UP * up) * b.mass
 		b.root_t = 0.0
-		b.gravity_scale = Data.BEASTS[b.species]["gravity"]
+		b.gravity_scale = Beast.G_RISE
 		world.host_skill_damage(b, dmg, imp, caster)
 	var boss: Boss = world.boss
 	if boss and dmg > 0.0 and boss.center().distance_to(center) < radius + 3.0:
