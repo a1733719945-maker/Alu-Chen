@@ -10,6 +10,11 @@ extends Node3D
 ## ai = air（冰霜巨龙）：在天上盘旋。
 ##   冰息 —— 冻住的地方会减速；俯冲 —— 红圈预警后冲下来；半血以下召唤雪原狼
 ## 打头是弱点，伤害 ×1.7；打身体 ×0.6
+##
+## 受击体积：按模型真实的包围盒做一个身体盒子 + 头上一个弱点球（Data.BOSSES 的 weak 是头在包围盒里的位置）。
+## 魂技按"离身体表面多远"算，不按中心算，不然大 Boss 根本打不到。
+## 仇恨：只打附近 90 米内、没隐身、没刚复活的玩家；没人可打一段时间就慢慢回血。
+## 外观：身上有流动的金色能量和边缘光、四个魂环、背后的圣光光轮、天上照下来的光柱、金色光点。
 
 const INTERP_DELAY := 0.1
 
@@ -45,6 +50,48 @@ var _last_pos := Vector3.ZERO
 var _speed := 0.0
 var _dying := -1.0
 var _fall_v := 0.0
+var _box := AABB()               # 身体包围盒（Head 本地坐标）
+var _weak_pos := Vector3.ZERO
+var _weak_r := 1.0
+var _mark_t := 0.0
+var _mark_mult := 1.0
+var _no_target_t := 0.0
+var _halo: Node3D
+var _soul_rings: Array = []
+var _pillar: MeshInstance3D
+
+const HOLY_SHADER := """shader_type spatial;
+render_mode unshaded, blend_add, depth_draw_never, cull_back, shadows_disabled;
+uniform vec4 rim_color : source_color = vec4(1.0, 0.82, 0.45, 1.0);
+uniform vec4 vein_color : source_color = vec4(0.7, 0.4, 1.0, 1.0);
+uniform float rim_power = 2.2;
+uniform float strength = 1.3;
+varying vec3 wpos;
+float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float noise(vec2 p) {
+	vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);
+	return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+void vertex() { wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz; }
+void fragment() {
+	float fres = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), rim_power);
+	float n = noise(wpos.xz * 0.7 + vec2(0.0, TIME * 0.5)) * noise(wpos.xy * 0.9 - vec2(TIME * 0.35, 0.0));
+	float veins = smoothstep(0.3, 0.42, n) * (0.55 + 0.45 * sin(TIME * 3.0 + wpos.y));
+	float pulse = 0.85 + 0.15 * sin(TIME * 1.7);
+	ALBEDO = rim_color.rgb * fres * strength * pulse + vein_color.rgb * veins * 0.6;
+}
+"""
+const PILLAR_SHADER := """shader_type spatial;
+render_mode unshaded, blend_add, depth_draw_never, cull_disabled, shadows_disabled;
+uniform vec4 color : source_color = vec4(1.0, 0.85, 0.5, 1.0);
+uniform float alpha = 0.18;
+void fragment() {
+	float fade = pow(1.0 - UV.y, 0.6) * smoothstep(0.0, 0.08, UV.y);
+	float side = pow(clamp(dot(NORMAL, VIEW), 0.0, 1.0), 2.0);
+	float flow = 0.75 + 0.25 * sin(UV.y * 40.0 - TIME * 3.0);
+	ALBEDO = color.rgb * alpha * fade * side * flow;
+}
+"""
 
 
 func setup(p_world: Node, p_kind: String, p_hp: float, p_proxy: bool, anchor: Vector3) -> void:
@@ -62,7 +109,7 @@ func setup(p_world: Node, p_kind: String, p_hp: float, p_proxy: bool, anchor: Ve
 
 # ------------------------------------------------------------------ 模型和碰撞
 
-func _part_body(r: float, weak: bool, offset: Vector3) -> void:
+func _part_body(shape: Shape3D, weak: bool, offset: Vector3) -> void:
 	var b := StaticBody3D.new()
 	b.collision_layer = U.LAYER_BEAST
 	b.collision_mask = 0
@@ -70,13 +117,28 @@ func _part_body(r: float, weak: bool, offset: Vector3) -> void:
 	b.set_meta("weak", weak)
 	b.set_meta("offset", offset)
 	var cs := CollisionShape3D.new()
-	var sh := SphereShape3D.new()
-	sh.radius = r
-	cs.shape = sh
+	cs.shape = shape
 	b.add_child(cs)
 	b.top_level = true
 	add_child(b)
 	parts.append(b)
+
+
+## 模型所有网格合起来的包围盒（Head 本地坐标）
+func _measure_box() -> AABB:
+	var out := AABB()
+	var first := true
+	var inv := head.global_transform.affine_inverse()
+	for mi: MeshInstance3D in model.find_children("*", "MeshInstance3D", true, false):
+		if mi.mesh == null:
+			continue
+		var bb := (inv * mi.global_transform) * mi.mesh.get_aabb()
+		if first:
+			out = bb
+			first = false
+		else:
+			out = out.merge(bb)
+	return out
 
 
 func _build() -> void:
@@ -90,21 +152,33 @@ func _build() -> void:
 	var k := BeastModels._model_scale(cfg)
 	size = Vector3(float(d["w"]), float(d["h"]), float(d["l"])) * k
 	_upright = size.y > size.z * 1.15
+	_box = _measure_box()
+	if _box.size.length() < 0.5:
+		_box = AABB(-size * 0.5, size)
+	size = _box.size
 	# 年份光环
 	var r := maxf(size.x, size.z) * 0.55
-	var ring := U.part(head, U.torus(r, r + 0.25, 64, 6), U.glow(Data.age_color(2), 4.0), Vector3(0, -size.y * 0.35, 0), Vector3.ZERO, Vector3.ONE, false)
+	var ring := U.part(head, U.torus(r, r + 0.25, 64, 6), U.glow(Data.age_color(2), 4.0), Vector3(0, _box.position.y + size.y * 0.15, 0), Vector3.ZERO, Vector3.ONE, false)
 	ring.name = "Ring"
-	# 碰撞：身体几个球，头是弱点
-	if _upright:
-		var rb := minf(size.x, size.z) * 0.45
-		_part_body(rb, false, Vector3(0, -size.y * 0.2, 0))
-		_part_body(rb * 0.9, false, Vector3(0, size.y * 0.05, 0))
-		_part_body(rb * 0.75, true, Vector3(0, size.y * 0.3, -size.z * 0.1))
+	# 碰撞：身体一个盒子（头那一截切掉），头是弱点球，露在外面
+	var wn: Vector3 = cfg.get("weak", Vector3(0, 0.36, -0.2) if _upright else Vector3(0, 0.15, -0.42))
+	_weak_pos = _box.get_center() + _box.size * wn
+	var mn := minf(size.x, minf(size.y, size.z))
+	var mx := maxf(size.x, maxf(size.y, size.z))
+	_weak_r = clampf(maxf(mn * 0.4, mx * 0.13), 1.0, 4.0)
+	var lo := _box.position + _box.size * 0.06
+	var hi := _box.end - _box.size * 0.06
+	if absf(wn.y) >= absf(wn.z):
+		hi.y = minf(hi.y, _weak_pos.y - _weak_r * 0.5)
 	else:
-		var rb := minf(size.x, size.y) * 0.45
-		_part_body(rb, false, Vector3(0, 0, size.z * 0.05))
-		_part_body(rb * 0.85, false, Vector3(0, 0, size.z * 0.3))
-		_part_body(rb * 0.7, true, Vector3(0, size.y * 0.1, -size.z * 0.36))
+		lo.z = maxf(lo.z, _weak_pos.z + _weak_r * 0.5)
+	var bs := BoxShape3D.new()
+	bs.size = (hi - lo).abs().max(Vector3.ONE * 0.5)
+	_part_body(bs, false, (lo + hi) * 0.5)
+	var ws := SphereShape3D.new()
+	ws.radius = _weak_r
+	_part_body(ws, true, _weak_pos)
+	_decorate()
 	match ai:
 		"water":
 			head.global_position = _anchor + Vector3(0, -size.y, 0)
@@ -114,14 +188,119 @@ func _build() -> void:
 			head.global_position = _anchor + Vector3(0, 40, 0)
 
 
+## 让 Boss 看起来威猛、有神圣感：
+##   材质变暗、更有光泽，外面再叠一层流动的金色能量 + 边缘光（HOLY_SHADER）；
+##   身上四个魂环（三个千年紫、一个万年黑红）；头后面一圈圣光光轮；天上照下来一道光柱；金色光点往上飘；眼睛发光
+func _decorate() -> void:
+	var holy := ShaderMaterial.new()
+	holy.shader = Shader.new()
+	holy.shader.code = HOLY_SHADER
+	var theme: Color = cfg.get("holy", Color(1.0, 0.82, 0.45))
+	holy.set_shader_parameter("rim_color", theme)
+	var vein: Color = cfg.get("glow", Color(0.2, 0.1, 0.35))
+	holy.set_shader_parameter("vein_color", Color(vein.r * 3.0 + 0.3, vein.g * 3.0 + 0.2, vein.b * 3.0 + 0.5))
+	for mi: MeshInstance3D in model.find_children("*", "MeshInstance3D", true, false):
+		if mi.mesh == null:
+			continue
+		for i in mi.mesh.get_surface_count():
+			var base := mi.get_active_material(i)
+			if not base is BaseMaterial3D:
+				continue
+			var m := (base as BaseMaterial3D).duplicate() as BaseMaterial3D
+			var a := m.albedo_color
+			m.albedo_color = Color(a.r * 0.72, a.g * 0.7, a.b * 0.74, a.a)
+			m.roughness = 0.42
+			m.metallic_specular = 0.75
+			m.rim_enabled = true
+			m.rim = 0.7
+			m.rim_tint = 0.4
+			m.next_pass = holy
+			mi.set_surface_override_material(i, m)
+	var c := _box.get_center()
+	var big := maxf(size.x, size.z)
+	# 魂环
+	var ages := [2, 2, 2, 3]
+	for i in ages.size():
+		var col := Data.age_color(ages[i])
+		var rr := big * (0.62 + i * 0.05)
+		var mat := U.glow(col if ages[i] < 3 else Color(0.9, 0.1, 0.15), 5.0 if ages[i] < 3 else 3.0)
+		var sr := Node3D.new()
+		head.add_child(sr)
+		U.part(sr, U.torus(rr - 0.16, rr + 0.16, 96, 8), mat, Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
+		if ages[i] == 3:
+			U.part(sr, U.torus(rr - 0.1, rr + 0.1, 96, 6), U.mat(Color(0.03, 0.02, 0.03), 0.3), Vector3(0, 0.02, 0), Vector3.ZERO, Vector3.ONE, false)
+		_soul_rings.append(sr)
+	# 圣光光轮：头后面竖着的一圈 + 放射状光芒
+	_halo = Node3D.new()
+	head.add_child(_halo)
+	_halo.position = _weak_pos + Vector3(0, _weak_r * 0.6, _weak_r * 1.6)
+	var hr := clampf(_weak_r * 2.4, 2.0, 7.0)
+	var gold := U.glow(Color(1.0, 0.85, 0.45), 4.0, true)
+	U.part(_halo, U.torus(hr - 0.12, hr + 0.12, 96, 6), gold, Vector3.ZERO, Vector3(PI / 2, 0, 0), Vector3.ONE, false)
+	U.part(_halo, U.torus(hr * 0.72 - 0.05, hr * 0.72 + 0.05, 96, 4), gold, Vector3.ZERO, Vector3(PI / 2, 0, 0), Vector3.ONE, false)
+	for k in 16:
+		var a := TAU * k / 16.0
+		var ln := hr * (0.5 if k % 2 == 0 else 0.3)
+		U.part(_halo, U.box(Vector3(0.08, ln, 0.04)), gold, Vector3(cos(a), sin(a), 0) * (hr + ln * 0.5 + 0.2), Vector3(0, 0, a - PI / 2), Vector3.ONE, false)
+	# 眼睛
+	for side in [-1.0, 1.0]:
+		var e := U.part(head, U.sphere(_weak_r * 0.14, 8, 6), U.glow(Color(1.0, 0.9, 0.5), 10.0), _weak_pos + Vector3(side * _weak_r * 0.35, _weak_r * 0.15, -_weak_r * 0.75), Vector3.ZERO, Vector3.ONE, false)
+		e.name = "Eye"
+	var el := OmniLight3D.new()
+	el.light_color = Color(1.0, 0.85, 0.5)
+	el.light_energy = 3.0
+	el.omni_range = _weak_r * 4.0
+	el.position = _weak_pos + Vector3(0, 0, -_weak_r)
+	head.add_child(el)
+	var gl := OmniLight3D.new()
+	gl.light_color = theme
+	gl.light_energy = 2.5
+	gl.omni_range = big * 2.2
+	gl.position = c
+	head.add_child(gl)
+	# 金色光点
+	var p := CPUParticles3D.new()
+	p.amount = 90
+	p.lifetime = 3.0
+	p.mesh = U.sphere(0.08, 6, 3)
+	p.material_override = U.glow(Color(1.0, 0.85, 0.45), 6.0, true)
+	p.direction = Vector3.UP
+	p.spread = 25.0
+	p.initial_velocity_min = 0.8
+	p.initial_velocity_max = 2.2
+	p.gravity = Vector3(0, 0.5, 0)
+	p.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+	p.emission_box_extents = _box.size * 0.55
+	p.position = c
+	head.add_child(p)
+	# 光柱：从天上照下来
+	_pillar = MeshInstance3D.new()
+	var cm := CylinderMesh.new()
+	cm.top_radius = big * 0.5
+	cm.bottom_radius = big * 0.75
+	cm.height = 60.0
+	cm.cap_top = false
+	cm.cap_bottom = false
+	_pillar.mesh = cm
+	var pm := ShaderMaterial.new()
+	pm.shader = Shader.new()
+	pm.shader.code = PILLAR_SHADER
+	pm.set_shader_parameter("color", theme)
+	_pillar.material_override = pm
+	_pillar.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_pillar.top_level = true
+	add_child(_pillar)
+
+
 ## 露出水面 / 离地多高（模型中心）
 func _hover() -> float:
 	match ai:
 		"water":
-			return size.y * (0.35 if _upright else 0.18)
+			# 只有底下一小截在水里，整个身子都露出来能打
+			return -_box.position.y - size.y * 0.1
 		"air":
 			return 14.0
-	return size.y * 0.5
+	return -_box.position.y
 
 
 # ------------------------------------------------------------------ 房主：受伤
@@ -129,7 +308,7 @@ func _hover() -> float:
 func take_hit(dmg: float, weak: bool, shooter: int) -> float:
 	if dead:
 		return 0.0
-	var real := dmg * (1.7 if weak else 0.6)
+	var real := dmg * (1.7 if weak else 0.6) * (_mark_mult if _mark_t > 0.0 else 1.0)
 	hp -= real
 	damagers[shooter] = float(damagers.get(shooter, 0.0)) + real
 	if hp <= max_hp * 0.5 and phase == 1:
@@ -144,6 +323,35 @@ func take_hit(dmg: float, weak: bool, shooter: int) -> float:
 
 func root(t: float) -> void:
 	_root_t = maxf(_root_t, t * 0.5)
+
+
+func mark(t: float, mult: float) -> void:
+	_mark_t = maxf(_mark_t, t)
+	_mark_mult = maxf(mult, 1.0)
+
+
+## 点 p 离 Boss 身体表面多远（在身体里面是负数或 0）
+func surface_dist(p: Vector3) -> float:
+	var best := INF
+	for b in parts:
+		var cs := b.get_child(0) as CollisionShape3D
+		if cs.shape is SphereShape3D:
+			best = minf(best, b.global_position.distance_to(p) - (cs.shape as SphereShape3D).radius)
+		elif cs.shape is BoxShape3D:
+			var lp := b.global_transform.affine_inverse() * p
+			var he := (cs.shape as BoxShape3D).size * 0.5
+			var q := lp.abs() - he
+			best = minf(best, q.max(Vector3.ZERO).length() + minf(maxf(q.x, maxf(q.y, q.z)), 0.0))
+	return best
+
+
+## 一条线段（光束、冲刺）有没有碰到 Boss
+func segment_hit(origin: Vector3, dir: Vector3, length: float, width: float) -> bool:
+	var steps := int(ceil(length / 0.8))
+	for i in steps + 1:
+		if surface_dist(origin + dir * (length * i / maxf(steps, 1))) < width:
+			return true
+	return false
 
 
 func center() -> Vector3:
@@ -174,6 +382,12 @@ func die_visual() -> void:
 	for b in parts:
 		b.collision_layer = 0
 	head.get_node("Ring").visible = false
+	for sr in _soul_rings:
+		(sr as Node3D).visible = false
+	if _halo:
+		_halo.visible = false
+	if _pillar:
+		_pillar.visible = false
 	BeastModels.play_role(model, "death")
 
 
@@ -212,8 +426,10 @@ func _process(dt: float) -> void:
 	_update_visual(dt)
 
 
+## 能打的玩家：没倒地、没隐身、没在复活保护里，而且离 Boss 不太远（跑远了就脱战）
 func _targets() -> Array:
-	return world.alive_players()
+	var c := head.global_position
+	return world.alive_players().filter(func(p): return Vector2(p["pos"].x - c.x, p["pos"].z - c.z).length() < 90.0)
 
 
 func _pick_target() -> Dictionary:
@@ -225,6 +441,17 @@ func _pick_target() -> Dictionary:
 
 func _think(dt: float) -> void:
 	state_t += dt
+	_mark_t = maxf(_mark_t - dt, 0.0)
+	if _targets().is_empty():
+		# 没人可打：脱战，慢慢回血（打死人以后复活回来不会一直被追着打）
+		_no_target_t += dt
+		if _no_target_t > 8.0:
+			hp = minf(hp + max_hp * 0.015 * dt, max_hp)
+		if state in ["idle"]:
+			_atk_cd = maxf(_atk_cd, 2.0)
+			return
+	else:
+		_no_target_t = 0.0
 	var speed_k := 0.5 if _root_t > 0.0 else (1.35 if phase == 2 else 1.0)
 	_root_t = maxf(_root_t - dt, 0.0)
 	match ai:
@@ -270,7 +497,7 @@ func _think_water(dt: float, speed_k: float) -> void:
 			var np := h + to.limit_length(3.2 * speed_k * dt)
 			np.y = surf + sin(_t * 1.3) * 0.8
 			head.global_position = np
-			_face_toward(world.nearest_player_pos(h) if _upright else _move_to, dt)
+			_face_toward(world.nearest_player_pos(h), dt)
 			if _dive_cd <= 0.0:
 				_dive_cd = 16.0
 				_set_state("dive")
@@ -478,4 +705,15 @@ func _update_visual(dt: float) -> void:
 	var airborne := ai == "air" or state == "leap"
 	BeastModels._animate_model(model, airborne, _speed, "fly" if ai == "air" else "run")
 	for b in parts:
-		b.global_position = head.global_transform * (b.get_meta("offset") as Vector3)
+		b.global_transform = head.global_transform * Transform3D(Basis(), b.get_meta("offset") as Vector3)
+	# 魂环、光轮、光柱
+	for i in _soul_rings.size():
+		var sr: Node3D = _soul_rings[i]
+		sr.rotation = Vector3(sin(_t * 0.6 + i) * 0.12, _t * (0.5 + i * 0.15) * (1.0 if i % 2 == 0 else -1.0), cos(_t * 0.5 + i) * 0.12)
+		sr.position.y = _box.position.y + size.y * (0.12 + i * 0.22) + sin(_t * 1.2 + i * 1.7) * 0.25
+	if _halo:
+		_halo.rotation.z = _t * 0.25
+		var s := 1.0 + sin(_t * 2.0) * 0.04
+		_halo.scale = Vector3(s, s, s)
+	if _pillar:
+		_pillar.global_position = Vector3(p.x, p.y + 30.0, p.z)

@@ -12,7 +12,7 @@ const HIP := {
 	"zhuihun": Vector3(0.15, -0.175, -0.36),
 }
 # 开镜时照门离眼睛多远
-const ADS_DIST := {"xiujian": 0.22, "zhuge": 0.16, "kongque": 0.13, "baoyu": 0.2, "zhuihun": 0.12}
+const ADS_DIST := {"xiujian": 0.22, "zhuge": 0.15, "kongque": 0.075, "baoyu": 0.2, "zhuihun": 0.12}
 const SPRING_K := 300.0
 const SPRING_C := 22.0
 
@@ -97,8 +97,8 @@ func add_sway(mouse_delta: Vector2) -> void:
 
 ## 开火：往后顶、往上抬、随机翻滚一点；弩臂往前弹；机括动一下
 func kick(back: float, up: float, lever_time := 0.0) -> void:
-	_kpv += Vector3(randf_range(-0.2, 0.2), 0.12, 1.0) * back
-	_krv += Vector3(up, randf_range(-0.25, 0.25) * up, randf_range(-0.6, 0.6) * up)
+	_kpv += Vector3(randf_range(-0.25, 0.25), 0.2, 1.0) * back * 1.6
+	_krv += Vector3(up * 1.4, randf_range(-0.35, 0.35) * up, randf_range(-0.8, 0.8) * up)
 	_arm_flex = 1.0
 	if lever_time > 0.0:
 		_lever_t = lever_time

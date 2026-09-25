@@ -11,6 +11,7 @@ var _pool3d: Array[AudioStreamPlayer3D] = []
 var _i2d := 0
 var _i3d := 0
 var _ambient: AudioStreamPlayer
+var _lowpass_idx := -1
 
 
 func _ready() -> void:
@@ -67,6 +68,20 @@ func play_at(sound: String, pos: Vector3, volume_db := 0.0, pitch_jitter := 0.05
 	p.volume_db = volume_db + linear_to_db(maxf(Settings.sfx_volume, 0.0001))
 	p.pitch_scale = pitch * (1.0 + randf_range(-pitch_jitter, pitch_jitter))
 	p.play()
+
+
+## 眼睛在水下：所有声音变闷（主总线加低通）
+func set_underwater(on: bool) -> void:
+	var bus := AudioServer.get_bus_index("Master")
+	if _lowpass_idx < 0:
+		var lp := AudioEffectLowPassFilter.new()
+		lp.cutoff_hz = 700.0
+		lp.resonance = 0.6
+		AudioServer.add_bus_effect(bus, lp)
+		_lowpass_idx = AudioServer.get_bus_effect_count(bus) - 1
+	AudioServer.set_bus_effect_enabled(bus, _lowpass_idx, on)
+	if on:
+		play("water_in", -4.0, 0.05)
 
 
 func play_ambient(sound: String, volume_db := -14.0) -> void:

@@ -30,6 +30,9 @@ const JUMP_BUFFER := 0.12
 const FIRE_BUFFER := 0.09
 const REGEN_DELAY := 4.0
 const REGEN_RATE := 8.0
+const BREATH := 10.0             # 水下憋气秒数（魂骨能加）
+const SWIM_SPEED := 3.4
+const DROWN_DPS := 12.0
 
 var world: Node
 var cam: Camera3D
@@ -81,6 +84,29 @@ var _breath := 4.0               # 狙击屏息剩余秒数
 var _breath_tired := 0.0
 var _strafe := 0.0
 
+# 水、倒地、魂技位移、魂骨
+var under := false               # 眼睛在水下
+var air := BREATH                # 剩余憋气
+var invuln_t := 0.0              # 复活保护（魂兽和 Boss 不打）
+var carried := false             # 被海鸥叼着
+var giant_k := 0.0               # 变大了多少（0 = 正常，0.5 = 1.5 倍）
+var _giant_target := 0.0
+var _giant_t := 0.0
+var fly_t := 0.0
+var _grapple_to := Vector3.ZERO
+var _grapple_t := 0.0
+var _rope: MeshInstance3D
+var _air_jumps := 0
+var _drown_t := 0.0
+var _was_wet := false
+var _cs: CollisionShape3D
+# 暗器：倒地掉在地上的（lost）、从地上捡来的队友的（borrowed：id -> 主人）
+var lost_guns: Array = []
+var borrowed := {}
+var bag_sel := 0
+var _t_hold := -1.0
+var _t_scrolled := false
+
 
 func _ready() -> void:
 	collision_layer = U.LAYER_PLAYER
@@ -94,6 +120,14 @@ func _ready() -> void:
 	cs.shape = cap
 	cs.position.y = 0.89
 	add_child(cs)
+	_cs = cs
+	_rope = MeshInstance3D.new()
+	_rope.mesh = U.cyl(0.02, 0.02, 1.0, 6)
+	_rope.material_override = U.glow(Color(0.45, 0.8, 1.0), 3.0)
+	_rope.top_level = true
+	_rope.visible = false
+	_rope.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(_rope)
 
 	cam = Camera3D.new()
 	cam.top_level = true
@@ -129,7 +163,16 @@ func rebuild_guns() -> void:
 		old[g.id] = g
 	var keep_id := gun.id if gun else ""
 	guns.clear()
+	var ids: Array = []
 	for id in Profile.loadout:
+		if not id in lost_guns:
+			ids.append(id)
+	for id in borrowed:
+		if not id in ids:
+			ids.append(id)
+	if ids.is_empty():
+		ids = ["xiujian"]
+	for id in ids:
 		var stats := Profile.weapon_stats(id)
 		if old.has(id):
 			old[id].set_stats(stats)
@@ -175,7 +218,12 @@ func buff(stat: String) -> float:
 
 
 func damage_mult() -> float:
-	return 1.0 + buff("dmg")
+	return (1.0 + buff("dmg")) * (1.0 + giant_k * 0.2)
+
+
+## 魂兽和 Boss 不打你：刚复活、隐身、被海鸥叼着
+func untargetable() -> bool:
+	return invuln_t > 0.0 or buffs.has("invis") or carried
 
 
 func crit_active() -> bool:
@@ -194,8 +242,10 @@ func heal(amount: float) -> void:
 
 
 func take_damage(amount: float, from_pos: Vector3) -> void:
-	if dead or amount <= 0.0:
+	if dead or amount <= 0.0 or invuln_t > 0.0:
 		return
+	# 减伤：魂技（金刚变、浴火、防御增幅）+ 魂骨，最多减 80%
+	amount *= 1.0 - clampf(buff("dr") + Profile.bone_bonus("dr"), 0.0, 0.8)
 	var left := amount
 	if shield > 0.0:
 		var s := minf(shield, left)
@@ -215,19 +265,174 @@ func take_damage(amount: float, from_pos: Vector3) -> void:
 
 func revive() -> void:
 	dead = false
+	carried = false
 	hp = Profile.max_hp()
 	shield = 0.0
 	soul = Profile.max_soul()
+	air = max_air()
+	fly_t = 0.0
+	_grapple_t = 0.0
 	for g in guns:
 		g.ammo = int(g.d["mag"])
 		g.cancel_reload()
 	ammo_changed.emit(gun)
 
 
+## 被队友拉起来：原地站起来，体力回一部分，2 秒保护
+func revive_here(frac: float) -> void:
+	dead = false
+	carried = false
+	hp = Profile.max_hp() * frac
+	air = max_air()
+	invuln_t = 2.0
+	velocity = Vector3.ZERO
+
+
+## 被海鸥叼着飞（World 每帧给位置）
+func carry_to(p: Vector3) -> void:
+	global_position = p
+	velocity = Vector3.ZERO
+	_prev_pos = p
+	_cur_pos = p
+
+
+func max_air() -> float:
+	return BREATH + Profile.bone_bonus("breath")
+
+
+func on_bones_changed() -> void:
+	rebuild_guns()
+	hp = minf(hp, Profile.max_hp())
+
+
+# ------------------------------------------------------------------ 暗器掉落 / 捡起
+
+## 倒地时掉出去的暗器：[[id, 主人], ...]（袖箭不掉）
+func drop_guns_on_death() -> Array:
+	var out: Array = []
+	if gun.id != "xiujian":
+		out.append([gun.id, int(borrowed.get(gun.id, Net.my_id))])
+	for id in borrowed.keys():
+		if id != gun.id:
+			out.append([id, int(borrowed[id])])
+	for e in out:
+		_remove_gun(str(e[0]))
+	if not out.is_empty():
+		rebuild_guns()
+	return out
+
+
+func _remove_gun(id: String) -> void:
+	if borrowed.has(id):
+		borrowed.erase(id)
+	elif not id in lost_guns:
+		lost_guns.append(id)
+
+
+func can_pick_gun(id: String, _owner: int) -> bool:
+	if id in lost_guns:
+		return true
+	for g in guns:
+		if g.id == id:
+			return false
+	return true
+
+
+func pick_gun(id: String, owner: int) -> void:
+	if id in lost_guns:
+		lost_guns.erase(id)
+		world.hud.toast("捡回了你的%s" % Data.WEAPONS[id]["name"], Color(0.6, 0.9, 1.0))
+	else:
+		borrowed[id] = owner
+		world.hud.toast("捡到 %s 的%s（按 T 可以丢还给他）" % [world.peer_name(owner), Data.WEAPONS[id]["name"]], Color(0.6, 0.9, 1.0), 4.0)
+	rebuild_guns()
+	for i in guns.size():
+		if guns[i].id == id:
+			switch_weapon(i)
+
+
+## 背包里能丢出去的东西（按 T）
+func bag_entries() -> Array:
+	var out: Array = []
+	for id in borrowed:
+		out.append({"kind": "gun", "key": id, "n": 1, "owner": int(borrowed[id])})
+	for k in Profile.bag:
+		out.append({"kind": "mat", "key": k, "n": int(Profile.bag[k])})
+	for b in Profile.bones:
+		out.append({"kind": "bone", "key": b, "n": 1, "on": Profile.is_equipped(b)})
+	for it in ["pill", "grenade"]:
+		if Profile.item_count(it) > 0:
+			out.append({"kind": "item", "key": it, "n": Profile.item_count(it)})
+	for g in guns:
+		if g.id != "xiujian" and not borrowed.has(g.id):
+			out.append({"kind": "gun", "key": g.id, "n": 1, "owner": Net.my_id})
+	return out
+
+
+func _throw_selected() -> void:
+	var es := bag_entries()
+	if es.is_empty():
+		world.hud.toast("背包是空的。打死魂兽掉的素材、魂骨走过去就能捡", Color(0.85, 0.85, 0.85))
+		return
+	bag_sel = clampi(bag_sel, 0, es.size() - 1)
+	var e: Dictionary = es[bag_sel]
+	match str(e["kind"]):
+		"mat":
+			if not Profile.take_mat(str(e["key"])):
+				return
+		"bone":
+			if not Profile.remove_bone(str(e["key"])):
+				return
+			on_bones_changed()
+		"item":
+			if not Profile.use_item(str(e["key"])):
+				return
+		"gun":
+			_remove_gun(str(e["key"]))
+			rebuild_guns()
+	world.loot.throw_entry(e, cam.global_position, aim_dir(), velocity)
+	viewmodel.throw_anim()
+
+
+# ------------------------------------------------------------------ 魂技位移
+
+func start_giant(scale_to: float, dur: float) -> void:
+	_giant_target = maxf(scale_to - 1.0, 0.0)
+	_giant_t = dur
+	Sfx.play("skill_buff", 0.0, 0.0, 0.6)
+
+
+func blink(dir: Vector3, dist: float) -> void:
+	var from := global_position + Vector3(0, 1.0, 0)
+	var hit: Dictionary = world.raycast(from, from + dir * dist, U.LAYER_WORLD, [get_rid()])
+	var to := from + dir * dist
+	if not hit.is_empty():
+		to = hit["position"] - dir * 0.6
+	var g: float = world.island.height_at(to.x, to.z)
+	to.y = maxf(to.y - 1.0, g + 0.05)
+	world.fx.poof(global_position + Vector3(0, 1, 0))
+	teleport(to)
+	world.fx.poof(to + Vector3(0, 1, 0))
+	invuln_t = maxf(invuln_t, 0.35)
+	_fov_punch -= 8.0
+
+
+func grapple_to(p: Vector3) -> void:
+	_grapple_to = p
+	_grapple_t = 1.4
+	velocity = Vector3.ZERO
+	Sfx.play("lure_throw", 0.0, 0.05, 1.3)
+
+
+func start_fly(dur: float) -> void:
+	fly_t = dur
+	velocity.y = maxf(velocity.y, 5.0)
+
+
 # ------------------------------------------------------------------ 视角
 
 func _unhandled_input(event: InputEvent) -> void:
-	if not input_enabled or dead:
+	if not input_enabled:
 		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		var d: Vector2 = event.screen_relative
@@ -274,20 +479,23 @@ func aim_dir() -> Vector3:
 
 
 func eye_position() -> Vector3:
-	return _cur_pos + Vector3(0, lerpf(EYE_HEIGHT, CROUCH_EYE, crouch_k), 0)
+	return _cur_pos + Vector3(0, lerpf(EYE_HEIGHT, CROUCH_EYE, crouch_k) * (1.0 + giant_k), 0)
 
 
 # ------------------------------------------------------------------ 移动（物理帧）
 
 func _physics_process(dt: float) -> void:
 	_prev_pos = global_position
+	if carried:
+		_cur_pos = global_position
+		return
 	var input := Vector2.ZERO
 	var can_move := input_enabled and not dead
 	if can_move:
 		input = Input.get_vector("move_left", "move_right", "move_forward", "move_back")
 	_strafe = input.x
 	var crouching := can_move and Input.is_action_pressed("crouch")
-	crouch_k = move_toward(crouch_k, 1.0 if crouching else 0.0, dt / 0.12)
+	crouch_k = move_toward(crouch_k, 1.0 if crouching and fly_t <= 0.0 and not swimming else 0.0, dt / 0.12)
 	var sprinting := can_move and Input.is_action_pressed("sprint") and input.y < -0.3 and ads < 0.3 and not crouching and not gun.reloading
 	sprint_k = move_toward(sprint_k, 1.0 if sprinting and is_on_floor() else 0.0, dt / 0.15)
 	var max_speed := WALK_SPEED
@@ -296,53 +504,111 @@ func _physics_process(dt: float) -> void:
 	elif crouching:
 		max_speed = CROUCH_SPEED
 	max_speed *= lerpf(1.0, float(gun.d["ads_move"]), ads)
-	max_speed *= 1.0 + buff("speed")
+	max_speed *= 1.0 + buff("speed") + Profile.bone_bonus("speed") + giant_k * 0.25
+	max_speed = maxf(max_speed, 1.0)
 
 	var wish := Basis(Vector3.UP, yaw) * Vector3(input.x, 0, input.y)
 	if wish.length() > 1.0:
 		wish = wish.normalized()
 	var hv := Vector3(velocity.x, 0, velocity.z)
+	var jump_held := can_move and Input.is_action_pressed("jump")
+	var jump_pressed := can_move and Input.is_action_just_pressed("jump")
 
-	if is_on_floor():
+	# 水：脚下是深水，身子泡进去了就是在游泳（不会浮在水面上走）
+	var ground: float = world.island.height_at(global_position.x, global_position.z)
+	var deep := ground < Island.WATER_Y - 1.3
+	var eye_h := lerpf(EYE_HEIGHT, CROUCH_EYE, crouch_k) * (1.0 + giant_k)
+	swimming = deep and global_position.y < Island.WATER_Y - 0.55 and fly_t <= 0.0
+	var wet := global_position.y < Island.WATER_Y - 0.1 and ground < Island.WATER_Y
+	if wet and not _was_wet and velocity.y < -3.0:
+		world.fx.splash(Vector3(global_position.x, Island.WATER_Y, global_position.z), velocity.y < -8.0)
+		Sfx.play("splash_big" if velocity.y < -8.0 else "splash_small", -2.0, 0.1)
+	_was_wet = wet
+
+	if _grapple_t > 0.0:
+		# 蓝银飞索：直线拉过去
+		_grapple_t -= dt
+		var to := _grapple_to - global_position - Vector3(0, 0.8, 0)
+		velocity = to.normalized() * 26.0
+		if to.length() < 1.6 or _grapple_t <= 0.0:
+			_grapple_t = 0.0
+			velocity = to.normalized() * 6.0 + Vector3.UP * 5.0
+		_coyote = 0.0
+	elif fly_t > 0.0 and not dead:
+		# 飞行：空格上升，Ctrl 下降
+		fly_t -= dt
+		hv = hv.move_toward(wish * max_speed * 1.35, GROUND_ACCEL * 0.6 * dt)
+		var vy := 0.0
+		if jump_held:
+			vy = 6.0
+		elif can_move and Input.is_action_pressed("crouch"):
+			vy = -6.0
+		velocity.y = move_toward(velocity.y, vy, 30.0 * dt)
+		_coyote = 0.0
+	elif swimming:
+		# 游泳：不按键就慢慢往下沉；空格往上游，Ctrl 往下潜，往前游时按视线方向上下
+		var sw := SWIM_SPEED * (1.0 + Profile.bone_bonus("swim")) * (1.0 + buff("speed") * 0.5)
+		hv = hv.move_toward(wish * sw, 18.0 * dt)
+		var vy := -0.9
+		if jump_held:
+			vy = 3.2
+		elif can_move and Input.is_action_pressed("crouch"):
+			vy = -3.2
+		if input.y < -0.3:
+			vy += aim_dir().y * sw * 0.8
+		# 头最多露出水面一点点
+		if global_position.y + eye_h > Island.WATER_Y + 0.35 and vy > 0.0:
+			vy = 0.0
+		velocity.y = move_toward(velocity.y, vy, 10.0 * dt)
+		# 靠岸按空格爬上去
+		if jump_pressed and is_on_wall() and global_position.y + eye_h > Island.WATER_Y - 0.3:
+			velocity.y = JUMP_VELOCITY * 0.85
+		_coyote = 0.0
+	elif is_on_floor():
 		_coyote = COYOTE_TIME
+		_air_jumps = 1 if Profile.bone_bonus("djump") > 0.0 else 0
 		if wish.length() > 0.01:
 			hv = hv.move_toward(wish * max_speed, GROUND_ACCEL * dt)
 		else:
 			hv = hv.move_toward(Vector3.ZERO, GROUND_DECEL * dt)
-	elif swimming:
-		hv = hv.move_toward(wish * 3.2, GROUND_ACCEL * 0.4 * dt)
 	else:
 		_coyote -= dt
 		# 空中：只能往想去的方向加速，不会凭空刹车
 		if wish.length() > 0.01:
 			var target := wish * maxf(max_speed, hv.length())
 			hv = hv.move_toward(target, AIR_ACCEL * dt)
-		velocity.y -= GRAVITY * dt
-	# 下水：浅水走得慢；深水浮在水面上游，头露出水面，可以游回岸边
-	var ground: float = world.island.height_at(global_position.x, global_position.z)
-	var swim_y := Island.WATER_Y - 1.35
-	swimming = ground < swim_y and global_position.y < swim_y + 0.15
-	if swimming:
-		velocity.y = (swim_y - global_position.y) * 6.0
-		hv = hv.limit_length(3.2)
-		_coyote = 0.0
-	elif global_position.y < Island.WATER_Y + 0.1 and ground < Island.WATER_Y - 0.2:
+		velocity.y -= GRAVITY * dt * (0.8 if wet else 1.0)
+		# 魂骨：滑翔
+		if jump_held and velocity.y < -2.0 and Profile.bone_bonus("glide") > 0.0:
+			velocity.y = move_toward(velocity.y, -2.0, 60.0 * dt)
+			hv = hv.move_toward(wish * max_speed * 1.25, AIR_ACCEL * 1.5 * dt)
+	# 浅水：走得慢
+	if not swimming and global_position.y < Island.WATER_Y + 0.1 and ground < Island.WATER_Y - 0.2:
 		hv *= 1.0 - clampf((Island.WATER_Y - ground) * 0.25, 0.0, 0.5) * dt * 8.0
 	# 地图边界
 	var out := Vector3(global_position.x, 0, global_position.z)
 	if out.length() > 150.0 and hv.dot(out.normalized()) > 0.0:
 		hv -= out.normalized() * hv.dot(out.normalized())
-	velocity.x = hv.x
-	velocity.z = hv.z
+	if _grapple_t <= 0.0:
+		velocity.x = hv.x
+		velocity.z = hv.z
 
-	if can_move and Input.is_action_just_pressed("jump"):
+	if jump_pressed:
 		_jump_buf = JUMP_BUFFER
 	_jump_buf -= dt
-	if _jump_buf > 0.0 and _coyote > 0.0:
-		velocity.y = JUMP_VELOCITY
+	var jv := JUMP_VELOCITY * sqrt(1.0 + Profile.bone_bonus("jump") + giant_k * 0.6)
+	if _jump_buf > 0.0 and _coyote > 0.0 and not swimming:
+		velocity.y = jv
 		_jump_buf = 0.0
 		_coyote = 0.0
 		Sfx.play("jump", -10.0, 0.08)
+	elif jump_pressed and _air_jumps > 0 and not is_on_floor() and not swimming and fly_t <= 0.0 and _coyote <= 0.0:
+		# 魂骨：二段跳
+		_air_jumps -= 1
+		_jump_buf = 0.0
+		velocity.y = jv * 0.9
+		world.fx.poof(global_position)
+		Sfx.play("jump", -6.0, 0.08, 1.25)
 
 	_fall_speed = -velocity.y
 	move_and_slide()
@@ -354,7 +620,7 @@ func _physics_process(dt: float) -> void:
 		Sfx.play("land", lerpf(-12.0, -2.0, k), 0.08)
 	_was_on_floor = is_on_floor()
 
-	if global_position.y < -8.0:
+	if global_position.y < ground - 4.0 or global_position.y < -80.0:
 		teleport(world.island.spawn + Vector3(0, 1, 0))
 
 	var speed := hv.length()
@@ -392,11 +658,31 @@ func _process(dt: float) -> void:
 			_throw_grenade()
 		if Input.is_action_just_pressed("pill"):
 			_use_pill()
+		_throw_input(dt)
 	if input_enabled and not dead and Input.is_action_just_pressed("interact"):
 		world.interact()
 	if not active and world.hud.wheel_open():
 		world.hud.close_wheel()
 		_q_t = -1.0
+
+
+## T：轻按把选中的东西丢出去；按住 T 滚鼠标滚轮换要丢的东西
+func _throw_input(dt: float) -> void:
+	if Input.is_action_just_pressed("throw"):
+		_t_hold = 0.0
+		_t_scrolled = false
+	if _t_hold < 0.0:
+		return
+	if Input.is_action_pressed("throw"):
+		_t_hold += dt
+	else:
+		if not _t_scrolled:
+			_throw_selected()
+		_t_hold = -1.0
+
+
+func bag_open() -> bool:
+	return _t_hold >= 0.0 and input_enabled
 
 
 ## Q：轻按放当前魂技；按住弹出魂技轮盘，移动鼠标选，松开就放
@@ -419,6 +705,48 @@ func _skill_input(dt: float) -> void:
 func _update_stats(dt: float) -> void:
 	_since_hurt += dt
 	busy_t = maxf(busy_t - dt, 0.0)
+	invuln_t = maxf(invuln_t - dt, 0.0)
+	# 变大 / 变回来
+	if _giant_t > 0.0:
+		_giant_t -= dt
+		if _giant_t <= 0.0:
+			_giant_target = 0.0
+	giant_k = move_toward(giant_k, _giant_target, dt * 2.5)
+	_cs.scale = Vector3.ONE * (1.0 + giant_k)
+	_cs.position.y = 0.89 * (1.0 + giant_k)
+	# 飞索的绳子
+	if _grapple_t > 0.0:
+		var a := viewmodel.hand_global()
+		var b := _grapple_to
+		_rope.visible = true
+		_rope.global_position = (a + b) * 0.5
+		_rope.global_basis = Basis.looking_at((b - a).normalized(), Vector3.UP if absf((b - a).normalized().y) < 0.98 else Vector3.FORWARD) * Basis(Vector3.RIGHT, PI / 2)
+		_rope.scale = Vector3(1, a.distance_to(b), 1)
+	else:
+		_rope.visible = false
+	# 憋气：眼睛在水下就扣，憋不住了开始掉血
+	var eye_y := global_position.y + lerpf(EYE_HEIGHT, CROUCH_EYE, crouch_k) * (1.0 + giant_k)
+	var gy: float = world.island.height_at(global_position.x, global_position.z)
+	var was_under := under
+	under = eye_y < Island.WATER_Y - 0.05 and gy < Island.WATER_Y and not carried
+	if under != was_under:
+		Sfx.set_underwater(under)
+		if not under and air < max_air() * 0.5:
+			Sfx.play("gasp", -2.0, 0.05)
+	if under and not dead:
+		air -= dt
+		if air <= 0.0:
+			air = 0.0
+			_drown_t -= dt
+			if _drown_t <= 0.0:
+				_drown_t = 0.5
+				var inv := invuln_t
+				invuln_t = 0.0
+				take_damage(DROWN_DPS * 0.5, global_position + Vector3.UP)
+				invuln_t = inv
+	else:
+		air = minf(air + dt * 4.0, max_air())
+		_drown_t = 0.0
 	for k in buffs.keys():
 		buffs[k][1] -= dt
 		if buffs[k][1] <= 0.0:
@@ -430,7 +758,7 @@ func _update_stats(dt: float) -> void:
 	if dead:
 		return
 	var max_hp := Profile.max_hp()
-	var regen := buff("regen") + (5.0 if buffs.has("all") else 0.0)
+	var regen := buff("regen") + (5.0 if buffs.has("all") else 0.0) + Profile.bone_bonus("regen")
 	if _since_hurt > REGEN_DELAY:
 		regen += REGEN_RATE
 	hp = minf(hp + regen * dt, max_hp)
@@ -473,8 +801,8 @@ func _update_camera(dt: float) -> void:
 	var bob := 0.0
 	if is_on_floor() and hv.length() > 1.0:
 		bob = sin(Time.get_ticks_msec() / 1000.0 * lerpf(9.0, 13.0, sprint_k)) * 0.022 * clampf(hv.length() / WALK_SPEED, 0.0, 1.4) * (1.0 - ads * 0.85)
-	var eye := lerpf(EYE_HEIGHT, CROUCH_EYE, crouch_k)
-	if dead:
+	var eye := lerpf(EYE_HEIGHT, CROUCH_EYE, crouch_k) * (1.0 + giant_k)
+	if dead and not carried:
 		eye = 0.4
 	cam.global_position = body + Vector3(0, eye + bob - _land_dip * 0.12, 0)
 	var punch := Basis.from_euler(Vector3(deg_to_rad(_punch.x), deg_to_rad(_punch.y), deg_to_rad(_punch.z)))
@@ -507,6 +835,8 @@ func _update_weapons(dt: float) -> void:
 	switch_t -= dt
 	var active := input_enabled and not dead and busy_t <= 0.0
 	var want_ads := active and Input.is_action_pressed("aim") and switch_t <= 0.0 and sprint_k < 0.5 and not gun.reloading
+	if want_ads and ads <= 0.0:
+		Sfx.play("ads_in", -6.0, 0.05)
 	ads = move_toward(ads, 1.0 if want_ads else 0.0, dt / float(gun.d["ads_time"]))
 	scoped = bool(gun.d.get("scope", false)) and ads > 0.92
 
@@ -515,7 +845,18 @@ func _update_weapons(dt: float) -> void:
 	for i in 5:
 		if Input.is_action_just_pressed("weapon_%d" % (i + 1)) and i < guns.size():
 			switch_weapon(i)
-	if Input.is_action_just_pressed("weapon_next"):
+	if bag_open():
+		# 按住 T 时滚轮换要丢的东西
+		var n := maxi(bag_entries().size(), 1)
+		if Input.is_action_just_pressed("weapon_next"):
+			bag_sel = (bag_sel + 1) % n
+			_t_scrolled = true
+			Sfx.play("ui_click", -10.0)
+		elif Input.is_action_just_pressed("weapon_prev"):
+			bag_sel = (bag_sel - 1 + n) % n
+			_t_scrolled = true
+			Sfx.play("ui_click", -10.0)
+	elif Input.is_action_just_pressed("weapon_next"):
 		switch_weapon((gun_idx + 1) % guns.size())
 	elif Input.is_action_just_pressed("weapon_prev"):
 		switch_weapon((gun_idx - 1 + guns.size()) % guns.size())
@@ -593,11 +934,22 @@ func _fire() -> void:
 			lever = float(d.get("cycle", 1.0))
 		"baoyu":
 			lever = 0.35
-	var back := 0.035 if n == 1 else 0.08
+	var back := 0.05 if n == 1 else 0.1
 	if gun.id == "zhuihun":
-		back = 0.1
-	viewmodel.kick(back * (1.0 - ads * 0.4), deg_to_rad(float(d["view_punch"]) * 3.0) * (1.0 - ads * 0.5), lever)
-	Sfx.play(d["sound"], -1.0, 0.05)
+		back = 0.13
+	# 手里的暗器往后顶、往上跳（开镜时小一些，但不会没有）
+	viewmodel.kick(back * (1.0 - ads * 0.35), deg_to_rad(float(d["view_punch"]) * 4.2) * (1.0 - ads * 0.45), lever)
+	Sfx.play(d["sound"], 0.0, 0.04, 1.0 + randf_range(-0.03, 0.03))
+	# 抛壳
+	var ej := viewmodel.model().get_node_or_null("Eject") as Node3D
+	if ej and not scoped:
+		var cb := cam.global_basis
+		world.fx.shell(ej.global_position, cb.x * randf_range(2.2, 3.2) + cb.y * randf_range(1.5, 2.4) + cb.z * 0.6 + velocity)
+		if randf() < 0.5:
+			get_tree().create_timer(0.45).timeout.connect(func(): Sfx.play("shell", -18.0, 0.2))
+	# 弹匣快空了：每发多一声清脆的"咔"
+	if gun.ammo > 0 and gun.ammo <= maxi(int(float(d["mag"]) * 0.25), 1):
+		Sfx.play("low_ammo", -8.0, 0.05)
 	if gun.id == "zhuihun":
 		get_tree().create_timer(0.35).timeout.connect(func(): Sfx.play("bolt_cycle", -4.0))
 	elif gun.id == "baoyu":
@@ -642,4 +994,14 @@ func net_state() -> Array:
 		flags |= 16
 	if dead:
 		flags |= 32
-	return [global_position, yaw, pitch, gun.id, flags, int(lure.state), lure.pos, hp / Profile.max_hp()]
+	if untargetable():
+		flags |= 64
+	if buffs.has("invis"):
+		flags |= 128
+	if fly_t > 0.0:
+		flags |= 256
+	if carried:
+		flags |= 512
+	if under:
+		flags |= 1024
+	return [global_position, yaw, pitch, gun.id, flags, int(lure.state), lure.pos, hp / Profile.max_hp(), 1.0 + giant_k]

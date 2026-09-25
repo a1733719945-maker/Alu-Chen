@@ -23,6 +23,8 @@ var _walk_t := 0.0
 var _last_pos := Vector3.ZERO
 var pitch := 0.0
 var _dead := false
+var _flags := 0
+var _scale := 1.0
 var _flash := [0.0, 0.0, 0.0]
 
 
@@ -108,6 +110,11 @@ func is_dead() -> bool:
 	return _dead
 
 
+## 隐身、刚复活、被海鸥叼着：魂兽和 Boss 不打他
+func untargetable() -> bool:
+	return (_flags & 64) != 0
+
+
 func push_snapshot(s: Array) -> void:
 	var entry := [Time.get_ticks_msec() / 1000.0]
 	entry.append_array(s)
@@ -153,7 +160,21 @@ func _process(dt: float) -> void:
 	for id2 in weapons:
 		weapons[id2].visible = id2 == gid
 	var flags := int(s1[5])
+	_flags = flags
 	_dead = (flags & 32) != 0
+	# 变大、隐身
+	var want := float(s1[9]) if s1.size() > 9 else 1.0
+	_scale = lerpf(_scale, want, 1.0 - exp(-8.0 * dt))
+	body.scale = Vector3.ONE * _scale
+	label.position.y = 2.25 * _scale
+	body.visible = (flags & 128) == 0
+	var nm := "%s\n%d 级%s" % [str(info.get("name", "魂师")), int(info.get("level", 1)), Data.titles(int(info.get("level", 1)))]
+	if flags & 128:
+		nm += "\n（隐身中）"
+	elif _dead and not (flags & 512):
+		nm += "\n倒地！按住 F 救他"
+	if label.text != nm:
+		label.text = nm
 	var hv := (pos - _last_pos) / maxf(dt, 0.0001)
 	hv.y = 0
 	_last_pos = pos

@@ -69,8 +69,46 @@ func cast(slot: int) -> void:
 	match t:
 		"buff":
 			p.add_buff(str(s["stat"]), float(s["amount"]) * lerpf(1.0, power, 0.5), float(s["dur"]))
+			if s.has("stat2"):
+				p.add_buff(str(s["stat2"]), float(s["amount2"]) * lerpf(1.0, power, 0.5), float(s["dur"]))
 			if s.get("team", false):
 				Net.send(0, "buff", [str(s["stat"]), float(s["amount"]) * lerpf(1.0, power, 0.5), float(s["dur"]), p.global_position, float(s.get("radius", 15.0))])
+		"giant":
+			# 变大：体型、减伤、伤害
+			var dur := float(s["dur"])
+			p.start_giant(float(s["scale"]), dur)
+			p.add_buff("dr", float(s["dr"]), dur)
+			p.add_buff("dmg", float(s["dmg"]) * lerpf(1.0, power, 0.5), dur)
+		"blink":
+			# 瞬移：沿准星方向（水平）闪过去，撞墙就停在墙前
+			var flat := Vector3(dir.x, 0, dir.z).normalized()
+			var start := p.global_position
+			p.blink(flat, float(s["dist"]))
+			if s.has("stat"):
+				p.add_buff(str(s["stat"]), float(s["amount"]), float(s["dur"]))
+			if float(s.get("damage", 0.0)) > 0.0:
+				Net.send_host("skill", [sid, power, start + Vector3.UP, flat, Net.my_id])
+			center = start + Vector3.UP
+		"grapple":
+			# 蓝银飞索：打到哪儿把自己拉过去
+			var hit: Dictionary = world.raycast(origin, origin + dir * float(s["range"]), U.LAYER_WORLD | U.LAYER_BEAST, [p.get_rid()])
+			if hit.is_empty():
+				world.hud.toast("太远了，飞索够不着", Color(0.8, 0.9, 1.0))
+				cooldowns[slot] = 0.5
+				p.soul += float(s["cost"])
+				return
+			p.grapple_to(hit["position"])
+		"fly":
+			p.start_fly(float(s["dur"]))
+			if s.has("stat") and s.get("team", false):
+				p.add_buff(str(s["stat"]), float(s["amount"]), float(s["dur"]))
+				Net.send(0, "buff", [str(s["stat"]), float(s["amount"]), float(s["dur"]), p.global_position, float(s.get("radius", 15.0))])
+			if float(s.get("damage", 0.0)) > 0.0:
+				_leap = {"sid": sid, "power": power, "t": -float(s["dur"])}
+		"invis":
+			p.add_buff("invis", 1.0, float(s["dur"]))
+			if s.has("stat"):
+				p.add_buff(str(s["stat"]), float(s["amount"]), float(s["dur"]))
 		"heal":
 			p.heal(float(s["amount"]) * power)
 			Net.send(0, "heal", [float(s["amount"]) * power, p.global_position, float(s.get("radius", 15.0))])
@@ -109,7 +147,7 @@ func _update_leap() -> void:
 		return
 	var p: Player = world.player
 	_leap["t"] += get_process_delta_time()
-	if _leap["t"] > 0.3 and p.is_on_floor():
+	if _leap["t"] > 0.3 and p.is_on_floor() and p.fly_t <= 0.0:
 		var sid: String = _leap["sid"]
 		Net.send_host("skill", [sid, _leap["power"], p.global_position, Vector3.DOWN, Net.my_id])
 		world.skill_fx(sid, p.global_position, Vector3.DOWN, Net.my_id, p.global_position)
@@ -190,14 +228,19 @@ func host_apply(sid: String, power: float, center: Vector3, dir: Vector3, caster
 				if dmg > 0.0:
 					_hit(b, dmg, Vector3.ZERO, caster)
 			var boss: Boss = world.boss
-			if boss and boss.center().distance_to(center) < float(s["radius"]) + 4.0:
+			if boss and not boss.dead and boss.surface_dist(center) < float(s["radius"]):
 				boss.root(float(s["dur"]))
+				if dmg > 0.0:
+					world.host_boss_damage(dmg, false, caster)
 		"mark":
 			for b in _beasts_in(center, float(s["radius"])):
 				b.mark_t = float(s["dur"])
 				b.mark_mult = float(s["mult"])
 				if sid == "ht_break":
 					b.armor_break = true
+			var boss2: Boss = world.boss
+			if boss2 and not boss2.dead and boss2.surface_dist(center) < float(s["radius"]):
+				boss2.mark(float(s["dur"]), float(s["mult"]))
 		"pull":
 			for b in _beasts_in(center, float(s["radius"])):
 				b.pull_t = float(s["dur"])
@@ -212,6 +255,11 @@ func host_apply(sid: String, power: float, center: Vector3, dir: Vector3, caster
 			_beam(center, dir, float(s["dist"]), dmg, 8, caster, float(s.get("radius", 3.0)))
 			if s.has("impulse"):
 				_launch(center + dir * float(s["dist"]), float(s.get("radius", 3.0)), 0.0, float(s["impulse"]), caster)
+		"blink":
+			if dmg > 0.0:
+				_beam(center, dir, float(s["dist"]), dmg, 8, caster, float(s.get("radius", 3.0)))
+		"fly":
+			_launch(center, float(s.get("radius", 5.0)), dmg, float(s.get("impulse", 7.0)), caster)
 		"leap":
 			_launch(center, float(s["radius"]), dmg, float(s.get("impulse", 8.0)), caster)
 
@@ -269,8 +317,9 @@ func _launch(center: Vector3, radius: float, dmg: float, up: float, caster: int,
 		b.root_t = 0.0
 		b.gravity_scale = Beast.G_RISE
 		world.host_skill_damage(b, dmg, imp, caster)
+	# Boss 按身体表面算距离（它很大，按中心算会打不到）
 	var boss: Boss = world.boss
-	if boss and dmg > 0.0 and boss.center().distance_to(center) < radius + 3.0:
+	if boss and not boss.dead and dmg > 0.0 and boss.surface_dist(center) < radius:
 		world.host_boss_damage(dmg, false, caster)
 
 
@@ -290,8 +339,5 @@ func _beam(origin: Vector3, dir: Vector3, length: float, dmg: float, pierce: int
 	for i in mini(pierce, hits.size()):
 		world.host_skill_damage(hits[i][1], dmg, dir * 3.0 + Vector3.UP * 3.0, caster)
 	var boss: Boss = world.boss
-	if boss and dmg > 0.0:
-		var rel := boss.center() - origin
-		var along := rel.dot(dir)
-		if along > 0.0 and along < length and (rel - dir * along).length() < 3.0:
-			world.host_boss_damage(dmg, true, caster)
+	if boss and not boss.dead and dmg > 0.0 and boss.segment_hit(origin, dir, length, width):
+		world.host_boss_damage(dmg, true, caster)

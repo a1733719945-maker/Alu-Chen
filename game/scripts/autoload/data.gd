@@ -1,7 +1,7 @@
 extends Node
 ## 游戏数据表。调数值主要改这里：暗器、魂兽、魂技、章节任务、商店价格。
 
-const PROTOCOL_VERSION := "m2-1"
+const PROTOCOL_VERSION := "m3-1"
 
 ## 字体：思源黑体（正文 Medium、强调 Bold、标题 Black），数字用 Barlow Condensed（窄体，像 FPS 游戏的弹药数）
 var font_ui: Font = preload("res://assets/fonts/NotoSansSC-Medium.otf")
@@ -47,12 +47,12 @@ const AGES := [
 # model：assets/models/creatures 里的模型；fit + size：按长(l)/高(h)/宽(w)缩放到多少米；tint：颜色；glow：发光
 const BEASTS := {
 	# 第一章 · 湖心岛
-	"rabbit": {"name": "柔骨兔", "habitat": "burrow", "hp": 30.0, "reward": 10, "xp": 10, "motion": "hop",
+	"rabbit": {"name": "柔骨兔", "habitat": "burrow", "hp": 30.0, "reward": 10, "xp": 10, "motion": "hop", "hurt": 5.0,
 		"model": "bunny", "fit": "h", "size": 0.8, "tint": Color(1.0, 0.97, 0.98)},
-	"vine": {"name": "鬼藤", "habitat": "water", "hp": 36.0, "reward": 14, "xp": 12, "motion": "slither"},
-	"bird": {"name": "风铃鸟", "habitat": "meadow", "hp": 24.0, "reward": 15, "xp": 12, "motion": "fly",
+	"vine": {"name": "鬼藤", "habitat": "water", "hp": 36.0, "reward": 14, "xp": 12, "motion": "slither", "hurt": 7.0},
+	"bird": {"name": "风铃鸟", "habitat": "meadow", "hp": 24.0, "reward": 15, "xp": 12, "motion": "fly", "hurt": 5.0,
 		"model": "pigeon", "fit": "w", "size": 1.0, "tint": Color(0.55, 1.0, 0.95)},
-	"moth": {"name": "月光蛾", "habitat": "flowers", "hp": 26.0, "reward": 12, "xp": 10, "motion": "flutter",
+	"moth": {"name": "月光蛾", "habitat": "flowers", "hp": 26.0, "reward": 12, "xp": 10, "motion": "flutter", "hurt": 4.0,
 		"model": "wasp", "fit": "w", "size": 0.9, "tint": Color(0.75, 0.8, 1.2), "glow": Color(0.35, 0.45, 1.0)},
 	# 第二章 · 落日森林
 	"wolf": {"name": "疾风魔狼", "habitat": "den", "hp": 70.0, "reward": 30, "xp": 26, "motion": "run", "hurt": 12.0,
@@ -66,13 +66,13 @@ const BEASTS := {
 	# 第三章 · 星斗大森林
 	"stag": {"name": "鬼眼鹿", "habitat": "glade", "hp": 110.0, "reward": 50, "xp": 46, "motion": "run", "hurt": 14.0, "tall": true,
 		"model": "stag", "fit": "l", "size": 2.3, "tint": Color(0.55, 0.6, 0.85), "glow": Color(0.1, 0.35, 0.8)},
-	"bat": {"name": "夜翼魔蝠", "habitat": "roost", "hp": 80.0, "reward": 48, "xp": 44, "motion": "fly",
+	"bat": {"name": "夜翼魔蝠", "habitat": "roost", "hp": 80.0, "reward": 48, "xp": 44, "motion": "fly", "hurt": 11.0,
 		"model": "bat", "fit": "w", "size": 1.6, "tint": Color(0.8, 0.7, 1.0)},
 	"raptor": {"name": "疾爪龙", "habitat": "thicket", "hp": 130.0, "reward": 56, "xp": 52, "motion": "run", "hurt": 18.0,
 		"model": "raptor", "fit": "l", "size": 2.8, "tint": Color(0.7, 0.85, 0.7)},
 	"spiderling": {"name": "地穴魔蛛", "habitat": "nest", "hp": 100.0, "reward": 52, "xp": 48, "motion": "run", "hurt": 14.0,
 		"model": "spider", "fit": "w", "size": 1.8, "tint": Color(0.85, 0.6, 1.0)},
-	"frog": {"name": "碧磷蟾", "habitat": "bog", "hp": 90.0, "reward": 46, "xp": 42, "motion": "hop",
+	"frog": {"name": "碧磷蟾", "habitat": "bog", "hp": 90.0, "reward": 46, "xp": 42, "motion": "hop", "hurt": 10.0,
 		"model": "frog", "fit": "l", "size": 1.0, "tint": Color(0.6, 1.1, 0.8), "glow": Color(0.05, 0.3, 0.15)},
 	# 第四章 · 极北之地
 	"husky": {"name": "雪原狼", "habitat": "snowden", "hp": 150.0, "reward": 70, "xp": 64, "motion": "run", "hurt": 18.0,
@@ -83,18 +83,18 @@ const BEASTS := {
 		"model": "triceratops", "fit": "l", "size": 3.4, "tint": Color(0.7, 0.9, 1.15)},
 	"snowape": {"name": "雪魔猿", "habitat": "icecave", "hp": 200.0, "reward": 80, "xp": 72, "motion": "throw", "hurt": 20.0, "tall": true,
 		"model": "yeti", "fit": "h", "size": 2.3, "tint": Color(1.05, 1.08, 1.15)},
-	"icefish": {"name": "冰鳞鱼", "habitat": "icelake", "hp": 120.0, "reward": 64, "xp": 58, "motion": "slither",
+	"icefish": {"name": "冰鳞鱼", "habitat": "icelake", "hp": 120.0, "reward": 64, "xp": 58, "motion": "slither", "hurt": 12.0,
 		"model": "fish1", "fit": "l", "size": 1.4, "tint": Color(0.75, 0.95, 1.2), "glow": Color(0.1, 0.25, 0.35)},
 	# 第五章 · 海神岛
 	"crab": {"name": "铁钳蟹", "habitat": "beach", "hp": 220.0, "reward": 90, "xp": 82, "motion": "charge", "armor": 0.4, "hurt": 22.0,
 		"model": "crab", "fit": "w", "size": 1.5, "tint": Color(1.2, 0.7, 0.55)},
-	"gull": {"name": "海魂鸥", "habitat": "cliff", "hp": 140.0, "reward": 86, "xp": 78, "motion": "fly",
+	"gull": {"name": "海魂鸥", "habitat": "cliff", "hp": 140.0, "reward": 86, "xp": 78, "motion": "fly", "hurt": 14.0,
 		"model": "pigeon", "fit": "w", "size": 1.4, "tint": Color(1.25, 1.25, 1.3)},
-	"reeffish": {"name": "彩鳞鱼", "habitat": "reef", "hp": 150.0, "reward": 84, "xp": 76, "motion": "slither",
+	"reeffish": {"name": "彩鳞鱼", "habitat": "reef", "hp": 150.0, "reward": 84, "xp": 76, "motion": "slither", "hurt": 12.0,
 		"model": "fish2", "fit": "l", "size": 1.2},
 	"shark": {"name": "深海魔鲨", "habitat": "deep", "hp": 260.0, "reward": 110, "xp": 96, "motion": "slither", "hurt": 22.0,
 		"model": "shark", "fit": "l", "size": 3.0, "tint": Color(0.75, 0.85, 1.0)},
-	"manta": {"name": "幽灵鳐", "habitat": "abyss", "hp": 240.0, "reward": 120, "xp": 104, "motion": "flutter",
+	"manta": {"name": "幽灵鳐", "habitat": "abyss", "hp": 240.0, "reward": 120, "xp": 104, "motion": "flutter", "hurt": 16.0,
 		"model": "manta", "fit": "w", "size": 2.6, "tint": Color(0.6, 0.7, 1.1), "glow": Color(0.1, 0.2, 0.6)},
 }
 
@@ -123,6 +123,89 @@ const HABITATS := {
 	"deep": {"name": "深海", "beast": "shark"},
 	"abyss": {"name": "海渊", "beast": "manta"},
 }
+
+# ================================================================ 魂兽性格（每只拽出来的时候随机，房主决定）
+# flee   胆小：落地就逃回窝里 / 水里
+# fierce 凶暴：盯住最近的玩家一直打，不逃，打到死为止
+# sly    狡猾：落地先装死几秒，你一走近就突然窜回去
+# bone   魂骨兽：全身金光，跑得飞快，打死必掉一块魂骨
+const TEMPERS := {
+	"flee": {"name": "", "color": Color(0.85, 0.85, 0.85)},
+	"fierce": {"name": "凶暴", "color": Color(1.0, 0.32, 0.26)},
+	"sly": {"name": "狡猾", "color": Color(0.55, 0.95, 0.6)},
+	"bone": {"name": "魂骨", "color": Color(1.0, 0.84, 0.3)},
+}
+const AGGRESSIVE := ["wolf", "rhino", "ape", "snake", "raptor", "spiderling", "husky", "icehorn", "snowape", "crab", "shark", "stag", "icedeer", "bat"]
+
+
+func roll_temper(rng: RandomNumberGenerator, species: String, age: int) -> String:
+	var bone := 0.04 + age * 0.03
+	var fierce := (0.5 if species in AGGRESSIVE else 0.25) + age * 0.08
+	var sly := 0.12
+	var r := rng.randf()
+	if r < bone:
+		return "bone"
+	r -= bone
+	if r < fierce:
+		return "fierce"
+	r -= fierce
+	if r < sly:
+		return "sly"
+	return "flee"
+
+
+# ================================================================ 战利品（打死魂兽掉在地上，捡起来丢进收购箱换金魂币）
+const LOOT_PART := {"hop": "绒毛", "slither": "鳞片", "fly": "羽翎", "flutter": "翅鳞", "run": "利齿", "charge": "硬角", "throw": "兽骨"}
+const KILL_MONEY := 0.6          # 打死直接拿 60% 金魂币，剩下的价值在掉落的素材里（要捡、要卖）
+const LOOT_VALUE := 0.7
+const SELL_ITEMS := {"pill": 20, "grenade": 30}
+
+
+## 素材的 key："mat:<魂兽>:<年份>"
+func mat_key(species: String, age: int) -> String:
+	return "mat:%s:%d" % [species, age]
+
+
+func item_name(kind: String, key: String) -> String:
+	match kind:
+		"mat":
+			var p := key.split(":")
+			if p.size() < 3 or not BEASTS.has(p[1]):
+				return "素材"
+			return "%s%s%s" % [age_name(int(p[2])), BEASTS[p[1]]["name"], LOOT_PART.get(BEASTS[p[1]]["motion"], "兽骨")]
+		"bone":
+			return bone_name(key)
+		"gun":
+			return str(WEAPONS.get(key, {"name": "暗器"})["name"])
+		"item":
+			return str(ITEMS.get(key, {"name": key})["name"])
+	return key
+
+
+func item_value(kind: String, key: String) -> int:
+	match kind:
+		"mat":
+			var p := key.split(":")
+			if p.size() < 3 or not BEASTS.has(p[1]):
+				return 5
+			return maxi(roundi(float(BEASTS[p[1]]["reward"]) * float(AGES[int(p[2])]["reward"]) * LOOT_VALUE), 3)
+		"bone":
+			return 120 * [1, 3, 8][clampi(bone_age(key), 0, 2)]
+		"item":
+			return int(SELL_ITEMS.get(key, 10))
+	return 0
+
+
+func item_color(kind: String, key: String) -> Color:
+	match kind:
+		"mat":
+			var p := key.split(":")
+			return age_color(int(p[2])) if p.size() >= 3 else Color.WHITE
+		"bone":
+			return Color(1.0, 0.85, 0.35)
+		"gun":
+			return Color(0.6, 0.9, 1.0)
+	return Color(1.0, 0.6, 0.5)
 
 # ================================================================ 唐门暗器
 # 后坐（CS / COD 的做法）：
@@ -171,7 +254,7 @@ const WEAPONS := {
 		"bloom": 0.32, "bloom_max": 4.5, "bloom_recover": 7.5,
 		"pattern": "rifle", "jitter": 0.12, "ads_recoil": 0.8,
 		"view_punch": 0.85, "recover_delay": 0.1, "recover_speed": 15.0,
-		"ads_fov": 0.7, "ads_time": 0.19, "ads_move": 0.75,
+		"ads_fov": 0.55, "ads_time": 0.2, "ads_move": 0.72,
 		"impulse": 1.35, "lift": 0.5, "shake": 0.09,
 		"tracer": Color(0.45, 1.0, 0.85), "sound": "kongque_fire", "bolt": true,
 	},
@@ -285,14 +368,14 @@ const SKILLS := {
 	# 蓝银草
 	"lyc_root": {"name": "蓝银缠绕", "type": "root", "target": "aim", "radius": 6.0, "dur": 3.5, "damage": 10.0, "cost": 25, "cd": 8.0, "desc": "准星处 6 米内的魂兽被蓝银草缠住，空中的也会被吊在原地"},
 	"lyc_spike": {"name": "蓝银突刺", "type": "launch", "target": "aim", "radius": 4.5, "damage": 30.0, "impulse": 9.0, "cost": 25, "cd": 7.0, "desc": "地面刺出蓝银草，把魂兽挑上天"},
-	"lyc_mark": {"name": "蓝银寄生", "type": "mark", "target": "aim", "radius": 6.0, "dur": 8.0, "mult": 1.35, "cost": 30, "cd": 12.0, "desc": "寄生的魂兽受到的伤害 +35%"},
+	"lyc_mark": {"name": "蓝银飞索", "type": "grapple", "target": "dir", "range": 40.0, "cost": 15, "cd": 5.0, "desc": "蓝银草缠住准星处，把自己拉过去（能上树、上崖、跨过水面）"},
 	"lyc_pull": {"name": "蓝银牵引", "type": "pull", "target": "aim", "radius": 12.0, "dur": 3.0, "force": 18.0, "cost": 30, "cd": 12.0, "desc": "把 12 米内的魂兽拉到一起"},
 	"lyc_cage": {"name": "蓝银囚笼", "type": "root", "target": "aim", "radius": 10.0, "dur": 5.0, "damage": 25.0, "cost": 50, "cd": 20.0, "desc": "大范围定身 5 秒"},
 	"lyc_dance": {"name": "蓝银乱舞", "type": "rain", "target": "aim", "radius": 6.0, "damage": 30.0, "impulse": 7.0, "waves": 3, "cost": 50, "cd": 18.0, "desc": "连续三波突刺，把魂兽一直挑在空中"},
 	# 镰刀
 	"ld_whirl": {"name": "旋风斩", "type": "launch", "target": "self", "radius": 5.5, "damage": 45.0, "impulse": 8.0, "cost": 25, "cd": 7.0, "desc": "以自己为中心横扫，把身边魂兽砍飞"},
 	"ld_scythe": {"name": "死神之镰", "type": "beam", "target": "dir", "range": 40.0, "damage": 90.0, "pierce": 5, "cost": 25, "cd": 7.0, "desc": "一道贯穿 40 米的镰刀光"},
-	"ld_reap": {"name": "收割", "type": "buff", "target": "self", "stat": "dmg", "amount": 0.35, "dur": 8.0, "cost": 30, "cd": 16.0, "desc": "8 秒内自己伤害 +35%"},
+	"ld_reap": {"name": "镰影步", "type": "blink", "target": "dir", "dist": 14.0, "stat": "dmg", "amount": 0.3, "dur": 4.0, "cost": 20, "cd": 6.0, "desc": "瞬移到准星方向 14 米外，之后 4 秒伤害 +30%"},
 	"ld_fly": {"name": "飞镰", "type": "projectile", "target": "dir", "speed": 35.0, "radius": 4.0, "damage": 70.0, "impulse": 6.0, "cost": 30, "cd": 10.0, "desc": "掷出旋转飞镰，命中爆开"},
 	"ld_doom": {"name": "死神降临", "type": "launch", "target": "self", "radius": 11.0, "damage": 120.0, "impulse": 11.0, "cost": 55, "cd": 22.0, "desc": "大范围收割"},
 	"ld_shadow": {"name": "镰影", "type": "dash", "target": "dir", "dist": 12.0, "damage": 60.0, "radius": 3.0, "cost": 30, "cd": 8.0, "desc": "化成镰影冲刺，路过的魂兽受伤"},
@@ -300,13 +383,13 @@ const SKILLS := {
 	"xc_heal": {"name": "香肠回复", "type": "heal", "target": "self", "radius": 15.0, "amount": 45.0, "cost": 25, "cd": 10.0, "desc": "15 米内所有队友回复 45 体力"},
 	"xc_boost": {"name": "香肠增幅", "type": "buff", "target": "self", "radius": 15.0, "stat": "dmg", "amount": 0.2, "dur": 12.0, "team": true, "cost": 30, "cd": 18.0, "desc": "全队伤害 +20%，持续 12 秒"},
 	"xc_regen": {"name": "镜像香肠", "type": "buff", "target": "self", "radius": 15.0, "stat": "regen", "amount": 8.0, "dur": 10.0, "team": true, "cost": 30, "cd": 16.0, "desc": "全队每秒回复 8 体力"},
-	"xc_fly": {"name": "飞行香肠", "type": "buff", "target": "self", "radius": 15.0, "stat": "speed", "amount": 0.3, "dur": 10.0, "team": true, "cost": 30, "cd": 16.0, "desc": "全队移速和换弹 +30%"},
+	"xc_fly": {"name": "飞行香肠", "type": "fly", "target": "self", "radius": 15.0, "stat": "speed", "amount": 0.25, "dur": 8.0, "team": true, "cost": 30, "cd": 18.0, "desc": "自己飞 8 秒（空格上升、Ctrl 下降），全队移速 +25%"},
 	"xc_big": {"name": "大香肠", "type": "shield", "target": "self", "radius": 15.0, "amount": 60.0, "dur": 10.0, "team": true, "cost": 50, "cd": 24.0, "desc": "全队 60 点护盾"},
 	"xc_boom": {"name": "爆炸香肠", "type": "projectile", "target": "dir", "speed": 28.0, "radius": 6.0, "damage": 110.0, "impulse": 10.0, "cost": 45, "cd": 14.0, "desc": "扔出会爆炸的香肠"},
 	# 白虎
 	"bh_guard": {"name": "白虎护身障", "type": "shield", "target": "self", "amount": 60.0, "dur": 8.0, "cost": 25, "cd": 12.0, "desc": "自己获得 60 点护盾"},
 	"bh_wave": {"name": "白虎烈光波", "type": "beam", "target": "dir", "range": 35.0, "damage": 80.0, "pierce": 4, "cost": 25, "cd": 7.0, "desc": "一道贯穿的光波"},
-	"bh_vajra": {"name": "白虎金刚变", "type": "buff", "target": "self", "stat": "dmg", "amount": 0.4, "dur": 8.0, "cost": 30, "cd": 16.0, "desc": "8 秒内伤害 +40%"},
+	"bh_vajra": {"name": "白虎金刚变", "type": "giant", "target": "self", "scale": 1.5, "dr": 0.35, "dmg": 0.25, "dur": 10.0, "cost": 30, "cd": 18.0, "desc": "身体变大 1.5 倍 10 秒：受伤 -35%，伤害 +25%"},
 	"bh_meteor": {"name": "白虎流星雨", "type": "rain", "target": "aim", "radius": 7.0, "damage": 40.0, "impulse": 6.0, "waves": 4, "cost": 35, "cd": 14.0, "desc": "准星处落下四波流星"},
 	"bh_charge": {"name": "白虎冲击", "type": "dash", "target": "dir", "dist": 14.0, "damage": 80.0, "radius": 3.5, "impulse": 8.0, "cost": 40, "cd": 12.0, "desc": "猛冲撞飞路上的魂兽"},
 	"bh_roar": {"name": "白虎咆哮", "type": "mark", "target": "self", "radius": 14.0, "dur": 10.0, "mult": 1.4, "cost": 45, "cd": 20.0, "desc": "身边魂兽受到伤害 +40%"},
@@ -316,10 +399,10 @@ const SKILLS := {
 	"ym_clone": {"name": "鬼影分身", "type": "buff", "target": "self", "stat": "crit", "amount": 1.0, "dur": 6.0, "cost": 30, "cd": 16.0, "desc": "6 秒内每一发都算爆头"},
 	"ym_slash": {"name": "幽冥斩", "type": "launch", "target": "aim", "radius": 4.5, "damage": 55.0, "impulse": 9.0, "cost": 30, "cd": 9.0, "desc": "在准星处斩出一道影刃，把魂兽挑飞"},
 	"ym_hundred": {"name": "幽冥百爪", "type": "rain", "target": "aim", "radius": 6.0, "damage": 30.0, "impulse": 4.0, "waves": 6, "cost": 50, "cd": 18.0, "desc": "六连爪影"},
-	"ym_ghost": {"name": "幽冥灵魂", "type": "buff", "target": "self", "stat": "speed", "amount": 0.5, "dur": 8.0, "cost": 35, "cd": 16.0, "desc": "移速 +50%"},
+	"ym_ghost": {"name": "幽冥灵魂", "type": "invis", "target": "self", "stat": "speed", "amount": 0.5, "dur": 6.0, "cost": 30, "cd": 16.0, "desc": "隐身 6 秒：魂兽和 Boss 看不见你，移速 +50%"},
 	# 火凤凰
 	"hf_fire": {"name": "凤凰火线", "type": "projectile", "target": "dir", "speed": 40.0, "radius": 4.5, "damage": 65.0, "impulse": 5.0, "burn": 8.0, "cost": 25, "cd": 6.0, "desc": "火球命中爆开，灼烧魂兽"},
-	"hf_bath": {"name": "浴火", "type": "buff", "target": "self", "stat": "regen", "amount": 10.0, "dur": 8.0, "cost": 25, "cd": 14.0, "desc": "8 秒内每秒回 10 体力"},
+	"hf_bath": {"name": "浴火", "type": "buff", "target": "self", "stat": "dr", "amount": 0.4, "stat2": "regen", "amount2": 10.0, "dur": 8.0, "cost": 25, "cd": 14.0, "desc": "8 秒内受伤 -40%，每秒回 10 体力"},
 	"hf_wing": {"name": "凤翼天翔", "type": "leap", "target": "self", "height": 12.0, "radius": 6.0, "damage": 60.0, "impulse": 8.0, "cost": 30, "cd": 10.0, "desc": "冲上高空，落地炸飞周围魂兽"},
 	"hf_rain": {"name": "火雨", "type": "rain", "target": "aim", "radius": 7.0, "damage": 35.0, "impulse": 3.0, "waves": 5, "burn": 6.0, "cost": 35, "cd": 14.0, "desc": "准星处降下火雨"},
 	"hf_blast": {"name": "凤凰啸天击", "type": "projectile", "target": "dir", "speed": 30.0, "radius": 9.0, "damage": 160.0, "impulse": 12.0, "burn": 12.0, "cost": 55, "cd": 20.0, "desc": "巨大的凤凰火球"},
@@ -328,7 +411,7 @@ const SKILLS := {
 	"qb_power": {"name": "力量增幅", "type": "buff", "target": "self", "radius": 20.0, "stat": "dmg", "amount": 0.25, "dur": 12.0, "team": true, "cost": 25, "cd": 16.0, "desc": "全队伤害 +25%"},
 	"qb_speed": {"name": "速度增幅", "type": "buff", "target": "self", "radius": 20.0, "stat": "speed", "amount": 0.3, "dur": 12.0, "team": true, "cost": 25, "cd": 16.0, "desc": "全队移速和换弹 +30%"},
 	"qb_soul": {"name": "魂力增幅", "type": "buff", "target": "self", "radius": 20.0, "stat": "soul", "amount": 1.0, "dur": 12.0, "team": true, "cost": 20, "cd": 20.0, "desc": "全队魂力恢复翻倍"},
-	"qb_guard": {"name": "防御增幅", "type": "shield", "target": "self", "radius": 20.0, "amount": 50.0, "dur": 10.0, "team": true, "cost": 35, "cd": 20.0, "desc": "全队 50 点护盾"},
+	"qb_guard": {"name": "防御增幅", "type": "buff", "target": "self", "radius": 20.0, "stat": "dr", "amount": 0.3, "dur": 10.0, "team": true, "cost": 35, "cd": 20.0, "desc": "全队受伤 -30%，持续 10 秒"},
 	"qb_seven": {"name": "七宝转出有琉璃", "type": "buff", "target": "self", "radius": 25.0, "stat": "all", "amount": 0.35, "dur": 12.0, "team": true, "cost": 55, "cd": 28.0, "desc": "全队伤害、移速、换弹全部 +35%"},
 	"qb_weak": {"name": "削弱", "type": "mark", "target": "self", "radius": 16.0, "dur": 10.0, "mult": 1.4, "cost": 40, "cd": 18.0, "desc": "16 米内魂兽受到伤害 +40%"},
 	# 昊天锤
@@ -337,11 +420,11 @@ const SKILLS := {
 	"ht_break": {"name": "破甲", "type": "mark", "target": "aim", "radius": 7.0, "dur": 10.0, "mult": 1.5, "cost": 30, "cd": 14.0, "desc": "准星处魂兽受到伤害 +50%（无视铁甲犀的甲）"},
 	"ht_nine": {"name": "昊天九绝", "type": "buff", "target": "self", "stat": "dmg", "amount": 0.45, "dur": 8.0, "cost": 35, "cd": 16.0, "desc": "8 秒内伤害 +45%"},
 	"ht_storm": {"name": "乱披风锤法", "type": "rain", "target": "aim", "radius": 6.5, "damage": 60.0, "impulse": 10.0, "waves": 3, "cost": 50, "cd": 18.0, "desc": "三连砸，魂兽落不了地"},
-	"ht_true": {"name": "昊天真身", "type": "shield", "target": "self", "amount": 120.0, "dur": 10.0, "cost": 50, "cd": 24.0, "desc": "自己 120 点护盾"},
+	"ht_true": {"name": "昊天真身", "type": "giant", "target": "self", "scale": 1.8, "dr": 0.5, "dmg": 0.4, "dur": 10.0, "cost": 50, "cd": 24.0, "desc": "昊天锤真身：体型 ×1.8，受伤 -50%，伤害 +40%"},
 	# 六翼天使
 	"ls_light": {"name": "天使圣光", "type": "beam", "target": "dir", "range": 50.0, "damage": 85.0, "pierce": 5, "cost": 25, "cd": 7.0, "desc": "贯穿的圣光"},
 	"ls_shield": {"name": "圣光护盾", "type": "shield", "target": "self", "radius": 15.0, "amount": 40.0, "dur": 10.0, "team": true, "cost": 30, "cd": 16.0, "desc": "全队 40 点护盾"},
-	"ls_wing": {"name": "天使之翼", "type": "leap", "target": "self", "height": 14.0, "radius": 5.0, "damage": 50.0, "impulse": 7.0, "cost": 25, "cd": 9.0, "desc": "展翼飞上高空"},
+	"ls_wing": {"name": "天使之翼", "type": "fly", "target": "self", "dur": 7.0, "cost": 25, "cd": 14.0, "desc": "展开六翼飞 7 秒（空格上升、Ctrl 下降），落地砸飞周围魂兽", "radius": 5.0, "damage": 50.0, "impulse": 7.0},
 	"ls_judge": {"name": "审判", "type": "launch", "target": "aim", "radius": 7.0, "damage": 70.0, "impulse": 9.0, "cost": 35, "cd": 11.0, "desc": "准星处降下审判之光"},
 	"ls_sword": {"name": "天使圣剑", "type": "beam", "target": "dir", "range": 70.0, "damage": 200.0, "pierce": 8, "cost": 55, "cd": 20.0, "desc": "一剑贯穿"},
 	"ls_domain": {"name": "神圣领域", "type": "buff", "target": "self", "radius": 18.0, "stat": "all", "amount": 0.3, "dur": 12.0, "team": true, "cost": 55, "cd": 28.0, "desc": "全队伤害、移速 +30%，每秒回 5 体力"},
@@ -359,10 +442,10 @@ const SKILLS := {
 	"xc_giant": {"name": "巨型香肠", "type": "shield", "target": "self", "radius": 25.0, "amount": 150.0, "dur": 12.0, "team": true, "cost": 75, "cd": 34.0, "desc": "全队 150 点护盾"},
 	"xc_nuke": {"name": "香肠天降", "type": "rain", "target": "aim", "radius": 10.0, "damage": 110.0, "impulse": 12.0, "waves": 4, "cost": 75, "cd": 30.0, "desc": "天上掉下四轮爆炸香肠"},
 	"bh_tiger": {"name": "白虎裂光", "type": "beam", "target": "dir", "range": 60.0, "damage": 280.0, "pierce": 8, "cost": 60, "cd": 18.0, "desc": "巨大的裂光波"},
-	"bh_body": {"name": "白虎真身", "type": "shield", "target": "self", "amount": 220.0, "dur": 12.0, "cost": 60, "cd": 26.0, "desc": "自己 220 点护盾"},
+	"bh_body": {"name": "白虎真身", "type": "giant", "target": "self", "scale": 2.2, "dr": 0.6, "dmg": 0.5, "dur": 12.0, "cost": 60, "cd": 28.0, "desc": "化身巨虎 12 秒：体型 ×2.2，受伤 -60%，伤害 +50%"},
 	"bh_king": {"name": "白虎流星雨·极", "type": "rain", "target": "aim", "radius": 11.0, "damage": 100.0, "impulse": 9.0, "waves": 6, "cost": 75, "cd": 30.0, "desc": "六轮流星"},
 	"bh_rage": {"name": "邪眸白虎", "type": "buff", "target": "self", "stat": "all", "amount": 0.5, "dur": 12.0, "cost": 70, "cd": 32.0, "desc": "伤害、移速、换弹 +50%"},
-	"ym_blink": {"name": "幽冥瞬影", "type": "dash", "target": "dir", "dist": 18.0, "damage": 160.0, "radius": 3.5, "impulse": 7.0, "cost": 50, "cd": 10.0, "desc": "瞬移 18 米，路上的魂兽受重创"},
+	"ym_blink": {"name": "幽冥瞬影", "type": "blink", "target": "dir", "dist": 18.0, "damage": 160.0, "radius": 3.5, "stat": "crit", "amount": 1.0, "dur": 3.0, "cost": 50, "cd": 10.0, "desc": "瞬移 18 米，路上的魂兽受重创，之后 3 秒每发都算爆头"},
 	"ym_night": {"name": "幽冥夜", "type": "mark", "target": "self", "radius": 20.0, "dur": 12.0, "mult": 1.55, "cost": 60, "cd": 24.0, "desc": "20 米内魂兽受到伤害 +55%"},
 	"ym_true": {"name": "幽冥真身", "type": "buff", "target": "self", "stat": "crit", "amount": 1.0, "dur": 12.0, "cost": 70, "cd": 32.0, "desc": "12 秒内每一发都算爆头"},
 	"ym_storm": {"name": "幽冥爪暴", "type": "rain", "target": "aim", "radius": 9.0, "damage": 70.0, "impulse": 6.0, "waves": 8, "cost": 75, "cd": 30.0, "desc": "八连爪影"},
@@ -399,33 +482,147 @@ const SKILL_TREE := {
 const SKILL_SLOTS := 5         # 五个魂环 = 五个魂技，都用 Q 放（按住 Q 轮盘切换）
 const RING_NAMES := ["一", "二", "三", "四", "五", "六", "七", "八", "九"]
 
-# ================================================================ 魂骨（Boss 掉落，被动加成）
+# ================================================================ 魂骨
+# 六个部位各装一块（K 打开武魂面板换）。魂骨兽必掉、千年魂兽小概率掉、Boss 必掉。
+# 地上的魂骨谁都能捡，也能丢给队友，或者丢进收购箱卖掉。
+# 存档里一块魂骨写成 "id@年份"，百年 ×1.5、千年 ×2.2（二段跳、滑翔这种开关型的不变）
+# stat：hp 体力 / soul 魂力 / dmg 伤害 / headshot 爆头 / dr 减伤 / speed 移速 / reload 换弹 / recoil 后坐 /
+#       jump 跳跃高度 / djump 二段跳 / glide 滑翔 / breath 水下憋气 / swim 游泳 / regen 回血 / sell 卖价
+const BONE_SLOTS := ["head", "torso", "larm", "rarm", "lleg", "rleg"]
+const BONE_SLOT_NAMES := {"head": "头骨", "torso": "躯干骨", "larm": "左臂骨", "rarm": "右臂骨", "lleg": "左腿骨", "rleg": "右腿骨"}
+const BONE_AGE_MULT := [1.0, 1.5, 2.2]
+const BONE_SWITCH := ["djump", "glide"]
 const BONES := {
-	"mandala_skull": {"name": "曼陀罗蛇头骨", "desc": "爆头伤害 +15%", "stat": "headshot", "amount": 0.15},
-	"mandala_spine": {"name": "曼陀罗蛇躯干骨", "desc": "最大体力 +30", "stat": "hp", "amount": 30.0},
-	"spider_leg": {"name": "人面魔蛛八蛛矛", "desc": "伤害 +10%", "stat": "dmg", "amount": 0.1},
-	"spider_eye": {"name": "人面魔蛛之眼", "desc": "魂力上限 +25", "stat": "soul", "amount": 25.0},
-	"titan_arm": {"name": "泰坦巨猿右臂骨", "desc": "伤害 +12%", "stat": "dmg", "amount": 0.12},
-	"titan_heart": {"name": "泰坦巨猿躯干骨", "desc": "最大体力 +50", "stat": "hp", "amount": 50.0},
-	"dragon_wing": {"name": "冰霜巨龙翼骨", "desc": "爆头伤害 +20%", "stat": "headshot", "amount": 0.2},
-	"dragon_scale": {"name": "冰霜巨龙头骨", "desc": "魂力上限 +40", "stat": "soul", "amount": 40.0},
-	"whale_bone": {"name": "深海魔鲸脊骨", "desc": "伤害 +15%", "stat": "dmg", "amount": 0.15},
-	"whale_heart": {"name": "深海魔鲸之心", "desc": "最大体力 +80", "stat": "hp", "amount": 80.0},
+	# ---- 魂兽魂骨
+	"rabbit_leg": {"name": "柔骨兔左腿骨", "slot": "lleg", "stat": "jump", "amount": 0.25, "beast": "rabbit"},
+	"vine_torso": {"name": "鬼藤躯干骨", "slot": "torso", "stat": "regen", "amount": 1.5, "beast": "vine"},
+	"bird_arm": {"name": "风铃鸟左臂骨", "slot": "larm", "stat": "glide", "amount": 1.0, "stat2": "speed", "amount2": 0.05, "beast": "bird"},
+	"moth_head": {"name": "月光蛾头骨", "slot": "head", "stat": "soul", "amount": 20.0, "beast": "moth"},
+	"wolf_leg": {"name": "疾风魔狼右腿骨", "slot": "rleg", "stat": "speed", "amount": 0.1, "beast": "wolf"},
+	"rhino_torso": {"name": "铁甲犀躯干骨", "slot": "torso", "stat": "dr", "amount": 0.1, "stat2": "hp", "amount2": 15.0, "beast": "rhino"},
+	"ape_arm": {"name": "金刚猿右臂骨", "slot": "rarm", "stat": "dmg", "amount": 0.08, "beast": "ape"},
+	"snake_head": {"name": "曼陀罗蛇头骨", "slot": "head", "stat": "headshot", "amount": 0.1, "beast": "snake"},
+	"stag_head": {"name": "鬼眼鹿头骨", "slot": "head", "stat": "headshot", "amount": 0.12, "stat2": "soul", "amount2": 10.0, "beast": "stag"},
+	"bat_arm": {"name": "夜翼魔蝠左臂骨", "slot": "larm", "stat": "glide", "amount": 1.0, "stat2": "dmg", "amount2": 0.04, "beast": "bat"},
+	"raptor_leg": {"name": "疾爪龙左腿骨", "slot": "lleg", "stat": "djump", "amount": 1.0, "beast": "raptor"},
+	"spider_arm": {"name": "地穴魔蛛右臂骨", "slot": "rarm", "stat": "reload", "amount": 0.12, "beast": "spiderling"},
+	"frog_leg": {"name": "碧磷蟾右腿骨", "slot": "rleg", "stat": "jump", "amount": 0.4, "stat2": "swim", "amount2": 0.2, "beast": "frog"},
+	"husky_leg": {"name": "雪原狼左腿骨", "slot": "lleg", "stat": "speed", "amount": 0.12, "beast": "husky"},
+	"icedeer_head": {"name": "冰角鹿头骨", "slot": "head", "stat": "soul", "amount": 30.0, "beast": "icedeer"},
+	"icehorn_torso": {"name": "冰甲龙躯干骨", "slot": "torso", "stat": "dr", "amount": 0.15, "beast": "icehorn"},
+	"snowape_arm": {"name": "雪魔猿右臂骨", "slot": "rarm", "stat": "dmg", "amount": 0.1, "stat2": "recoil", "amount2": 0.1, "beast": "snowape"},
+	"icefish_torso": {"name": "冰鳞鱼躯干骨", "slot": "torso", "stat": "breath", "amount": 12.0, "stat2": "swim", "amount2": 0.4, "beast": "icefish"},
+	"crab_arm": {"name": "铁钳蟹左臂骨", "slot": "larm", "stat": "recoil", "amount": 0.2, "beast": "crab"},
+	"gull_head": {"name": "海魂鸥头骨", "slot": "head", "stat": "sell", "amount": 0.2, "beast": "gull"},
+	"reef_head": {"name": "彩鳞鱼头骨", "slot": "head", "stat": "breath", "amount": 10.0, "beast": "reeffish"},
+	"shark_torso": {"name": "深海魔鲨躯干骨", "slot": "torso", "stat": "swim", "amount": 0.6, "stat2": "breath", "amount2": 15.0, "beast": "shark"},
+	"manta_arm": {"name": "幽灵鳐左臂骨", "slot": "larm", "stat": "glide", "amount": 1.0, "stat2": "soul", "amount2": 15.0, "beast": "manta"},
+	# ---- Boss 魂骨（都是千年的）
+	"mandala_skull": {"name": "曼陀罗蛇王头骨", "slot": "head", "stat": "headshot", "amount": 0.08, "stat2": "soul", "amount2": 10.0},
+	"mandala_spine": {"name": "曼陀罗蛇王躯干骨", "slot": "torso", "stat": "hp", "amount": 15.0, "stat2": "regen", "amount2": 1.0},
+	"spider_leg": {"name": "人面魔蛛八蛛矛", "slot": "rleg", "stat": "djump", "amount": 1.0, "stat2": "dmg", "amount2": 0.04},
+	"spider_eye": {"name": "人面魔蛛之眼", "slot": "head", "stat": "soul", "amount": 12.0, "stat2": "headshot", "amount2": 0.05},
+	"titan_arm": {"name": "泰坦巨猿右臂骨", "slot": "rarm", "stat": "dmg", "amount": 0.07, "stat2": "recoil", "amount2": 0.08},
+	"titan_heart": {"name": "泰坦巨猿躯干骨", "slot": "torso", "stat": "hp", "amount": 25.0, "stat2": "dr", "amount2": 0.05},
+	"dragon_wing": {"name": "冰霜巨龙左臂骨", "slot": "larm", "stat": "glide", "amount": 1.0, "stat2": "headshot", "amount2": 0.08},
+	"dragon_scale": {"name": "冰霜巨龙头骨", "slot": "head", "stat": "soul", "amount": 18.0, "stat2": "dmg", "amount2": 0.04},
+	"whale_bone": {"name": "深海魔鲸右腿骨", "slot": "rleg", "stat": "swim", "amount": 0.5, "stat2": "speed", "amount2": 0.06},
+	"whale_heart": {"name": "深海魔鲸躯干骨", "slot": "torso", "stat": "hp", "amount": 35.0, "stat2": "breath", "amount2": 20.0},
 }
+const BONE_BY_BEAST := {
+	"rabbit": "rabbit_leg", "vine": "vine_torso", "bird": "bird_arm", "moth": "moth_head", "wolf": "wolf_leg",
+	"rhino": "rhino_torso", "ape": "ape_arm", "snake": "snake_head", "stag": "stag_head", "bat": "bat_arm",
+	"raptor": "raptor_leg", "spiderling": "spider_arm", "frog": "frog_leg", "husky": "husky_leg",
+	"icedeer": "icedeer_head", "icehorn": "icehorn_torso", "snowape": "snowape_arm", "icefish": "icefish_torso",
+	"crab": "crab_arm", "gull": "gull_head", "reeffish": "reef_head", "shark": "shark_torso", "manta": "manta_arm",
+}
+
+
+## "wolf_leg@1" -> ["wolf_leg", 1]；旧存档里没有 @ 的是 Boss 掉的千年魂骨
+func bone_id(entry: String) -> String:
+	return entry.get_slice("@", 0)
+
+
+func bone_age(entry: String) -> int:
+	return int(entry.get_slice("@", 1)) if "@" in entry else 2
+
+
+func bone_data(entry: String) -> Dictionary:
+	return BONES.get(bone_id(entry), {})
+
+
+func bone_name(entry: String) -> String:
+	var d := bone_data(entry)
+	if d.is_empty():
+		return "魂骨"
+	return "%s%s" % [age_name(bone_age(entry)), d["name"]]
+
+
+## 一块魂骨某个属性加多少（算上年份）
+func bone_stat(entry: String, stat: String) -> float:
+	var d := bone_data(entry)
+	var v := 0.0
+	var k: float = BONE_AGE_MULT[clampi(bone_age(entry), 0, 2)]
+	for pair in [["stat", "amount"], ["stat2", "amount2"]]:
+		if str(d.get(pair[0], "")) == stat:
+			v += float(d[pair[1]]) * (1.0 if stat in BONE_SWITCH else k)
+	return v
+
+
+func bone_desc(entry: String) -> String:
+	var d := bone_data(entry)
+	var out: Array = []
+	for pair in [["stat", "amount"], ["stat2", "amount2"]]:
+		var st := str(d.get(pair[0], ""))
+		if st == "":
+			continue
+		var v := bone_stat(entry, st)
+		match st:
+			"hp":
+				out.append("体力 +%d" % roundi(v))
+			"soul":
+				out.append("魂力 +%d" % roundi(v))
+			"dmg":
+				out.append("伤害 +%d%%" % roundi(v * 100))
+			"headshot":
+				out.append("爆头 +%d%%" % roundi(v * 100))
+			"dr":
+				out.append("受伤 -%d%%" % roundi(v * 100))
+			"speed":
+				out.append("移速 +%d%%" % roundi(v * 100))
+			"reload":
+				out.append("换弹 +%d%%" % roundi(v * 100))
+			"recoil":
+				out.append("后坐 -%d%%" % roundi(v * 100))
+			"jump":
+				out.append("跳跃 +%d%%" % roundi(v * 100))
+			"djump":
+				out.append("二段跳（空中再按空格）")
+			"glide":
+				out.append("滑翔（空中按住空格）")
+			"breath":
+				out.append("水下憋气 +%d 秒" % roundi(v))
+			"swim":
+				out.append("游泳 +%d%%" % roundi(v * 100))
+			"regen":
+				out.append("每秒回血 %.1f" % v)
+			"sell":
+				out.append("卖价 +%d%%" % roundi(v * 100))
+	return "，".join(out)
 
 # ================================================================ Boss
 const BOSSES := {
 	# ai：water 水里钻来钻去 / land 地上 / air 天上飞
 	"mandala": {"name": "湖主 · 千年曼陀罗蛇", "hp": 7500.0, "reward": 400, "xp": 400, "bones": ["mandala_skull", "mandala_spine"], "age": 2, "ai": "water",
-		"model": "snake_angry", "fit": "h", "size": 9.0, "tint": Color(1.0, 0.5, 1.2), "summon": "snake", "ring_beast": "snake"},
+		"model": "snake_angry", "fit": "h", "size": 9.0, "tint": Color(1.0, 0.5, 1.2), "summon": "snake", "ring_beast": "snake", "weak": Vector3(0, 0.34, -0.3), "holy": Color(0.85, 0.55, 1.0)},
 	"spider": {"name": "森林之主 · 人面魔蛛", "hp": 13000.0, "reward": 800, "xp": 900, "bones": ["spider_leg", "spider_eye"], "age": 2, "ai": "land",
-		"model": "spider", "fit": "w", "size": 8.5, "tint": Color(0.6, 0.45, 0.7), "summon": "wolf", "ring_beast": "wolf"},
+		"model": "spider", "fit": "w", "size": 8.5, "tint": Color(0.6, 0.45, 0.7), "summon": "wolf", "ring_beast": "wolf", "weak": Vector3(0, 0.2, -0.4), "holy": Color(1.0, 0.45, 0.6)},
 	"titan": {"name": "星斗之王 · 泰坦巨猿", "hp": 20000.0, "reward": 1400, "xp": 1800, "bones": ["titan_arm", "titan_heart"], "age": 2, "ai": "land",
-		"model": "yeti", "fit": "h", "size": 9.0, "tint": Color(0.42, 0.36, 0.34), "summon": "raptor", "ring_beast": "stag", "throws": true},
+		"model": "yeti", "fit": "h", "size": 9.0, "tint": Color(0.42, 0.36, 0.34), "summon": "raptor", "ring_beast": "stag", "throws": true, "weak": Vector3(0, 0.36, -0.15), "holy": Color(1.0, 0.8, 0.4)},
 	"icedragon": {"name": "极北之主 · 冰霜巨龙", "hp": 28000.0, "reward": 2200, "xp": 2800, "bones": ["dragon_wing", "dragon_scale"], "age": 2, "ai": "air",
-		"model": "dragon", "fit": "w", "size": 16.0, "tint": Color(0.6, 0.85, 1.3), "glow": Color(0.1, 0.3, 0.6), "summon": "husky", "ring_beast": "icehorn"},
+		"model": "dragon", "fit": "w", "size": 16.0, "tint": Color(0.6, 0.85, 1.3), "glow": Color(0.1, 0.3, 0.6), "summon": "husky", "ring_beast": "icehorn", "weak": Vector3(0, 0.25, -0.42), "holy": Color(0.6, 0.9, 1.0)},
 	"whale": {"name": "海神岛之主 · 深海魔鲸", "hp": 38000.0, "reward": 3500, "xp": 4000, "bones": ["whale_bone", "whale_heart"], "age": 2, "ai": "water",
-		"model": "whale", "fit": "l", "size": 22.0, "tint": Color(0.55, 0.6, 0.9), "summon": "shark", "ring_beast": "shark"},
+		"model": "whale", "fit": "l", "size": 22.0, "tint": Color(0.55, 0.6, 0.9), "summon": "shark", "ring_beast": "shark", "weak": Vector3(0, 0.15, -0.44), "holy": Color(0.5, 0.8, 1.0)},
 }
 
 # ================================================================ 章节与任务
@@ -462,7 +659,7 @@ const CHAPTERS := {
 	},
 	3: {
 		"name": "第三章 · 星斗大森林", "map": "deepforest", "boss": "titan", "next": 4,
-		"intro": "斗罗大陆最大的魂兽森林，古木参天、终年雾气缭绕，林间长着会发光的蓝银草。这里的魂兽成群出没，百年、千年的越来越多。",
+		"intro": "斗罗大陆最大的魂兽森林，古木参天、终年雾气环绕，林间长着会发光的蓝银草。这里的魂兽成群出没，百年、千年的越来越多。",
 		"quests": [
 			{"type": "kill", "n": 12, "text": "在星斗大森林猎杀 12 只魂兽", "reward": 250},
 			{"type": "hunt", "species": "stag", "n": 4, "text": "去鬼眼鹿林猎杀 4 只鬼眼鹿", "reward": 200},

@@ -82,6 +82,16 @@ var _shop: ShopPanel
 var _wuhun: WuhunPanel
 var _choice: Control
 var _money_shown := 0.0
+var _water: ColorRect
+var _breath: ProgressBar
+var _breath_box: HBoxContainer
+var _bag: VBoxContainer
+var _bag_sig := ""
+var _revive: ProgressBar
+var _intro: Control
+var _intro_t := 0.0
+var _intro_title: Label
+var _intro_sub: Label
 
 
 func _ready() -> void:
@@ -167,6 +177,7 @@ func _ready() -> void:
 	_death.add_child(_death_text)
 	UiKit.fill(_death_text)
 
+	_build_extras()
 	_build_scores()
 	_build_pause()
 	_shop = ShopPanel.new()
@@ -181,6 +192,139 @@ func _ready() -> void:
 	_money_shown = Profile.money
 	update_quest()
 	_refresh_skills()
+
+
+## 水下滤镜、憋气条、背包、救人进度、Boss 出场字幕
+func _build_extras() -> void:
+	_water = ColorRect.new()
+	_water.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var sh := Shader.new()
+	sh.code = """shader_type canvas_item;
+uniform float t = 0.0;
+void fragment() {
+	vec2 d = UV - 0.5;
+	float v = smoothstep(0.2, 0.8, length(d) * 1.2);
+	float caustic = sin(UV.x * 30.0 + t * 2.0) * sin(UV.y * 24.0 - t * 1.6) * 0.03;
+	COLOR = vec4(0.03, 0.22 + caustic, 0.3 + caustic, 0.42 + v * 0.4);
+}"""
+	var m := ShaderMaterial.new()
+	m.shader = sh
+	_water.material = m
+	_water.visible = false
+	_root.add_child(_water)
+	UiKit.fill(_water)
+	_root.move_child(_water, 0)
+	# 憋气条：准星下面一排气泡色
+	_breath_box = HBoxContainer.new()
+	_breath_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_breath_box.add_theme_constant_override("separation", 8)
+	UiKit.place(_breath_box, Vector4(0.5, 0.5, 0.5, 0.5), Vector4(-130, 70, 130, 96))
+	_root.add_child(_breath_box)
+	_breath_box.add_child(UiKit.label("憋气", 16, Color(0.7, 0.95, 1.0), 4))
+	_breath = _bar(Color(0.55, 0.9, 1.0), 200, 10, true)
+	_breath.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_breath_box.add_child(_breath)
+	_breath_box.visible = false
+	# 背包：左下，按住 T 时展开
+	_bag = VBoxContainer.new()
+	_bag.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_bag.add_theme_constant_override("separation", 2)
+	UiKit.place(_bag, Vector4(0, 1, 0, 1), Vector4(24, -520, 520, -236))
+	_bag.alignment = BoxContainer.ALIGNMENT_END
+	_root.add_child(_bag)
+	# 救人进度
+	_revive = _bar(Color(0.5, 1.0, 0.6), 300, 12, true)
+	UiKit.place(_revive, Vector4(0.5, 0.5, 0.5, 0.5), Vector4(-150, 40, 150, 52))
+	_revive.visible = false
+	_root.add_child(_revive)
+	# Boss 出场：上下黑边 + 大字
+	_intro = Control.new()
+	_intro.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_intro.visible = false
+	_root.add_child(_intro)
+	UiKit.fill(_intro)
+	for top in [true, false]:
+		var bar := ColorRect.new()
+		bar.color = Color(0, 0, 0, 0.92)
+		bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		if top:
+			UiKit.place(bar, Vector4(0, 0, 1, 0), Vector4(0, 0, 0, 110))
+		else:
+			UiKit.place(bar, Vector4(0, 1, 1, 1), Vector4(0, -110, 0, 0))
+		_intro.add_child(bar)
+	_intro_title = UiKit.title("", 72, Color(1.0, 0.86, 0.5))
+	_intro_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_intro_title.add_theme_constant_override("outline_size", 16)
+	_intro_title.add_theme_color_override("font_outline_color", Color(0.15, 0.05, 0.0, 0.85))
+	UiKit.place(_intro_title, Vector4(0, 0.5, 1, 0.5), Vector4(0, 130, 0, 230))
+	_intro.add_child(_intro_title)
+	_intro_sub = UiKit.label("", 24, Color(1, 0.95, 0.85), 8)
+	_intro_sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	UiKit.place(_intro_sub, Vector4(0, 0.5, 1, 0.5), Vector4(0, 225, 0, 265))
+	_intro.add_child(_intro_sub)
+
+
+func boss_intro(name: String) -> void:
+	var parts := name.split(" · ")
+	_intro_title.text = parts[parts.size() - 1]
+	_intro_sub.text = ("—— " + parts[0] + " ——") if parts.size() > 1 else "—— 千年魂兽 ——"
+	_intro.visible = true
+	_intro.modulate.a = 0.0
+	_intro_title.scale = Vector2.ONE * 1.3
+	_intro_title.pivot_offset = Vector2(get_viewport().get_visible_rect().size.x * 0.5, 50)
+	var tw := _intro.create_tween()
+	tw.tween_property(_intro, "modulate:a", 1.0, 0.5)
+	tw.parallel().tween_property(_intro_title, "scale", Vector2.ONE, 1.2).set_trans(Tween.TRANS_EXPO).set_ease(Tween.EASE_OUT)
+	tw.tween_interval(2.6)
+	tw.tween_property(_intro, "modulate:a", 0.0, 0.8)
+	tw.tween_callback(func(): _intro.visible = false)
+
+
+func revive_progress(k: float) -> void:
+	_revive.visible = k >= 0.0
+	if k >= 0.0:
+		_revive.value = clampf(k, 0.0, 1.0)
+
+
+func _update_bag(p: Player) -> void:
+	var es := p.bag_entries()
+	var open := p.bag_open()
+	var sel := clampi(p.bag_sel, 0, maxi(es.size() - 1, 0))
+	var sig := "%s|%d|%d" % [open, sel, es.size()]
+	for e in es:
+		sig += "|%s%d" % [e["key"], int(e["n"])]
+	if sig == _bag_sig:
+		return
+	_bag_sig = sig
+	for c in _bag.get_children():
+		c.queue_free()
+	if es.is_empty():
+		return
+	if not open:
+		var e: Dictionary = es[sel]
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 6)
+		row.add_child(UiKit.keycap("T"))
+		row.add_child(UiKit.label("丢出  %s%s" % [Data.item_name(str(e["kind"]), str(e["key"])), (" ×%d" % int(e["n"])) if int(e["n"]) > 1 else ""], 16, Data.item_color(str(e["kind"]), str(e["key"])), 4))
+		row.add_child(UiKit.label("（按住 T 滚轮换）", 13, UiKit.MIST, 4))
+		_bag.add_child(row)
+		return
+	var head := UiKit.bold("背包 · 滚轮选择，松开 T 收起，轻按 T 丢出", 15, UiKit.GOLD, 4)
+	_bag.add_child(head)
+	var from := clampi(sel - 5, 0, maxi(es.size() - 11, 0))
+	for i in range(from, mini(from + 11, es.size())):
+		var e: Dictionary = es[i]
+		var txt := "%s %s%s" % ["◆" if i == sel else "  ", Data.item_name(str(e["kind"]), str(e["key"])), (" ×%d" % int(e["n"])) if int(e["n"]) > 1 else ""]
+		match str(e["kind"]):
+			"mat":
+				txt += "   值 %d" % Data.item_value("mat", str(e["key"]))
+			"bone":
+				txt += "   %s%s" % [Data.bone_desc(str(e["key"])), "（装着）" if e.get("on", false) else ""]
+			"gun":
+				if int(e.get("owner", 0)) != Net.my_id:
+					txt += "   （%s 的）" % world.peer_name(int(e["owner"]))
+		var l := UiKit.label(txt, 16 if i == sel else 14, Data.item_color(str(e["kind"]), str(e["key"])) if i == sel else UiKit.MOON, 4)
+		_bag.add_child(l)
 
 
 func _vignette_material() -> ShaderMaterial:
@@ -827,7 +971,7 @@ func quest_done(text: String, reward: int) -> void:
 func boss_defeated(name: String, money: int, bone: String) -> void:
 	var sub := "+%d 金魂币" % money
 	if bone != "":
-		sub += "   获得魂骨【%s】：%s" % [Data.BONES[bone]["name"], Data.BONES[bone]["desc"]]
+		sub += "   获得魂骨【%s】：%s" % [Data.bone_name(bone), Data.bone_desc(bone)]
 	sub += "\n地上掉落了千年魂环"
 	_show_banner("击败 %s！" % name, sub, Color(1.0, 0.85, 0.4), 7.0)
 
@@ -848,10 +992,15 @@ func hurt(amount: float, dir: Vector3) -> void:
 	_hurt_dirs.append({"dir": dir, "t": 1.0})
 
 
-func death_countdown(t: float) -> void:
-	_death.visible = t >= 0.0
-	if t >= 0.0:
-		_death_text.text = "你倒下了\n%d 秒后在码头复活" % ceili(t)
+func death_countdown(t: float, team := false) -> void:
+	_death.visible = t >= 0.0 or t <= -2.0
+	if t <= -2.0:
+		_death_text.text = "海鸥把你叼走了……\n马上在码头复活"
+	elif t >= 0.0:
+		if team:
+			_death_text.text = "你倒下了！\n等队友走过来按住 F 把你拉起来\n%d 秒后海鸥会把你叼走（按空格直接放弃）" % ceili(t)
+		else:
+			_death_text.text = "你倒下了\n%d 秒后海鸥会把你叼回码头" % ceili(t)
 
 
 func boss_bar(name: String) -> void:
@@ -950,6 +1099,13 @@ func _process(dt: float) -> void:
 			_hurt_dirs.erase(h)
 	_hurt_layer.queue_redraw()
 	_marker.queue_redraw()
+	# 水下、憋气、背包
+	_water.visible = p.under
+	if p.under:
+		(_water.material as ShaderMaterial).set_shader_parameter("t", Time.get_ticks_msec() / 1000.0)
+	_breath_box.visible = p.air < p.max_air() - 0.05 and not p.dead
+	_breath.value = p.air / p.max_air()
+	_update_bag(p)
 
 	if world.boss:
 		_boss_bar.value = world.boss.hp / world.boss.max_hp

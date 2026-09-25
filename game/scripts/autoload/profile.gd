@@ -14,7 +14,9 @@ var weapons: Array = ["xiujian"]
 var upgrades := {}          # 暗器 id -> {"dmg": 0, "mag": 0, "reload": 0, "stab": 0}
 var items := {"grenade": 2, "pill": 1}
 var rings: Array = []       # [{"age": int, "skill": String, "beast": String}]
-var bones: Array = []
+var bones: Array = []        # 拥有的魂骨 "id@年份"（包括装上的）
+var equipped := {}           # 部位 -> "id@年份"
+var bag := {}                # 背包里的素材 key -> 数量（丢进收购箱换金魂币）
 var chapter := 1
 var quest := 0              # 当前章节的任务进度
 var quest_count := 0        # 当前任务的计数（击杀数等）
@@ -52,6 +54,17 @@ func load_profile() -> void:
 	items = d.get("items", {"grenade": 2, "pill": 1})
 	rings = d.get("rings", [])
 	bones = d.get("bones", [])
+	bones = bones.filter(func(b): return Data.BONES.has(Data.bone_id(str(b))))
+	equipped = d.get("equipped", {})
+	for s in equipped.keys():
+		if not str(equipped[s]) in bones:
+			equipped.erase(s)
+	if equipped.is_empty():
+		for b in bones:
+			var slot := str(Data.bone_data(str(b)).get("slot", ""))
+			if slot != "" and not equipped.has(slot):
+				equipped[slot] = str(b)
+	bag = d.get("bag", {})
 	chapter = int(d.get("chapter", 1))
 	quest = int(d.get("quest", 0))
 	quest_count = int(d.get("quest_count", 0))
@@ -72,7 +85,7 @@ func save_profile() -> void:
 	_save_t = 0.0
 	var d := {
 		"version": VERSION, "money": money, "xp": xp, "level": level, "weapons": weapons,
-		"upgrades": upgrades, "items": items, "rings": rings, "bones": bones,
+		"upgrades": upgrades, "items": items, "rings": rings, "bones": bones, "equipped": equipped, "bag": bag,
 		"chapter": chapter, "quest": quest, "quest_count": quest_count, "kills": kills, "loadout": loadout,
 	}
 	var f := FileAccess.open(path, FileAccess.WRITE)
@@ -94,6 +107,8 @@ func reset() -> void:
 	items = {"grenade": 2, "pill": 1}
 	rings = []
 	bones = []
+	equipped = {}
+	bag = {}
 	chapter = 1
 	quest = 0
 	quest_count = 0
@@ -163,6 +178,10 @@ func weapon_stats(id: String) -> Dictionary:
 	# 魂骨：爆头加成、伤害加成
 	d["headshot"] = d["headshot"] * (1.0 + bone_bonus("headshot"))
 	d["damage"] = d["damage"] * (1.0 + bone_bonus("dmg"))
+	var rk := 1.0 / (1.0 + bone_bonus("reload"))
+	d["reload"] = d["reload"] * rk
+	d["reload_empty"] = d["reload_empty"] * rk
+	d["recoil_mult"] = float(d.get("recoil_mult", 1.0)) * clampf(1.0 - bone_bonus("recoil"), 0.4, 1.0)
 	return d
 
 
@@ -257,19 +276,75 @@ func max_soul() -> float:
 	return 60.0 + (level - 1) * 4.0 + bone_bonus("soul")
 
 
+## 装上的魂骨加起来的某项属性
 func bone_bonus(stat: String) -> float:
 	var t := 0.0
-	for b in bones:
-		var d: Dictionary = Data.BONES.get(b, {})
-		if d.get("stat", "") == stat:
-			t += float(d["amount"])
+	for s in equipped:
+		t += Data.bone_stat(str(equipped[s]), stat)
 	return t
 
 
-func add_bone(id: String) -> bool:
-	if id in bones:
+func has_bone_id(id: String) -> bool:
+	for b in bones:
+		if Data.bone_id(str(b)) == id:
+			return true
+	return false
+
+
+## 拿到一块魂骨。unique = true 时已经有同种的就不要（Boss 魂骨每人一块）。部位空着就自动装上
+func add_bone(entry: String, unique := false) -> bool:
+	if unique and has_bone_id(Data.bone_id(entry)):
 		return false
-	bones.append(id)
+	if Data.bone_data(entry).is_empty():
+		return false
+	bones.append(entry)
+	var slot := str(Data.bone_data(entry)["slot"])
+	if not equipped.has(slot):
+		equipped[slot] = entry
+	mark_dirty()
+	return true
+
+
+func is_equipped(entry: String) -> bool:
+	return entry in equipped.values()
+
+
+func equip_bone(entry: String) -> void:
+	if not entry in bones:
+		return
+	equipped[str(Data.bone_data(entry)["slot"])] = entry
+	mark_dirty()
+
+
+func unequip_slot(slot: String) -> void:
+	equipped.erase(slot)
+	mark_dirty()
+
+
+## 丢出去 / 卖掉：从背包里拿走一块（装着的也会卸下）
+func remove_bone(entry: String) -> bool:
+	var i := bones.find(entry)
+	if i < 0:
+		return false
+	bones.remove_at(i)
+	for s in equipped.keys():
+		if equipped[s] == entry and not entry in bones:
+			equipped.erase(s)
+	mark_dirty()
+	return true
+
+
+func add_mat(key: String, n := 1) -> void:
+	bag[key] = int(bag.get(key, 0)) + n
+	mark_dirty()
+
+
+func take_mat(key: String) -> bool:
+	if int(bag.get(key, 0)) <= 0:
+		return false
+	bag[key] = int(bag[key]) - 1
+	if int(bag[key]) <= 0:
+		bag.erase(key)
 	mark_dirty()
 	return true
 

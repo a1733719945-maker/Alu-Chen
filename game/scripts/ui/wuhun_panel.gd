@@ -90,14 +90,49 @@ func open() -> void:
 				var d := UiKit.label("可选【%s】%s" % [s["name"], s["desc"]], 16, UiKit.MOON)
 				d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 				rv.add_child(d)
-	# 右：魂骨
+	# 右：魂骨（六个部位，点"装上"换）
 	var right := VBoxContainer.new()
-	right.custom_minimum_size.x = 250
+	right.custom_minimum_size.x = 330
+	right.add_theme_constant_override("separation", 3)
 	_body.add_child(right)
-	right.add_child(UiKit.label("魂骨（打 Boss 掉落）", 18, UiKit.JADE))
-	if Profile.bones.is_empty():
-		right.add_child(UiKit.label("还没有", 16, UiKit.MIST))
-	for bid in Profile.bones:
-		var b: Dictionary = Data.BONES[bid]
-		right.add_child(UiKit.label(str(b["name"]), 20, UiKit.GOLD))
-		right.add_child(UiKit.label(str(b["desc"]), 15))
+	right.add_child(UiKit.label("魂骨 · 六个部位各装一块", 18, UiKit.JADE))
+	var hint := UiKit.label("魂骨兽（金光）必掉，千年魂兽和 Boss 也会掉。地上的魂骨谁都能捡，按 T 能丢给队友或卖掉", 13, UiKit.MIST)
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	right.add_child(hint)
+	for slot in Data.BONE_SLOTS:
+		var row := HBoxContainer.new()
+		right.add_child(row)
+		row.add_child(UiKit.bold(str(Data.BONE_SLOT_NAMES[slot]), 15, UiKit.MOON))
+		var e := str(Profile.equipped.get(slot, ""))
+		if e == "":
+			row.add_child(UiKit.label("  空", 15, UiKit.MIST))
+			continue
+		var l := UiKit.label("  %s" % Data.bone_name(e), 15, Data.age_color(Data.bone_age(e)) if Data.bone_age(e) > 0 else UiKit.GOLD)
+		row.add_child(l)
+		var d := UiKit.label("      " + Data.bone_desc(e), 13, Color(0.85, 0.9, 0.8))
+		right.add_child(d)
+	var spare: Array = Profile.bones.filter(func(b): return not Profile.is_equipped(str(b)))
+	if not spare.is_empty():
+		right.add_child(UiKit.label("背包里的魂骨", 16, UiKit.JADE))
+		var scroll := ScrollContainer.new()
+		scroll.custom_minimum_size = Vector2(320, 190)
+		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		right.add_child(scroll)
+		var list := VBoxContainer.new()
+		scroll.add_child(list)
+		for b in spare:
+			var e := str(b)
+			var row := HBoxContainer.new()
+			list.add_child(row)
+			var btn := UiKit.button("装上", 13)
+			btn.pressed.connect(func():
+				Profile.equip_bone(e)
+				var wn: Node = get_tree().get_first_node_in_group("world")
+				if wn:
+					wn.player.on_bones_changed()
+				open())
+			row.add_child(btn)
+			var v2 := VBoxContainer.new()
+			row.add_child(v2)
+			v2.add_child(UiKit.label("%s（%s）" % [Data.bone_name(e), Data.BONE_SLOT_NAMES[Data.bone_data(e)["slot"]]], 14, UiKit.GOLD))
+			v2.add_child(UiKit.label(Data.bone_desc(e), 12))

@@ -108,6 +108,7 @@ static func icon(name: String, size := 24.0, color := MOON) -> TextureRect:
 ## 魂技的图标名（按魂技类型）
 static func skill_icon(sid: String) -> String:
 	var t := str(Data.SKILLS.get(sid, {}).get("type", "buff"))
+	t = {"blink": "dash", "grapple": "pull", "giant": "shield", "fly": "leap", "invis": "buff"}.get(t, t)
 	return t if ResourceLoader.exists(ICONS + t + ".svg") else "buff"
 
 

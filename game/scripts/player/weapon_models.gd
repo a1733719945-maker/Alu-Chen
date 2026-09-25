@@ -158,8 +158,8 @@ static func build(id: String) -> Node3D:
 			_p(root, U.box(Vector3(0.006, 0.02, 0.006)), m["gold"], Vector3(0, 0.11, -0.125))
 			_p(root, U.box(Vector3(0.024, 0.012, 0.006)), m["gold"], Vector3(0, 0.106, 0.07))
 			_arm_left(root, m, Vector3(-0.005, -0.045, -0.11))
-			_marker(root, "Muzzle", Vector3(0, 0.02, -0.22))
-			_marker(root, "Sight", Vector3(0, 0.112, 0.075))
+			_marker(root, "Muzzle", Vector3(0, 0.02, -0.26))
+			_holo(root, m, Vector3(0, 0.128, 0.02))
 		"kongque":
 			_arm_right(root, m, Vector3(0, -0.075, 0.14))
 			_p(root, U.box(Vector3(0.046, 0.06, 0.56)), m["lacquer"], Vector3(0, 0, 0.02))
@@ -182,8 +182,8 @@ static func build(id: String) -> Node3D:
 			ring.name = "Aperture"
 			_p(root, U.box(Vector3(0.004, 0.028, 0.004)), m["gold"], Vector3(0, 0.046, -0.44))
 			_arm_left(root, m, Vector3(-0.005, -0.04, -0.2))
-			_marker(root, "Muzzle", Vector3(0, 0.01, -0.47))
-			_marker(root, "Sight", Vector3(0, 0.058, 0.17))
+			_marker(root, "Muzzle", Vector3(0, 0.01, -0.51))
+			_acog(root, m, Vector3(0, 0.125, 0.03))
 		"baoyu":
 			_arm_right(root, m, Vector3(0, -0.06, 0.07))
 			_p(root, U.box(Vector3(0.1, 0.085, 0.22)), m["lacquer"], Vector3(0, 0, -0.03))
@@ -224,7 +224,144 @@ static func build(id: String) -> Node3D:
 			_arm_left(root, m, Vector3(-0.005, -0.045, -0.2))
 			_marker(root, "Muzzle", Vector3(0, 0.02, -0.34))
 			_marker(root, "Sight", Vector3(0, 0.08, 0.14))
+	_attachments(root, m, id)
 	return root
+
+
+# ------------------------------------------------------------------ 配件：瞄具、枪口、激光、手电、弹壳
+
+const RETICLE_SHADER := """shader_type spatial;
+render_mode unshaded, blend_add, depth_draw_never, depth_test_disabled, cull_disabled, shadows_disabled;
+uniform vec4 color : source_color = vec4(1.0, 0.12, 0.08, 1.0);
+uniform int kind = 0;
+void fragment() {
+	vec2 p = (UV - 0.5) * 2.0;
+	float r = length(p);
+	float a = smoothstep(0.1, 0.035, r) * 1.6 + smoothstep(0.4, 0.0, r) * 0.18;
+	if (kind == 1) {
+		a += smoothstep(0.05, 0.0, abs(r - 0.72)) * 1.2;
+	} else if (kind == 2) {
+		vec2 q = vec2(abs(p.x), p.y);
+		float line = smoothstep(0.06, 0.0, abs(q.y + q.x * 0.9)) * step(-0.42, p.y) * step(p.y, 0.0);
+		float post = smoothstep(0.04, 0.0, abs(p.x)) * step(p.y, -0.5) * step(-0.95, p.y);
+		a = line * 1.5 + post + smoothstep(0.08, 0.02, r) * 1.2;
+	}
+	ALBEDO = color.rgb * a * 1.8;
+}
+"""
+const GLASS_SHADER := """shader_type spatial;
+render_mode unshaded, blend_mix, depth_draw_never, cull_disabled, shadows_disabled;
+uniform vec4 tint : source_color = vec4(0.45, 0.75, 0.9, 0.12);
+void fragment() {
+	float edge = smoothstep(0.35, 0.5, length(UV - 0.5));
+	ALBEDO = tint.rgb;
+	ALPHA = tint.a + edge * 0.25;
+}
+"""
+
+
+static func _shader_mat(code: String, params: Dictionary) -> ShaderMaterial:
+	var sm := ShaderMaterial.new()
+	var sh := Shader.new()
+	sh.code = code
+	sm.shader = sh
+	for k in params:
+		sm.set_shader_parameter(k, params[k])
+	return sm
+
+
+static func _quad(parent: Node3D, size: float, mat: Material, pos: Vector3, name := "") -> MeshInstance3D:
+	var q := QuadMesh.new()
+	q.size = Vector2(size, size)
+	var mi := _p(parent, q, mat, pos)
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	if name != "":
+		mi.name = name
+	return mi
+
+
+## 全息瞄具（诸葛神弩）：金属框 + 蓝色镀膜玻璃 + 红色"圈点"准星。Sight 在准星中心
+static func _holo(root: Node3D, m: Dictionary, c: Vector3) -> void:
+	_p(root, U.box(Vector3(0.05, 0.016, 0.075)), m["black"], c + Vector3(0, -0.028, 0.0))
+	for s in [-1.0, 1.0]:
+		_p(root, U.box(Vector3(0.006, 0.05, 0.05)), m["black"], c + Vector3(0.025 * s, -0.002, -0.005))
+	_p(root, U.box(Vector3(0.056, 0.007, 0.05)), m["black"], c + Vector3(0, 0.026, -0.005))
+	_p(root, U.box(Vector3(0.02, 0.012, 0.02)), m["iron"], c + Vector3(0.02, -0.018, 0.03))
+	_quad(root, 0.046, _shader_mat(GLASS_SHADER, {"tint": Color(0.4, 0.7, 0.85, 0.1)}), c + Vector3(0, 0, -0.02))
+	_quad(root, 0.03, _shader_mat(RETICLE_SHADER, {"color": Color(1.0, 0.12, 0.08), "kind": 1}), c + Vector3(0, 0, -0.022), "Reticle")
+	_marker(root, "Sight", c)
+
+
+## 光学瞄准镜（孔雀翎，类似 ACOG）：镜筒、前后镜片、金边，镜片里是琥珀色的箭头准星
+static func _acog(root: Node3D, m: Dictionary, c: Vector3) -> void:
+	_p(root, U.box(Vector3(0.036, 0.022, 0.12)), m["black"], c + Vector3(0, -0.03, 0))
+	_p(root, U.box(Vector3(0.028, c.y - 0.06, 0.05)), m["black"], Vector3(c.x, (c.y + 0.02) * 0.5, c.z))
+	_p(root, U.cyl(0.02, 0.02, 0.13, 20), m["black"], c + Vector3(0, 0, -0.005), Vector3(PI / 2, 0, 0))
+	_p(root, U.cyl(0.026, 0.021, 0.04, 20), m["black"], c + Vector3(0, 0, -0.085), Vector3(PI / 2, 0, 0))
+	_p(root, U.cyl(0.023, 0.02, 0.03, 20), m["black"], c + Vector3(0, 0, 0.07), Vector3(PI / 2, 0, 0))
+	_p(root, U.torus(0.019, 0.025, 24, 6), m["gold"], c + Vector3(0, 0, 0.086), Vector3(PI / 2, 0, 0))
+	_p(root, U.torus(0.022, 0.028, 24, 6), m["gold"], c + Vector3(0, 0, -0.105), Vector3(PI / 2, 0, 0))
+	_p(root, U.box(Vector3(0.012, 0.014, 0.02)), m["gold"], c + Vector3(0, 0.024, -0.02))
+	_quad(root, 0.05, _shader_mat(GLASS_SHADER, {"tint": Color(0.6, 0.45, 0.2, 0.08)}), c + Vector3(0, 0, -0.106))
+	_quad(root, 0.04, _shader_mat(GLASS_SHADER, {"tint": Color(0.3, 0.5, 0.7, 0.06)}), c + Vector3(0, 0, 0.087))
+	_quad(root, 0.03, _shader_mat(RETICLE_SHADER, {"color": Color(1.0, 0.6, 0.1), "kind": 2}), c + Vector3(0, 0, 0.08), "Reticle")
+	_marker(root, "Sight", c + Vector3(0, 0, 0.087))
+
+
+## 其余配件：枪口制退器、夜光照门、激光、手电、抛壳口
+static func _attachments(root: Node3D, m: Dictionary, id: String) -> void:
+	var mz := root.get_node_or_null("Muzzle") as Node3D
+	var tritium := U.glow(Color(0.4, 1.0, 0.5), 3.0)
+	var laser := U.glow(Color(1.0, 0.1, 0.08), 6.0)
+	match id:
+		"xiujian":
+			# 夜光三点照门 + 枪管下激光 + 补偿器
+			_p(root, U.sphere(0.0028, 6, 4), tritium, Vector3(0.0, 0.054, -0.135))
+			for s in [-1.0, 1.0]:
+				_p(root, U.sphere(0.0028, 6, 4), tritium, Vector3(0.007 * s, 0.05, 0.085))
+			_p(root, U.box(Vector3(0.022, 0.018, 0.05)), m["black"], Vector3(0, 0.0, -0.13))
+			_p(root, U.cyl(0.003, 0.003, 0.004, 8), laser, Vector3(0.0, 0.0, -0.157), Vector3(PI / 2, 0, 0))
+			_p(root, U.cyl(0.017, 0.017, 0.03, 10), m["black"], Vector3(0.0, 0.025, -0.175), Vector3(PI / 2, 0, 0))
+			for k in 2:
+				_p(root, U.box(Vector3(0.036, 0.004, 0.005)), m["gold"], Vector3(0.0, 0.03, -0.168 - k * 0.012))
+			_marker(root, "Eject", Vector3(0.015, 0.035, 0.02))
+		"zhuge":
+			# 枪口制退器 + 竖握把 + 皮卡汀尼导轨
+			if mz:
+				_brake(root, m, mz.position + Vector3(0, 0, 0.03), 0.018)
+			_p(root, U.box(Vector3(0.024, 0.06, 0.026)), m["black"], Vector3(0, -0.06, -0.15))
+			for k in 8:
+				_p(root, U.box(Vector3(0.05, 0.005, 0.008)), m["iron"], Vector3(0, 0.1, -0.06 + k * 0.016))
+			_marker(root, "Eject", Vector3(0.03, 0.04, 0.0))
+		"kongque":
+			if mz:
+				_brake(root, m, mz.position + Vector3(0, 0, 0.035), 0.02)
+			# 枪管下战术手电
+			_p(root, U.cyl(0.013, 0.013, 0.07, 12), m["black"], Vector3(0.028, -0.01, -0.3), Vector3(PI / 2, 0, 0))
+			_p(root, U.cyl(0.011, 0.011, 0.002, 12), U.glow(Color(1.0, 0.97, 0.85), 3.0), Vector3(0.028, -0.01, -0.336), Vector3(PI / 2, 0, 0))
+			_marker(root, "Eject", Vector3(0.03, 0.03, 0.05))
+		"baoyu":
+			# 鬼环照门 + 夜光准星 + 侧挂弹壳
+			_p(root, U.torus(0.007, 0.011, 16, 6), m["iron"], Vector3(0, 0.062, 0.04), Vector3(PI / 2, 0, 0))
+			_p(root, U.sphere(0.004, 6, 4), tritium, Vector3(0, 0.058, -0.13))
+			for k in 4:
+				_p(root, U.cyl(0.008, 0.008, 0.03, 8), U.mat(Color(0.75, 0.12, 0.1), 0.5), Vector3(-0.058, 0.0, -0.08 + k * 0.022), Vector3(0, 0, PI / 2))
+				_p(root, U.cyl(0.0085, 0.0085, 0.008, 8), m["gold"], Vector3(-0.07, 0.0, -0.08 + k * 0.022), Vector3(0, 0, PI / 2))
+			_marker(root, "Eject", Vector3(0.05, 0.02, 0.0))
+		"zhuihun":
+			if mz:
+				_brake(root, m, mz.position + Vector3(0, 0, 0.04), 0.024)
+			# 两脚架（收起）
+			for s in [-1.0, 1.0]:
+				_p(root, U.cyl(0.005, 0.005, 0.16, 6), m["black"], Vector3(0.012 * s, -0.04, -0.2), Vector3(PI / 2, 0, 0))
+			_marker(root, "Eject", Vector3(0.035, 0.03, 0.08))
+
+
+static func _brake(root: Node3D, m: Dictionary, pos: Vector3, r: float) -> void:
+	_p(root, U.cyl(r, r, 0.06, 12), m["black"], pos, Vector3(PI / 2, 0, 0))
+	for k in 3:
+		for s in [-1.0, 1.0]:
+			_p(root, U.box(Vector3(0.004, r * 1.2, 0.008)), m["iron"], pos + Vector3(r * s, 0, -0.02 + k * 0.018))
 
 
 ## 别人手里的小号模型（第三人称）

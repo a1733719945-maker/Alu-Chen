@@ -8,6 +8,9 @@ var _dust_mat: StandardMaterial3D
 var _cam: Camera3D
 
 
+var _shells: Array = []
+
+
 func _ready() -> void:
 	_spark_mesh = QuadMesh.new()
 	_spark_mesh.size = Vector2(0.14, 0.14)
@@ -102,10 +105,54 @@ func muzzle_flash(pos: Vector3, dir: Vector3, color: Color, big := false) -> voi
 	light.omni_range = 4.0
 	add_child(light)
 	light.global_position = pos
+	# 星形火光：两片交叉的亮片，每发随机转一下；再加一小团枪口烟
+	var star := Node3D.new()
+	add_child(star)
+	star.global_position = pos
+	star.look_at(pos + dir, Vector3.UP if absf(dir.y) < 0.99 else Vector3.RIGHT)
+	star.rotate_object_local(Vector3.FORWARD, randf() * TAU)
+	var sz := 0.16 if big else 0.1
+	for k in 3:
+		var q := MeshInstance3D.new()
+		var qm := QuadMesh.new()
+		qm.size = Vector2(sz * (1.0 if k < 2 else 0.6), sz * (0.25 if k < 2 else 0.6)) if k < 2 else Vector2(sz * 0.7, sz * 0.7)
+		q.mesh = qm
+		q.material_override = U.glow(color.lerp(Color(1, 0.95, 0.8), 0.5), 8.0, true)
+		q.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		star.add_child(q)
+		q.rotation = Vector3(0, 0, PI * 0.5 * k) if k < 2 else Vector3(0, 0, 0)
+		q.position = Vector3(0, 0, -sz * 0.3)
 	var tw := create_tween()
 	tw.tween_property(mi, "scale", Vector3(0.2, 0.2, 0.2), 0.06)
 	tw.parallel().tween_property(light, "light_energy", 0.0, 0.07)
-	tw.tween_callback(func(): mi.queue_free(); light.queue_free())
+	tw.parallel().tween_property(star, "scale", Vector3(0.3, 0.3, 0.3), 0.05)
+	tw.tween_callback(func(): mi.queue_free(); light.queue_free(); star.queue_free())
+	_burst(pos + dir * 0.05, dir, Color(0.75, 0.75, 0.72, 0.35), 3 if not big else 6, 0.8, 0.5, 0.9, false, 0.5, 25.0)
+
+
+## 抛壳：一枚铜壳从抛壳口飞出去，转着落下
+func shell(pos: Vector3, vel: Vector3) -> void:
+	var mi := MeshInstance3D.new()
+	mi.mesh = U.cyl(0.006, 0.006, 0.024, 6)
+	mi.material_override = U.mat(Color(0.85, 0.62, 0.25), 0.3, 0.0, 0.9)
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(mi)
+	mi.global_position = pos
+	_shells.append({"mi": mi, "v": vel, "t": 0.0, "spin": Vector3(randf_range(10, 25), randf_range(-8, 8), randf_range(10, 25))})
+
+
+func _process(dt: float) -> void:
+	for s in _shells.duplicate():
+		s["t"] += dt
+		var mi: MeshInstance3D = s["mi"]
+		if s["t"] > 0.9 or not is_instance_valid(mi):
+			_shells.erase(s)
+			if is_instance_valid(mi):
+				mi.queue_free()
+			continue
+		s["v"] = (s["v"] as Vector3) + Vector3(0, -9.8 * dt, 0)
+		mi.global_position += (s["v"] as Vector3) * dt
+		mi.rotation += (s["spin"] as Vector3) * dt
 
 
 # ------------------------------------------------------------------ 命中
