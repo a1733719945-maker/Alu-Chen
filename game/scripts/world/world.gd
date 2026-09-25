@@ -859,7 +859,7 @@ func beast_bite(b: Beast, peer: int, dmg: float) -> void:
 
 
 func _apply_trait(ch_trait: String, from: Vector3, dmg: float) -> void:
-	if player.dead:
+	if player.dead or Data.autotest:
 		return
 	match ch_trait:
 		"poison":
@@ -1885,7 +1885,7 @@ func on_message(from: int, type: String, data: Variant) -> void:
 				var d: Array = data
 				_host_spawn(from, d[0], str(d[2]), int(d[3]), d[4], "", str(d[5]) if d.size() > 5 else "grass")
 				# 星斗大森林：成群的魂兽，同窝的会跑来帮忙
-				if str(Data.CH_TRAIT.get(chapter, "")) == "pack" and rng.randf() < 0.45:
+				if str(Data.CH_TRAIT.get(chapter, "")) == "pack" and rng.randf() < 0.45 and not Data.autotest:
 					for k in rng.randi_range(1, 2):
 						var a := rng.randf() * TAU
 						var q: Vector3 = (d[4] as Vector3) + Vector3(cos(a) * 18.0, 0, sin(a) * 18.0)
