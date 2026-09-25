@@ -22,6 +22,7 @@ var species := ""
 var age := 0
 var misses := 0
 var force_age := -1               # 测试用：固定年份
+var bait := "grass"               # 这一竿用的鱼饵
 var reel_progress := 0.0
 var reel_tension := 0.0
 var _struggle := 0.0
@@ -192,19 +193,29 @@ func _schedule_bite() -> void:
 	if misses >= L["hurry_after"]:
 		bite_timer = 0.4
 	species = Data.HABITATS[habitat]["beast"]
+	bait = "grass"
 	if force_age >= 0:
 		age = force_age
+		bait = "test"
 	elif Profile.item_count("gold_bites") > 0:
 		# 引兽香：必定百年以上
 		age = Data.roll_age(rng, 1, world.chapter)
 		Profile.items["gold_bites"] = Profile.item_count("gold_bites") - 1
 		Profile.mark_dirty()
 	else:
-		age = Data.roll_age(rng, 0, world.chapter)
+		# 鱼饵决定钓上来什么：青草饵基本只有十年，魂晶饵千年多……
+		bait = world.player.current_bait() if not remote else "grass"
+		age = Data.roll_age_bait(rng, world.chapter, bait)
 
 
 func _bite() -> void:
 	state = S.BITE
+	# 咬钩才扣鱼饵
+	var item := str(Data.BAITS.get(bait, Data.BAITS["grass"])["item"])
+	if item != "" and not remote:
+		Profile.use_item(item)
+		if Profile.item_count(item) <= 0:
+			hint.emit("%s用完了，换回青草饵（B 切换，暗器铺有卖）" % Data.BAITS[bait]["name"], Color(1, 0.8, 0.5))
 	bite_window = Data.LURE["bite_window"] * (1.2 if age >= 2 else 1.0)
 	Sfx.play("bite", 0.0, 0.03, 1.0 if age == 0 else (0.85 if age == 1 else 0.7))
 	if _in_water():
@@ -242,7 +253,7 @@ func _reel(dt: float, pressed: bool) -> void:
 
 func _yank() -> void:
 	misses = 0
-	world.request_yank(pos, habitat, species, age)
+	world.request_yank(pos, habitat, species, age, bait)
 	Sfx.play("yank", 0.0, 0.05)
 	_cooldown = 0.2
 	_start_return()

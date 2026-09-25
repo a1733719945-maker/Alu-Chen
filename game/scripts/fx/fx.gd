@@ -11,7 +11,23 @@ var _cam: Camera3D
 var _shells: Array = []
 
 
+var _soft_tex: GradientTexture2D
+var _soft_mats := {}
+
+
 func _ready() -> void:
+	# 所有粒子（火花、烟、尘土、拖尾）都用一张中间亮、边缘渐隐的圆形贴图，不再是方片
+	_soft_tex = GradientTexture2D.new()
+	_soft_tex.width = 64
+	_soft_tex.height = 64
+	_soft_tex.fill = GradientTexture2D.FILL_RADIAL
+	_soft_tex.fill_from = Vector2(0.5, 0.5)
+	_soft_tex.fill_to = Vector2(0.5, 0.0)
+	var g := Gradient.new()
+	g.set_color(0, Color(1, 1, 1, 1))
+	g.set_color(1, Color(1, 1, 1, 0))
+	g.add_point(0.35, Color(1, 1, 1, 0.75))
+	_soft_tex.gradient = g
 	_spark_mesh = QuadMesh.new()
 	_spark_mesh.size = Vector2(0.14, 0.14)
 	_dust_mat = _particle_mat(false)
@@ -27,6 +43,7 @@ func _particle_mat(glow: bool) -> StandardMaterial3D:
 	m.vertex_color_use_as_albedo = true
 	m.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
 	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.albedo_texture = _soft_tex
 	if glow:
 		m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 	return m
@@ -66,29 +83,103 @@ func _burst(pos: Vector3, normal: Vector3, color: Color, amount: int, speed: flo
 
 # ------------------------------------------------------------------ 弹道
 
-## 一道飞过去的"箭影"。hitscan 瞬间命中，但画面上让它飞一下更有感觉。
-func tracer(from: Vector3, to: Vector3, color: Color, width := 0.018, speed := 420.0, length := 3.5) -> void:
+## 弹道：一道朝着镜头的辉光光迹（中间亮白、两边带颜色的光晕、尾巴渐隐），弩类暗器前面还有一支真的弩箭在飞。
+## 伤害是开枪瞬间就算好的，画面上让箭飞一下更有感觉。
+const TRACER_SHADER := """shader_type spatial;
+render_mode unshaded, blend_add, depth_draw_never, cull_disabled, shadows_disabled, world_vertex_coords;
+uniform vec4 color : source_color = vec4(1.0);
+uniform float width = 0.05;
+uniform float intensity = 2.2;
+void vertex() {
+	vec3 ax = (MODEL_MATRIX * vec4(0.0, 0.0, 1.0, 0.0)).xyz;
+	float len = length(ax);
+	vec3 axis = ax / max(len, 0.0001);
+	vec3 center = MODEL_MATRIX[3].xyz;
+	vec3 side = normalize(cross(axis, INV_VIEW_MATRIX[3].xyz - center));
+	VERTEX = center + axis * (UV.y - 0.5) * len + side * (UV.x - 0.5) * width;
+}
+void fragment() {
+	float across = abs(UV.x - 0.5) * 2.0;
+	float core = exp(-across * across * 40.0);
+	float halo = exp(-across * across * 5.0) * 0.5;
+	float tail = pow(clamp(1.0 - UV.y, 0.0, 1.0), 1.4);
+	ALBEDO = (color.rgb * (halo + core) + vec3(1.0) * core * 0.9) * tail * intensity;
+}
+"""
+var _tracer_mesh: PlaneMesh
+var _tracer_mats := {}
+
+
+func _tracer_mat(color: Color, width: float) -> ShaderMaterial:
+	var key := "%s|%.3f" % [color.to_html(), width]
+	if _tracer_mats.has(key):
+		return _tracer_mats[key]
+	var m := ShaderMaterial.new()
+	var sh := Shader.new()
+	sh.code = TRACER_SHADER
+	m.shader = sh
+	m.set_shader_parameter("color", color)
+	m.set_shader_parameter("width", width)
+	_tracer_mats[key] = m
+	return m
+
+
+## 一支弩箭：深色箭杆、发光的箭头、三片尾羽
+func bolt_model(color: Color, glow := true) -> Node3D:
+	var n := Node3D.new()
+	U.part(n, U.cyl(0.0065, 0.0065, 0.46, 6), U.mat(Color(0.28, 0.18, 0.1), 0.55), Vector3(0, 0, 0.23), Vector3(PI / 2, 0, 0), Vector3.ONE, false)
+	U.part(n, U.cyl(0.0, 0.014, 0.06, 8), U.glow(color, 6.0) if glow else U.mat(Color(0.55, 0.57, 0.6), 0.3, 0.0, 0.9), Vector3(0, 0, -0.025), Vector3(-PI / 2, 0, 0), Vector3.ONE, false)
+	U.part(n, U.cyl(0.009, 0.009, 0.015, 8), U.mat(Color(0.8, 0.62, 0.28), 0.3, 0.0, 0.9), Vector3(0, 0, 0.01), Vector3(PI / 2, 0, 0), Vector3.ONE, false)
+	var feather := U.mat(Color(0.75, 0.18, 0.12), 0.8)
+	for k in 3:
+		var fl := U.part(n, U.box(Vector3(0.0015, 0.024, 0.075)), feather, Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
+		fl.rotation.z = TAU * k / 3.0
+		fl.position = Vector3(sin(TAU * k / 3.0) * -0.012, cos(TAU * k / 3.0) * 0.012, 0.42)
+	if glow:
+		U.part(n, U.sphere(0.03, 8, 4), U.glow(color, 3.0, true), Vector3(0, 0, -0.03), Vector3.ZERO, Vector3.ONE, false)
+	return n
+
+
+func tracer(from: Vector3, to: Vector3, color: Color, width := 0.05, speed := 260.0, length := 4.0, bolt := false) -> void:
 	var dist := from.distance_to(to)
 	if dist < 0.5:
 		return
-	var seg := minf(length, dist)
-	var mi := MeshInstance3D.new()
-	var bm := BoxMesh.new()
-	bm.size = Vector3(width, width, seg)
-	mi.mesh = bm
-	mi.material_override = U.glow(color, 4.0, true)
-	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(mi)
+	if _tracer_mesh == null:
+		_tracer_mesh = PlaneMesh.new()
+		_tracer_mesh.size = Vector2(1, 1)
 	var dir := (to - from) / dist
-	var start := from + dir * seg * 0.5
-	var end := to - dir * seg * 0.5
-	mi.look_at_from_position(start, start + dir, Vector3.UP if absf(dir.y) < 0.99 else Vector3.RIGHT)
-	var t := maxf(dist / speed, 0.03)
+	var mi := MeshInstance3D.new()
+	mi.mesh = _tracer_mesh
+	mi.material_override = _tracer_mat(color, width)
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mi.extra_cull_margin = 4.0
+	add_child(mi)
+	var b: Node3D = null
+	if bolt:
+		b = bolt_model(color)
+		add_child(b)
+	_place_tracer(mi, b, from, dir, dist, length, 0.02)
+	var t := maxf(dist / speed, 0.04)
 	var tw := create_tween()
-	tw.tween_property(mi, "global_position", end, t)
-	tw.tween_property(mi, "scale", Vector3(0.1, 0.1, 0.3), 0.05)
-	tw.tween_callback(mi.queue_free)
+	tw.tween_method(func(k: float): _place_tracer(mi, b, from, dir, dist, length, k), 0.02, 1.0, t)
+	tw.tween_method(func(k: float): _place_tracer(mi, null, from, dir, dist, length * (1.0 - k), 1.0), 0.0, 1.0, 0.07)
+	tw.tween_callback(func():
+		mi.queue_free()
+		if is_instance_valid(b):
+			b.queue_free())
 
+
+func _place_tracer(mi: MeshInstance3D, b: Node3D, from: Vector3, dir: Vector3, dist: float, length: float, k: float) -> void:
+	if not is_instance_valid(mi):
+		return
+	var head := from + dir * dist * k
+	var tail := clampf(minf(length, dist * k), 0.01, 1000.0)
+	var up := Vector3.UP if absf(dir.y) < 0.99 else Vector3.RIGHT
+	var basis := Basis.looking_at(dir, up)
+	mi.global_transform = Transform3D(basis * Basis.from_scale(Vector3(1, 1, tail)), head - dir * tail * 0.5)
+	if is_instance_valid(b):
+		b.global_transform = Transform3D(basis, head)
+		b.visible = k < 0.999
 
 func muzzle_flash(pos: Vector3, dir: Vector3, color: Color, big := false) -> void:
 	var mi := MeshInstance3D.new()
@@ -117,7 +208,7 @@ func muzzle_flash(pos: Vector3, dir: Vector3, color: Color, big := false) -> voi
 		var qm := QuadMesh.new()
 		qm.size = Vector2(sz * (1.0 if k < 2 else 0.6), sz * (0.25 if k < 2 else 0.6)) if k < 2 else Vector2(sz * 0.7, sz * 0.7)
 		q.mesh = qm
-		q.material_override = U.glow(color.lerp(Color(1, 0.95, 0.8), 0.5), 8.0, true)
+		q.material_override = _soft_glow(color.lerp(Color(1, 0.95, 0.8), 0.5))
 		q.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		star.add_child(q)
 		q.rotation = Vector3(0, 0, PI * 0.5 * k) if k < 2 else Vector3(0, 0, 0)
@@ -128,6 +219,22 @@ func muzzle_flash(pos: Vector3, dir: Vector3, color: Color, big := false) -> voi
 	tw.parallel().tween_property(star, "scale", Vector3(0.3, 0.3, 0.3), 0.05)
 	tw.tween_callback(func(): mi.queue_free(); light.queue_free(); star.queue_free())
 	_burst(pos + dir * 0.05, dir, Color(0.75, 0.75, 0.72, 0.35), 3 if not big else 6, 0.8, 0.5, 0.9, false, 0.5, 25.0)
+
+
+## 圆形柔光（枪口火光用）：加法混合，边缘渐隐
+func _soft_glow(color: Color) -> StandardMaterial3D:
+	var key := color.to_html()
+	if _soft_mats.has(key):
+		return _soft_mats[key]
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	m.albedo_texture = _soft_tex
+	m.albedo_color = Color(color.r * 2.5, color.g * 2.5, color.b * 2.5, 1.0)
+	_soft_mats[key] = m
+	return m
 
 
 ## 抛壳：一枚铜壳从抛壳口飞出去，转着落下
@@ -236,11 +343,7 @@ var _arrows: Array[Node3D] = []
 
 
 func stick_arrow(pos: Vector3, dir: Vector3, on: Node3D) -> void:
-	var a := Node3D.new()
-	var shaft := U.part(a, U.cyl(0.006, 0.006, 0.34, 4), U.mat(Color(0.35, 0.24, 0.14)), Vector3(0, 0, 0.14), Vector3(PI / 2, 0, 0), Vector3.ONE, false)
-	shaft.name = "Shaft"
-	U.part(a, U.box(Vector3(0.03, 0.001, 0.06)), U.mat(Color(0.9, 0.9, 0.85)), Vector3(0, 0, 0.29), Vector3.ZERO, Vector3.ONE, false)
-	U.part(a, U.box(Vector3(0.001, 0.03, 0.06)), U.mat(Color(0.9, 0.9, 0.85)), Vector3(0, 0, 0.29), Vector3.ZERO, Vector3.ONE, false)
+	var a := bolt_model(Color(0.6, 0.6, 0.6), false)
 	if on and is_instance_valid(on):
 		on.add_child(a)
 	else:
@@ -315,11 +418,11 @@ func hazard_ball(kind: String, color: Color) -> Node3D:
 
 
 ## 红圈预警：从中间长到外圈，满了就砸下来
-func telegraph(center: Vector3, radius: float, delay: float) -> Node3D:
+func telegraph(center: Vector3, radius: float, delay: float, color := Color(1.0, 0.2, 0.15)) -> Node3D:
 	var n := Node3D.new()
 	add_child(n)
 	n.global_position = center + Vector3(0, 0.12, 0)
-	U.part(n, U.torus(radius - 0.12, radius, 64, 4), U.glow(Color(1.0, 0.2, 0.15), 3.0), Vector3.ZERO, Vector3.ZERO, Vector3(1, 0.2, 1), false)
+	U.part(n, U.torus(radius - 0.12, radius, 64, 4), U.glow(color, 3.0), Vector3.ZERO, Vector3.ZERO, Vector3(1, 0.2, 1), false)
 	var disc := MeshInstance3D.new()
 	var cm := CylinderMesh.new()
 	cm.top_radius = radius
@@ -329,7 +432,7 @@ func telegraph(center: Vector3, radius: float, delay: float) -> Node3D:
 	disc.mesh = cm
 	var m := StandardMaterial3D.new()
 	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	m.albedo_color = Color(1.0, 0.15, 0.1, 0.35)
+	m.albedo_color = Color(color.r, color.g * 0.75, color.b * 0.7, 0.35)
 	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	m.no_depth_test = false
 	disc.material_override = m

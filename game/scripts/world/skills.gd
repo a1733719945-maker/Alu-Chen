@@ -34,6 +34,57 @@ func _process(dt: float) -> void:
 		_update_rains(dt)
 
 
+# ------------------------------------------------------------------ 按类别放魂技（不用选）
+# Q 攻击 / F 辅助 / 双击 Shift 位移。同一类有好几个：放冷却好、魂力够、魂环最高的那个，连按就轮着放
+const CATS := {
+	"attack": ["launch", "beam", "projectile", "rain", "root", "mark", "pull"],
+	"support": ["buff", "heal", "shield", "giant", "invis"],
+	"move": ["dash", "blink", "grapple", "fly", "leap"],
+}
+const CAT_NAMES := {"attack": "攻击", "support": "辅助", "move": "位移"}
+
+
+func slots_of(cat: String) -> Array:
+	var out: Array = []
+	for i in Profile.rings.size():
+		var s: Dictionary = Data.SKILLS.get(slot_skill(i), {})
+		if not s.is_empty() and str(s["type"]) in CATS[cat]:
+			out.append(i)
+	return out
+
+
+## 这一类现在该放哪个：能放的里面魂环最高的；都在冷却就返回冷却最快好的那个；没有返回 -1
+func pick(cat: String) -> int:
+	var ss := slots_of(cat)
+	if ss.is_empty():
+		return -1
+	var p: Player = world.player
+	var best := -1
+	for i in ss:
+		if cooldowns[i] <= 0.0 and p.soul >= float(Data.SKILLS[slot_skill(i)]["cost"]):
+			best = i
+	if best >= 0:
+		return best
+	best = ss[0]
+	for i in ss:
+		if cooldowns[i] < cooldowns[best]:
+			best = i
+	return best
+
+
+func cast_cat(cat: String) -> void:
+	var i := pick(cat)
+	if i < 0:
+		world.hud.toast("还没有%s类魂技（吸收魂环时选）" % CAT_NAMES[cat], Color(0.85, 0.85, 0.85), 1.6)
+		return
+	if cooldowns[i] > 0.0:
+		world.hud.toast("%s还要 %.1f 秒" % [Data.SKILLS[slot_skill(i)]["name"], cooldowns[i]], Color(0.8, 0.85, 1.0), 1.0)
+		Sfx.play("dry", -8.0)
+		return
+	current = i
+	cast(i)
+
+
 # ------------------------------------------------------------------ 本地：放技能
 
 func cast(slot: int) -> void:

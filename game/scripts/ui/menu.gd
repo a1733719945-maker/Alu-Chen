@@ -158,7 +158,7 @@ func _ready() -> void:
 	var help := UiKit.label("WASD 移动 · 空格 跳 · Ctrl 蹲 · 左键 射击 · 右键 瞄准 · R 换弹 · 1–5 暗器 · E 引魂索 · F 互动 · Q 魂技（按住切换） · G 佛怒唐莲 · H 回血丹 · K 武魂 · Esc 暂停", 16, UiKit.MIST)
 	help.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	col.add_child(help)
-	var ver := UiKit.label("版本 %s · 第二版" % ProjectSettings.get_setting("application/config/version", "0"), 14, Color(0.5, 0.6, 0.57))
+	var ver := UiKit.label("版本 %s · 第四版" % ProjectSettings.get_setting("application/config/version", "0"), 14, Color(0.5, 0.6, 0.57))
 	ver.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	col.add_child(ver)
 

@@ -739,7 +739,15 @@ func _run_ring() -> void:
 			w.interact()
 			_next(3)
 		3:
-			if w.hud._choice != null:
+			if w.hud._choice == null and Profile.rings.size() >= 1:
+				# 新版：魂技吸收完自动揭晓，不用选
+				_note("吸收了百年魂环，魂技【%s】" % Data.SKILLS[Profile.rings[0]["skill"]]["name"])
+				Profile.add_xp(100000)
+				w._broadcast_prog()
+				if not _check(Profile.level == 20, "吸收魂环后没有突破瓶颈（%d 级）" % Profile.level):
+					return
+				_next(4)
+			elif w.hud._choice != null:
 				if _shots and not _mem.has("choice_shot"):
 					_mem["choice_shot"] = true
 					_shot("skill_choice")
@@ -764,6 +772,8 @@ func _run_ring() -> void:
 			if _step_t < 0.5:
 				return
 			p.soul = Profile.max_soul()
+			# 魂技现在由魂兽决定：测试固定换成第一环的攻击魂技，结果稳定
+			Profile.rings[0]["skill"] = Data.SKILL_TREE[Data.wuhun_id(Settings.wuhun)][0][0]
 			var s0 := p.soul
 			var m := w.island.habitat("meadow")
 			var c: Vector2 = m["center"]

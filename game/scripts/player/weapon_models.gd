@@ -10,21 +10,33 @@ extends RefCounted
 ## 朝向：-Z 向前，原点在右手握把。
 
 
-static func _mats() -> Dictionary:
+## 材质。skin：暗器皮肤（Data.GUN_SKINS），outfit：装扮（袖子颜色）。空字符串 = 用自己存档里穿的
+static func _mats(skin := "", outfit := "") -> Dictionary:
+	if skin == "":
+		skin = Profile.skin
+	if outfit == "":
+		outfit = Profile.outfit
+	var sk: Dictionary = Data.GUN_SKINS.get(skin, Data.GUN_SKINS["default"])
+	var of: Dictionary = Data.OUTFITS.get(outfit, Data.OUTFITS["default"])
+	var pal: Dictionary = sk.get("pal", {})
+	var metal := float(sk.get("metal", 0.0))
+	var glow: Color = sk.get("glow", Color(0.35, 0.95, 0.8))
+	var sleeve: Color = Color(0.1, 0.11, 0.17) if outfit == "default" else (of["robe"] as Color)
+	var cuff: Color = of.get("accent", Color(0.85, 0.66, 0.3))
 	return {
-		"skin": U.mat(Color(0.84, 0.64, 0.52), 0.6),
-		"sleeve": U.mat(Color(0.1, 0.11, 0.17), 0.85),
-		"cuff": U.mat(Color(0.85, 0.66, 0.3), 0.35, 0.0, 0.7),
+		"skin": U.mat(Color(0.2, 0.15, 0.12), 0.55),
+		"sleeve": U.mat(sleeve, 0.85),
+		"cuff": U.mat(cuff, 0.35, 0.0, 0.7),
 		"inner": U.mat(Color(0.86, 0.84, 0.78), 0.8),
-		"wood": U.mat(Color(0.36, 0.2, 0.12), 0.6),
-		"lacquer": U.mat(Color(0.32, 0.05, 0.05), 0.3),
-		"black": U.mat(Color(0.07, 0.06, 0.06), 0.35),
-		"bronze": U.mat(Color(0.55, 0.38, 0.2), 0.35, 0.0, 0.8),
-		"gold": U.mat(Color(0.9, 0.7, 0.3), 0.3, 0.0, 0.9),
-		"iron": U.mat(Color(0.28, 0.29, 0.31), 0.4, 0.0, 0.85),
+		"wood": U.mat(pal.get("wood", Color(0.36, 0.2, 0.12)), 0.6 - metal * 0.3, 0.0, metal * 0.5),
+		"lacquer": U.mat(pal.get("lacquer", Color(0.32, 0.05, 0.05)), 0.3, 0.0, metal * 0.5),
+		"black": U.mat(pal.get("black", Color(0.07, 0.06, 0.06)), 0.35, 0.0, metal * 0.3),
+		"bronze": U.mat(pal.get("bronze", Color(0.55, 0.38, 0.2)), 0.35, 0.0, 0.8),
+		"gold": U.mat(pal.get("gold", Color(0.9, 0.7, 0.3)), 0.3, 0.0, 0.9),
+		"iron": U.mat(pal.get("iron", Color(0.28, 0.29, 0.31)), 0.4, 0.0, 0.85),
 		"string": U.mat(Color(0.9, 0.88, 0.8), 0.8),
-		"jade": U.glow(Color(0.35, 0.95, 0.8), 1.6),
-		"feather": U.glow(Color(0.2, 0.75, 0.9), 1.2),
+		"jade": U.glow(glow, 1.6 if skin == "default" else 2.4),
+		"feather": U.glow(Color(0.2, 0.75, 0.9) if skin == "default" else glow, 1.2 if skin == "default" else 2.0),
 		"lens": U.glow(Color(0.45, 0.75, 1.0), 2.5),
 	}
 
@@ -52,15 +64,11 @@ static func fist(parent: Node3D, m: Dictionary, pos: Vector3, rot: Vector3, side
 	parent.add_child(h)
 	# 手掌（稍扁的圆角块）
 	_p(h, U.sphere(0.03, 12, 8), m["skin"], Vector3(0.012 * side, 0, 0.012), Vector3.ZERO, Vector3(0.95, 1.35, 1.35))
-	# 四根手指：横着包在握把前面，上粗下细
+	# 四根手指：横着包在握把前面，紧挨着（戴着皮手套）
 	for k in 4:
-		var y := 0.024 - k * 0.0165
-		var r := 0.0105 - k * 0.0008
-		_p(h, U.capsule(r, 0.05), m["skin"], Vector3(-0.004 * side, y, -0.024), Vector3(0, 0, PI / 2), Vector3.ONE)
-		# 指关节
-		_p(h, U.sphere(r * 1.08, 8, 6), m["skin"], Vector3(0.02 * side, y, -0.018))
-		# 指尖弯回来贴在另一边
-		_p(h, U.sphere(r * 0.95, 8, 6), m["skin"], Vector3(-0.026 * side, y, -0.008))
+		var y := 0.024 - k * 0.0158
+		var r := 0.0098 - k * 0.0006
+		_p(h, U.capsule(r, 0.052), m["skin"], Vector3(-0.002 * side, y, -0.024), Vector3(0, 0, PI / 2), Vector3.ONE)
 	# 大拇指：从手掌左上方伸向前
 	_p(h, U.capsule(0.011, 0.05), m["skin"], Vector3(-0.018 * side, 0.034, -0.012), Vector3(PI / 2 - 0.35, 0, 0.5 * side))
 	return h
@@ -121,10 +129,10 @@ static func _bow(root: Node3D, m: Dictionary, front: Vector3, span: float, thick
 		s.basis = Basis.looking_at((b - a).normalized(), Vector3.UP) * Basis(Vector3.RIGHT, PI / 2)
 
 
-static func build(id: String) -> Node3D:
+static func build(id: String, skin := "", outfit := "") -> Node3D:
 	var root := Node3D.new()
 	root.name = id
-	var m := _mats()
+	var m := _mats(skin, outfit)
 	match id:
 		"xiujian":
 			_arm_right(root, m, Vector3(0, -0.035, -0.06))
@@ -183,7 +191,7 @@ static func build(id: String) -> Node3D:
 			_p(root, U.box(Vector3(0.004, 0.028, 0.004)), m["gold"], Vector3(0, 0.046, -0.44))
 			_arm_left(root, m, Vector3(-0.005, -0.04, -0.2))
 			_marker(root, "Muzzle", Vector3(0, 0.01, -0.51))
-			_acog(root, m, Vector3(0, 0.125, 0.03))
+			_reddot(root, m, Vector3(0, 0.125, 0.06))
 		"baoyu":
 			_arm_right(root, m, Vector3(0, -0.06, 0.07))
 			_p(root, U.box(Vector3(0.1, 0.085, 0.22)), m["lacquer"], Vector3(0, 0, -0.03))
@@ -208,11 +216,8 @@ static func build(id: String) -> Node3D:
 			_p(root, U.box(Vector3(0.055, 0.11, 0.14)), m["wood"], Vector3(0, -0.025, 0.3))
 			_p(root, U.box(Vector3(0.056, 0.01, 0.67)), m["iron"], Vector3(0, 0.035, 0.0))
 			_p(root, U.box(Vector3(0.036, 0.09, 0.05)), m["black"], Vector3(0, -0.07, 0.16), Vector3(-0.3, 0, 0))
-			# 铜瞄镜
-			_p(root, U.cyl(0.02, 0.02, 0.2, 16), m["bronze"], Vector3(0, 0.08, 0.02), Vector3(PI / 2, 0, 0))
-			_p(root, U.cyl(0.026, 0.02, 0.04, 16), m["bronze"], Vector3(0, 0.08, -0.1), Vector3(PI / 2, 0, 0))
-			_p(root, U.cyl(0.023, 0.02, 0.03, 16), m["bronze"], Vector3(0, 0.08, 0.13), Vector3(PI / 2, 0, 0))
-			_p(root, U.cyl(0.022, 0.022, 0.004, 16), m["lens"], Vector3(0, 0.08, -0.121), Vector3(PI / 2, 0, 0))
+			# 可变倍率狙击镜（镜片里是画中画放大画面，见 ViewModel）
+			_scope(root, m, Vector3(0, 0.085, 0.0))
 			for zz in [-0.04, 0.07]:
 				_p(root, U.box(Vector3(0.012, 0.04, 0.02)), m["iron"], Vector3(0, 0.055, zz))
 			var lever := _marker(root, "Lever", Vector3(0.035, 0.02, 0.1))
@@ -223,7 +228,6 @@ static func build(id: String) -> Node3D:
 			_bow(root, m, Vector3(0, 0.0, -0.3), 0.3, 0.02, 0.12)
 			_arm_left(root, m, Vector3(-0.005, -0.045, -0.2))
 			_marker(root, "Muzzle", Vector3(0, 0.02, -0.34))
-			_marker(root, "Sight", Vector3(0, 0.08, 0.14))
 	_attachments(root, m, id)
 	return root
 
@@ -290,6 +294,56 @@ static func _holo(root: Node3D, m: Dictionary, c: Vector3) -> void:
 	_quad(root, 0.046, _shader_mat(GLASS_SHADER, {"tint": Color(0.4, 0.7, 0.85, 0.1)}), c + Vector3(0, 0, -0.02))
 	_quad(root, 0.03, _shader_mat(RETICLE_SHADER, {"color": Color(1.0, 0.12, 0.08), "kind": 1}), c + Vector3(0, 0, -0.022), "Reticle")
 	_marker(root, "Sight", c)
+
+
+## 两头开口的镜筒（不挡视线），里外两面都画
+static func _open_tube(r_rear: float, r_front: float, h: float) -> CylinderMesh:
+	var c := CylinderMesh.new()
+	c.top_radius = r_rear
+	c.bottom_radius = r_front
+	c.height = h
+	c.radial_segments = 24
+	c.rings = 1
+	c.cap_top = false
+	c.cap_bottom = false
+	return c
+
+
+static func _dbl(mat: Material) -> Material:
+	var d := mat.duplicate() as BaseMaterial3D
+	d.cull_mode = BaseMaterial3D.CULL_DISABLED
+	return d
+
+
+## 红点瞄具（孔雀翎）：增高座 + 一截开口短镜筒 + 淡绿镀膜玻璃，玻璃上一颗红点。Sight 在镜筒后口
+static func _reddot(root: Node3D, m: Dictionary, c: Vector3) -> void:
+	var bot := 0.037
+	var top := c.y - 0.017
+	_p(root, U.box(Vector3(0.03, top - bot, 0.045)), m["black"], Vector3(c.x, (bot + top) * 0.5, c.z))
+	_p(root, _open_tube(0.019, 0.02, 0.05), _dbl(m["black"]), c, Vector3(PI / 2, 0, 0))
+	_p(root, U.torus(0.019, 0.023, 24, 6), m["gold"], c + Vector3(0, 0, -0.025), Vector3(PI / 2, 0, 0))
+	_p(root, U.cyl(0.006, 0.006, 0.012, 10), m["black"], c + Vector3(0.024, 0, 0.005), Vector3(0, 0, PI / 2))
+	_quad(root, 0.036, _shader_mat(GLASS_SHADER, {"tint": Color(0.45, 0.75, 0.55, 0.07)}), c + Vector3(0, 0, -0.02))
+	_quad(root, 0.018, _shader_mat(RETICLE_SHADER, {"color": Color(1.0, 0.1, 0.06), "kind": 0}), c + Vector3(0, 0, -0.021), "Reticle")
+	_marker(root, "Sight", c + Vector3(0, 0, 0.025))
+
+
+## 狙击镜：主镜筒 + 粗物镜 + 目镜 + 调节旋钮，全部开口。
+## 后面的镜片 ScopeLens 由 ViewModel 贴上画中画材质（另一台相机拍的放大画面 + 十字线）
+static func _scope(root: Node3D, m: Dictionary, c: Vector3) -> void:
+	var tube := _dbl(m["black"])
+	_p(root, _open_tube(0.021, 0.021, 0.2), tube, c, Vector3(PI / 2, 0, 0))
+	_p(root, _open_tube(0.022, 0.031, 0.06), tube, c + Vector3(0, 0, -0.13), Vector3(PI / 2, 0, 0))
+	_p(root, _open_tube(0.024, 0.021, 0.04), tube, c + Vector3(0, 0, 0.12), Vector3(PI / 2, 0, 0))
+	_p(root, U.torus(0.029, 0.034, 32, 6), m["bronze"], c + Vector3(0, 0, -0.16), Vector3(PI / 2, 0, 0))
+	_p(root, U.torus(0.022, 0.027, 32, 6), m["bronze"], c + Vector3(0, 0, 0.14), Vector3(PI / 2, 0, 0))
+	_p(root, U.cyl(0.011, 0.011, 0.022, 12), m["black"], c + Vector3(0, 0.03, 0.0))
+	_p(root, U.cyl(0.012, 0.012, 0.004, 12), m["bronze"], c + Vector3(0, 0.042, 0.0))
+	_p(root, U.cyl(0.011, 0.011, 0.022, 12), m["black"], c + Vector3(0.03, 0, 0.0), Vector3(0, 0, PI / 2))
+	_p(root, U.cyl(0.013, 0.013, 0.02, 12), m["bronze"], c + Vector3(0, 0, 0.1), Vector3(PI / 2, 0, 0))
+	_quad(root, 0.058, _shader_mat(GLASS_SHADER, {"tint": Color(0.3, 0.5, 0.75, 0.1)}), c + Vector3(0, 0, -0.159))
+	_quad(root, 0.044, U.mat(Color(0.03, 0.05, 0.08), 0.1), c + Vector3(0, 0, 0.138), "ScopeLens")
+	_marker(root, "Sight", c + Vector3(0, 0, 0.14))
 
 
 ## 光学瞄准镜（孔雀翎，类似 ACOG）：镜筒、前后镜片、金边，镜片里是琥珀色的箭头准星
@@ -365,9 +419,9 @@ static func _brake(root: Node3D, m: Dictionary, pos: Vector3, r: float) -> void:
 
 
 ## 别人手里的小号模型（第三人称）
-static func build_small(id: String) -> Node3D:
+static func build_small(id: String, skin := "default") -> Node3D:
 	var root := Node3D.new()
-	var m := _mats()
+	var m := _mats(skin, "default")
 	match id:
 		"xiujian":
 			_p(root, U.cyl(0.02, 0.024, 0.3, 8), m["bronze"], Vector3.ZERO, Vector3(PI / 2, 0, 0))

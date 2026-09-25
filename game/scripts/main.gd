@@ -9,6 +9,7 @@ var menu: MainMenu
 var world: World
 var _waiting_init := false
 var _queue: Array = []
+var _sailing := false        # 正在播开船动画：这期间收到的联机消息先存着，新地图建好再给它
 
 
 func _ready() -> void:
@@ -19,6 +20,7 @@ func _ready() -> void:
 	Net.status.connect(func(t): if menu: menu.set_status(t))
 	var args := _args()
 	if args.has("autotest"):
+		Data.autotest = true
 		var at := AutoTest.new()
 		at.main = self
 		at.mode = str(args["autotest"])
@@ -113,11 +115,32 @@ func _start_world(chapter: int, announce: bool) -> void:
 
 
 func _travel(chapter: int) -> void:
-	# 坐船换章节：所有人一起换地图，换完再互相打招呼
+	# 坐船换章节：先播开船动画（Remotion 做的），所有人一起换地图，换完再互相打招呼
+	if Data.autotest or not Data.CHAPTERS.has(chapter):
+		_start_world(chapter, true)
+		return
+	_sailing = true
+	_queue.clear()
+	if world:
+		world.process_mode = Node.PROCESS_MODE_DISABLED
+		world.hud.visible = false
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	var v := Voyage.new()
+	v.title = "前往 · %s" % Data.CHAPTERS[chapter]["name"]
+	add_child(v)
+	await v.finished
+	_sailing = false
 	_start_world(chapter, true)
+	var q := _queue.duplicate()
+	_queue.clear()
+	for m in q:
+		world.on_message(m[0], m[1], m[2])
 
 
 func _on_message(from: int, type: String, data: Variant) -> void:
+	if _sailing:
+		_queue.append([from, type, data])
+		return
 	if _waiting_init:
 		_queue.append([from, type, data])
 		if type == "init":

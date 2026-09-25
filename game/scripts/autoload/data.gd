@@ -2,6 +2,7 @@ extends Node
 ## 游戏数据表。调数值主要改这里：暗器、魂兽、魂技、章节任务、商店价格。
 
 const PROTOCOL_VERSION := "m3-1"
+var autotest := false      # 自动测试时关掉随机的东西（精英、兽潮、饥饿、魂兽性格）
 
 ## 字体：思源黑体（正文 Medium、强调 Bold、标题 Black），数字用 Barlow Condensed（窄体，像 FPS 游戏的弹药数）
 var font_ui: Font = preload("res://assets/fonts/NotoSansSC-Medium.otf")
@@ -134,13 +135,25 @@ const TEMPERS := {
 	"fierce": {"name": "凶暴", "color": Color(1.0, 0.32, 0.26)},
 	"sly": {"name": "狡猾", "color": Color(0.55, 0.95, 0.6)},
 	"bone": {"name": "魂骨", "color": Color(1.0, 0.84, 0.3)},
+	"elite": {"name": "精英", "color": Color(1.0, 0.55, 0.15)},
 }
+
+# ================================================================ 精英魂兽（小 Boss）
+# 每张地图在陆地栖息地附近固定几个点刷，不用引魂索拽；走近 20 米或者打它就会过来打人，
+# 跑出 45 米就回老家回血。打死以后 2 分钟在原地重生，必掉魂骨。
+const ELITE_HP := 7.0
+const ELITE_SIZE := 1.55
+const ELITE_DMG := 2.0
+const ELITE_REWARD := 6.0
+const ELITE_RESPAWN := 120.0
+const ELITE_MAX := 5
 const AGGRESSIVE := ["wolf", "rhino", "ape", "snake", "raptor", "spiderling", "husky", "icehorn", "snowape", "crab", "shark", "stag", "icedeer", "bat"]
 
 
-func roll_temper(rng: RandomNumberGenerator, species: String, age: int) -> String:
-	var bone := 0.04 + age * 0.03
-	var fierce := (0.5 if species in AGGRESSIVE else 0.25) + age * 0.08
+func roll_temper(rng: RandomNumberGenerator, species: String, age: int, bait := "grass") -> String:
+	var bd: Dictionary = BAITS.get(bait, BAITS["grass"])
+	var bone := (0.04 + age * 0.03) * float(bd["bone"])
+	var fierce := (0.5 if species in AGGRESSIVE else 0.25) + age * 0.08 + float(bd["fierce"])
 	var sly := 0.12
 	var r := rng.randf()
 	if r < bone:
@@ -156,9 +169,9 @@ func roll_temper(rng: RandomNumberGenerator, species: String, age: int) -> Strin
 
 # ================================================================ 战利品（打死魂兽掉在地上，捡起来丢进收购箱换金魂币）
 const LOOT_PART := {"hop": "绒毛", "slither": "鳞片", "fly": "羽翎", "flutter": "翅鳞", "run": "利齿", "charge": "硬角", "throw": "兽骨"}
-const KILL_MONEY := 0.6          # 打死直接拿 60% 金魂币，剩下的价值在掉落的素材里（要捡、要卖）
+const KILL_MONEY := 1.0          # 打死直接拿金魂币（素材已经去掉了）
 const LOOT_VALUE := 0.7
-const SELL_ITEMS := {"pill": 20, "grenade": 30}
+const SELL_ITEMS := {"pill": 20, "grenade": 30, "meat": 12}
 
 
 ## 素材的 key："mat:<魂兽>:<年份>"
@@ -217,6 +230,8 @@ func item_color(kind: String, key: String) -> Color:
 #   move         全速移动时额外增加的散布；air 跳在空中；crouch 蹲下乘的系数
 #   bloom        每发增加的散布，停火后按 bloom_recover 每秒恢复；刚开第一枪最准
 const WEAPON_ORDER := ["xiujian", "zhuge", "kongque", "baoyu", "zhuihun"]
+# 暗器跟着章节开放：第一章只有袖箭和梨花针，第二章诸葛神弩，第三章孔雀翎，第四章追魂穿心弩
+const WEAPON_UNLOCK := {"xiujian": 1, "baoyu": 1, "zhuge": 2, "kongque": 3, "zhuihun": 4}
 
 const WEAPONS := {
 	"xiujian": {
@@ -230,7 +245,7 @@ const WEAPONS := {
 		"view_punch": 1.3, "recover_delay": 0.06, "recover_speed": 16.0,
 		"ads_fov": 0.82, "ads_time": 0.11, "ads_move": 0.8,
 		"impulse": 2.2, "lift": 0.55, "shake": 0.14,
-		"tracer": Color(0.75, 0.95, 1.0), "sound": "xiujian_fire", "bolt": true,
+		"tracer": Color(1.0, 0.72, 0.3), "sound": "xiujian_fire", "bolt": true,
 	},
 	"zhuge": {
 		"name": "诸葛神弩", "cat": "冲锋 · 全自动", "desc": "连发弩，一秒十五箭。近中距离压制，移动射击也稳。",
@@ -246,7 +261,7 @@ const WEAPONS := {
 		"tracer": Color(1.0, 0.85, 0.5), "sound": "zhuge_fire", "bolt": true,
 	},
 	"kongque": {
-		"name": "孔雀翎", "cat": "步枪 · 全自动", "desc": "唐门四大暗器之一。伤害高、开镜第一发极准，连射要压枪。",
+		"name": "孔雀翎", "cat": "步枪 · 全自动", "desc": "唐门四大暗器之一，装了红点瞄具。伤害高、开镜第一发极准，连射要压枪。",
 		"price": 1500, "mode": "auto", "rpm": 600, "damage": 31.0, "headshot": 2.0, "pellets": 1,
 		"mag": 30, "reload": 2.1, "reload_empty": 2.6, "per_shell": false,
 		"range": 200.0, "falloff": Vector3(50, 150, 0.7),
@@ -254,7 +269,7 @@ const WEAPONS := {
 		"bloom": 0.32, "bloom_max": 4.5, "bloom_recover": 7.5,
 		"pattern": "rifle", "jitter": 0.12, "ads_recoil": 0.8,
 		"view_punch": 0.85, "recover_delay": 0.1, "recover_speed": 15.0,
-		"ads_fov": 0.55, "ads_time": 0.2, "ads_move": 0.72,
+		"ads_fov": 0.75, "ads_time": 0.18, "ads_move": 0.75,
 		"impulse": 1.35, "lift": 0.5, "shake": 0.09,
 		"tracer": Color(0.45, 1.0, 0.85), "sound": "kongque_fire", "bolt": true,
 	},
@@ -272,7 +287,7 @@ const WEAPONS := {
 		"tracer": Color(0.9, 0.92, 1.0), "sound": "baoyu_fire", "bolt": false,
 	},
 	"zhuihun": {
-		"name": "追魂穿心弩", "cat": "狙击 · 拉栓", "desc": "带铜制瞄镜的重弩。一箭贯穿，爆头直接带走千年魂兽。",
+		"name": "追魂穿心弩", "cat": "狙击 · 拉栓", "desc": "带 4~12 倍狙击镜的重弩（开镜后滚轮调倍率）。一箭贯穿，爆头直接带走千年魂兽。",
 		"price": 2400, "mode": "bolt", "rpm": 48, "damage": 150.0, "headshot": 2.5, "pellets": 1,
 		"mag": 5, "reload": 2.7, "reload_empty": 3.1, "per_shell": false, "cycle": 1.1,
 		"range": 400.0, "falloff": Vector3(200, 400, 0.9), "pierce": 3,
@@ -280,7 +295,7 @@ const WEAPONS := {
 		"bloom": 0.0, "bloom_max": 0.0, "bloom_recover": 1.0,
 		"pattern": [Vector2(0, 5.0)], "jitter": 0.6, "ads_recoil": 1.0,
 		"view_punch": 4.0, "recover_delay": 0.12, "recover_speed": 10.0,
-		"ads_fov": 0.25, "ads_time": 0.28, "ads_move": 0.55, "scope": true,
+		"ads_fov": 0.85, "ads_time": 0.28, "ads_move": 0.55, "scope": true,
 		"impulse": 7.0, "lift": 0.45, "shake": 0.5,
 		"tracer": Color(1.0, 0.95, 0.7), "sound": "zhuihun_fire", "bolt": true,
 	},
@@ -319,7 +334,143 @@ const ITEMS := {
 	"grenade": {"name": "佛怒唐莲", "desc": "唐门至高暗器。按 G 投掷，爆炸把周围魂兽全部炸上天", "price": 60, "max": 5, "key": "G"},
 	"pill": {"name": "回血丹", "desc": "按 H 使用，立刻恢复 60 点体力", "price": 40, "max": 5, "key": "H"},
 	"lure_gold": {"name": "引兽香", "desc": "接下来 5 次咬钩必定是百年以上的魂兽", "price": 120, "max": 3, "key": "自动"},
+	"meat": {"name": "烤魂兽肉", "desc": "按 4 拿出来（再按 4 在肉和回血丹之间换），左键吃：饱食 +40、体力 +10。打死魂兽也常掉", "price": 15, "max": 10, "key": "4"},
+	"bait_blood": {"name": "血腥饵 ×5", "desc": "钓上来的百年魂兽多，魂兽更凶，常带词缀，奖励 +30%", "price": 45, "max": 60, "key": "B", "bundle": 5},
+	"bait_soul": {"name": "魂晶饵 ×5", "desc": "千年魂兽出现率高好几倍，带词缀的更多（突破第四、五魂环靠它）", "price": 110, "max": 60, "key": "B", "bundle": 5},
+	"bait_gold": {"name": "金骨饵 ×5", "desc": "魂骨兽出现率 ×5，想刷魂骨就用它", "price": 130, "max": 60, "key": "B", "bundle": 5},
 }
+
+# ================================================================ 鱼饵（引魂索每次咬钩消耗一个，按 B 换）
+# w：十年 / 百年 / 千年 / 万年 的出现权重乘数；fierce：凶暴概率加成；affix：词缀概率加成；bone：魂骨兽概率倍数；reward：奖励倍数
+const BAITS := {
+	"grass": {"name": "青草饵", "item": "", "w": [1.0, 0.25, 0.04, 0.02], "fierce": 0.0, "affix": 0.0, "bone": 1.0, "reward": 1.0},
+	"blood": {"name": "血腥饵", "item": "bait_blood", "w": [0.6, 1.4, 1.0, 0.8], "fierce": 0.3, "affix": 0.15, "bone": 1.0, "reward": 1.3},
+	"soul": {"name": "魂晶饵", "item": "bait_soul", "w": [0.25, 1.2, 3.5, 2.5], "fierce": 0.1, "affix": 0.3, "bone": 1.5, "reward": 1.2},
+	"gold": {"name": "金骨饵", "item": "bait_gold", "w": [0.8, 1.0, 1.2, 1.0], "fierce": 0.0, "affix": 0.1, "bone": 5.0, "reward": 1.0},
+}
+const BAIT_ORDER := ["grass", "blood", "soul", "gold"]
+
+
+func roll_age_bait(rng: RandomNumberGenerator, chapter: int, bait: String) -> int:
+	var w: Array = AGE_WEIGHTS.get(chapter, AGE_WEIGHTS[1])
+	var m: Array = BAITS.get(bait, BAITS["grass"])["w"]
+	var ws: Array = []
+	var total := 0.0
+	for i in w.size():
+		ws.append(float(w[i]) * float(m[mini(i, m.size() - 1)]))
+		total += float(ws[i])
+	if total <= 0.0:
+		for i in w.size():
+			if float(w[i]) > 0.0:
+				return i
+	var r := rng.randf() * total
+	for i in ws.size():
+		if float(ws[i]) <= 0.0:
+			continue
+		r -= float(ws[i])
+		if r <= 0.0:
+			return i
+	for i in range(ws.size() - 1, -1, -1):
+		if float(ws[i]) > 0.0:
+			return i
+	return 0
+
+
+# ================================================================ 魂兽词缀（让每只魂兽打法不一样）
+const AFFIXES := {
+	"frenzy": {"name": "狂暴", "desc": "半血以下更快、更狠"},
+	"armor": {"name": "坚甲", "desc": "打身体减伤一半，打头不减"},
+	"split": {"name": "分裂", "desc": "死了分裂成两只小的"},
+	"blast": {"name": "自爆", "desc": "死后一秒爆炸，快跑"},
+	"swift": {"name": "疾速", "desc": "跑得飞快"},
+	"regen": {"name": "再生", "desc": "两秒没挨打就回血"},
+	"thunder": {"name": "雷霆", "desc": "落地震出雷环"},
+}
+
+
+func roll_affixes(rng: RandomNumberGenerator, age: int, chapter: int, bait: String, elite := false) -> Array:
+	var chance := 0.08 + age * 0.1 + chapter * 0.03 + float(BAITS.get(bait, BAITS["grass"])["affix"]) + (0.6 if elite else 0.0)
+	var keys: Array = AFFIXES.keys()
+	var out: Array = []
+	if rng.randf() < chance:
+		out.append(keys[rng.randi() % keys.size()])
+		if rng.randf() < chance * 0.4:
+			var k2: String = keys[rng.randi() % keys.size()]
+			if not k2 in out:
+				out.append(k2)
+	return out
+
+
+func affix_names(affixes: Array) -> String:
+	var n: Array = []
+	for a in affixes:
+		n.append(str(AFFIXES.get(a, {"name": a})["name"]))
+	return "·".join(n)
+
+
+# ================================================================ 饱食度、悬赏、兽潮
+const FOOD_MAX := 100.0
+const FOOD_DRAIN := 100.0 / 720.0      # 12 分钟从满到空（跑步饿得快）
+const MEAT_FOOD := 40.0
+const BOUNTY_N := 3
+const TIDE_FIRST := 360.0              # 进图 6 分钟后第一波兽潮
+const TIDE_GAP := [420.0, 560.0]
+
+# ================================================================ 外观：暗器皮肤、装扮（暗器铺"外观"页买；打败每章 Boss 送一款）
+# pal：换掉暗器模型的哪些材质颜色；glow：发光部件的颜色；metal：金属感
+const GUN_SKINS := {
+	"default": {"name": "唐门原色", "price": 0, "desc": "木头、朱漆、青铜，唐门的老样子"},
+	"jade": {"name": "碧玉", "price": 900, "desc": "整块碧玉雕出来的暗器，温润发亮",
+		"pal": {"wood": Color(0.2, 0.55, 0.42), "lacquer": Color(0.16, 0.5, 0.38), "bronze": Color(0.92, 0.92, 0.86), "gold": Color(0.96, 0.95, 0.88), "iron": Color(0.75, 0.85, 0.8), "black": Color(0.08, 0.18, 0.14)}, "glow": Color(0.4, 1.0, 0.7), "metal": 0.4},
+	"blood": {"name": "血玉", "price": 1100, "desc": "暗红血玉，金色包边，杀气很重",
+		"pal": {"wood": Color(0.32, 0.03, 0.05), "lacquer": Color(0.5, 0.02, 0.05), "bronze": Color(0.18, 0.17, 0.19), "gold": Color(1.0, 0.72, 0.28), "iron": Color(0.14, 0.13, 0.14), "black": Color(0.05, 0.02, 0.02)}, "glow": Color(1.0, 0.15, 0.1), "metal": 0.6},
+	"ice": {"name": "寒冰", "price": 1300, "desc": "极北寒冰打磨，冷光闪闪",
+		"pal": {"wood": Color(0.72, 0.86, 0.96), "lacquer": Color(0.55, 0.76, 0.95), "bronze": Color(0.86, 0.95, 1.0), "gold": Color(0.7, 0.9, 1.0), "iron": Color(0.6, 0.72, 0.84), "black": Color(0.2, 0.3, 0.42)}, "glow": Color(0.4, 0.9, 1.0), "metal": 0.8},
+	"shadow": {"name": "暗影", "price": 1600, "desc": "通体哑光黑，幽紫色的光",
+		"pal": {"wood": Color(0.06, 0.05, 0.07), "lacquer": Color(0.1, 0.06, 0.12), "bronze": Color(0.12, 0.1, 0.14), "gold": Color(0.55, 0.3, 0.9), "iron": Color(0.08, 0.08, 0.1), "black": Color(0.03, 0.03, 0.04)}, "glow": Color(0.7, 0.35, 1.0), "metal": 0.3},
+	"dragon": {"name": "金龙", "price": 2800, "desc": "纯金打造，金光闪闪，土豪专用",
+		"pal": {"wood": Color(0.85, 0.62, 0.2), "lacquer": Color(0.95, 0.72, 0.25), "bronze": Color(1.0, 0.82, 0.35), "gold": Color(1.0, 0.9, 0.5), "iron": Color(0.8, 0.6, 0.25), "black": Color(0.45, 0.3, 0.1)}, "glow": Color(1.0, 0.85, 0.4), "metal": 1.0},
+	"star": {"name": "星河", "price": 3500, "desc": "深蓝夜空里流着星光",
+		"pal": {"wood": Color(0.05, 0.07, 0.2), "lacquer": Color(0.08, 0.1, 0.3), "bronze": Color(0.5, 0.6, 1.0), "gold": Color(0.8, 0.85, 1.0), "iron": Color(0.1, 0.12, 0.25), "black": Color(0.02, 0.03, 0.08)}, "glow": Color(0.5, 0.7, 1.0), "metal": 0.7},
+	"mandala": {"name": "曼陀罗", "price": 0, "boss": "mandala", "desc": "打败湖主 · 千年曼陀罗蛇解锁",
+		"pal": {"wood": Color(0.3, 0.12, 0.35), "lacquer": Color(0.42, 0.1, 0.45), "bronze": Color(0.35, 0.75, 0.35), "gold": Color(0.6, 1.0, 0.4), "iron": Color(0.2, 0.15, 0.22)}, "glow": Color(0.7, 1.0, 0.4), "metal": 0.4},
+	"spider": {"name": "魔蛛", "price": 0, "boss": "spider", "desc": "打败森林之主 · 人面魔蛛解锁",
+		"pal": {"wood": Color(0.08, 0.06, 0.06), "lacquer": Color(0.3, 0.02, 0.04), "bronze": Color(0.6, 0.05, 0.08), "gold": Color(0.9, 0.2, 0.2), "iron": Color(0.12, 0.1, 0.1)}, "glow": Color(1.0, 0.2, 0.25), "metal": 0.5},
+	"titan": {"name": "泰坦", "price": 0, "boss": "titan", "desc": "打败星斗之王 · 泰坦巨猿解锁",
+		"pal": {"wood": Color(0.35, 0.28, 0.22), "lacquer": Color(0.45, 0.36, 0.28), "bronze": Color(0.55, 0.5, 0.45), "gold": Color(1.0, 0.7, 0.3), "iron": Color(0.3, 0.28, 0.26)}, "glow": Color(1.0, 0.6, 0.2), "metal": 0.3},
+	"frostdragon": {"name": "冰霜巨龙", "price": 0, "boss": "icedragon", "desc": "打败极北之主 · 冰霜巨龙解锁",
+		"pal": {"wood": Color(0.9, 0.95, 1.0), "lacquer": Color(0.7, 0.85, 1.0), "bronze": Color(0.4, 0.7, 1.0), "gold": Color(0.6, 0.95, 1.0), "iron": Color(0.8, 0.88, 0.95)}, "glow": Color(0.5, 0.95, 1.0), "metal": 0.9},
+	"lake": {"name": "湖光", "price": 0, "codex": "island", "desc": "集齐湖心岛的猎魂录（每种魂兽三颗星）解锁",
+		"pal": {"wood": Color(0.55, 0.75, 0.85), "lacquer": Color(0.35, 0.6, 0.8), "bronze": Color(0.95, 0.95, 1.0), "gold": Color(0.7, 0.95, 1.0), "iron": Color(0.5, 0.6, 0.7)}, "glow": Color(0.6, 0.9, 1.0), "metal": 0.6},
+	"sunset": {"name": "落日", "price": 0, "codex": "forest", "desc": "集齐落日森林的猎魂录解锁",
+		"pal": {"wood": Color(0.7, 0.35, 0.15), "lacquer": Color(0.85, 0.4, 0.12), "bronze": Color(1.0, 0.75, 0.4), "gold": Color(1.0, 0.8, 0.45), "iron": Color(0.45, 0.25, 0.15)}, "glow": Color(1.0, 0.6, 0.25), "metal": 0.5},
+	"starwood": {"name": "星斗", "price": 0, "codex": "deepforest", "desc": "集齐星斗大森林的猎魂录解锁",
+		"pal": {"wood": Color(0.1, 0.18, 0.2), "lacquer": Color(0.08, 0.3, 0.35), "bronze": Color(0.4, 0.8, 1.0), "gold": Color(0.5, 1.0, 0.95), "iron": Color(0.12, 0.2, 0.25)}, "glow": Color(0.3, 0.9, 1.0), "metal": 0.5},
+	"aurora": {"name": "极光", "price": 0, "codex": "snow", "desc": "集齐极北之地的猎魂录解锁",
+		"pal": {"wood": Color(0.85, 0.9, 1.0), "lacquer": Color(0.5, 0.95, 0.75), "bronze": Color(0.8, 0.6, 1.0), "gold": Color(0.6, 1.0, 0.85), "iron": Color(0.7, 0.75, 0.9)}, "glow": Color(0.5, 1.0, 0.8), "metal": 0.7},
+	"tide": {"name": "海潮", "price": 0, "codex": "sea", "desc": "集齐海神岛的猎魂录解锁",
+		"pal": {"wood": Color(0.05, 0.3, 0.4), "lacquer": Color(0.1, 0.5, 0.6), "bronze": Color(0.9, 0.85, 0.6), "gold": Color(1.0, 0.95, 0.7), "iron": Color(0.1, 0.25, 0.3)}, "glow": Color(0.4, 1.0, 1.0), "metal": 0.6},
+	"abyss": {"name": "深海", "price": 0, "boss": "whale", "desc": "打败海神岛之主 · 深海魔鲸解锁",
+		"pal": {"wood": Color(0.03, 0.12, 0.2), "lacquer": Color(0.04, 0.2, 0.3), "bronze": Color(0.2, 0.6, 0.7), "gold": Color(0.4, 0.95, 0.9), "iron": Color(0.05, 0.15, 0.2)}, "glow": Color(0.3, 1.0, 0.9), "metal": 0.6},
+}
+const GUN_SKIN_ORDER := ["default", "jade", "blood", "ice", "shadow", "dragon", "star", "mandala", "spider", "titan", "frostdragon", "abyss", "lake", "sunset", "starwood", "aurora", "tide"]
+
+# ================================================================ 猎魂录：每张图的每种魂兽三颗星（在一张图多待的理由）
+# ★ 猎杀 5 只；★★ 猎杀一只带词缀的；★★★ 猎杀一只千年以上的，或者它的精英（王）
+# 每颗星永久：体力 +2、伤害 +0.5%。一张图的星星全部集齐，送这张图的专属暗器皮肤
+const CODEX_KILLS := 5
+const CODEX_MAP_SKIN := {"island": "lake", "forest": "sunset", "deepforest": "starwood", "snow": "aurora", "sea": "tide"}
+# 装扮：长袍颜色、衣服上的点缀色、帽子（队友看到的样子，也是第一人称的袖子）
+const OUTFITS := {
+	"default": {"name": "素白长衫", "price": 0, "robe": Color(0.92, 0.92, 0.88), "hat": "", "desc": "新手魂师的衣服"},
+	"tang": {"name": "唐门黑袍", "price": 600, "robe": Color(0.09, 0.09, 0.12), "accent": Color(0.9, 0.7, 0.3), "hat": "douli", "desc": "黑袍金边，戴斗笠"},
+	"flame": {"name": "赤焰袍", "price": 900, "robe": Color(0.68, 0.1, 0.07), "accent": Color(1.0, 0.6, 0.2), "hat": "", "desc": "火红长袍"},
+	"frost": {"name": "冰蓝袍", "price": 900, "robe": Color(0.55, 0.75, 0.95), "accent": Color(0.92, 0.97, 1.0), "hat": "hood", "desc": "冰蓝长袍带兜帽"},
+	"gold": {"name": "金甲", "price": 2400, "robe": Color(0.85, 0.63, 0.22), "accent": Color(1.0, 0.9, 0.5), "hat": "crown", "desc": "一身金甲，头戴金冠"},
+	"sea": {"name": "海神袍", "price": 0, "boss": "whale", "robe": Color(0.1, 0.4, 0.5), "accent": Color(0.5, 1.0, 0.9), "hat": "crown", "desc": "通关海神岛解锁"},
+}
+const OUTFIT_ORDER := ["default", "tang", "flame", "frost", "gold", "sea"]
+
 
 # ================================================================ 引魂索
 const LURE := {
@@ -479,7 +630,28 @@ const SKILL_TREE := {
 	"ht": [["ht_slam", "ht_throw"], ["ht_break", "ht_nine"], ["ht_storm", "ht_true"], ["ht_quake", "ht_break2"], ["ht_nine2", "ht_fall"]],
 	"ls": [["ls_light", "ls_shield"], ["ls_wing", "ls_judge"], ["ls_sword", "ls_domain"], ["ls_holy", "ls_bless"], ["ls_god", "ls_true"]],
 }
-const SKILL_SLOTS := 5         # 五个魂环 = 五个魂技，都用 Q 放（按住 Q 轮盘切换）
+const SKILL_SLOTS := 5         # 五个魂环 = 五个魂技（Q 攻击 / F 辅助 / 双击 Shift 位移，按类别自动放）
+# 魂技由 武魂 + 魂兽种类 + 年份 决定，吸收之前不告诉你是什么：
+# 同一个武魂吸收同一种魂兽，永远得到同一个魂技；年份越高，从越强的一档里出（十年 → 第 1~2 档，百年 → 2~3，千年 → 4~5，万年 → 第 5 档）
+const AGE_TIERS := [[0, 1], [1, 2], [3, 4], [4]]
+
+
+func skill_for(wid: String, species: String, age: int, owned: Array) -> String:
+	var tree: Array = SKILL_TREE.get(wid, SKILL_TREE["lyc"])
+	var cands: Array = []
+	for t in AGE_TIERS[clampi(age, 0, 3)]:
+		cands.append_array(tree[t])
+	var h := absi(hash(wid + "|" + species))
+	for k in cands.size():
+		var sid: String = cands[(h + k) % cands.size()]
+		if not sid in owned:
+			return sid
+	# 这一档都有了：从别的档里找一个没有的
+	for tier in tree:
+		for sid in tier:
+			if not sid in owned:
+				return str(sid)
+	return str(cands[h % cands.size()])
 const RING_NAMES := ["一", "二", "三", "四", "五", "六", "七", "八", "九"]
 
 # ================================================================ 魂骨
@@ -722,7 +894,17 @@ func age_color(age: int) -> Color:
 
 
 ## 越往后的章节，百年、千年魂兽越多
-const AGE_WEIGHTS := {1: [70.0, 25.0, 5.0], 2: [62.0, 30.0, 8.0], 3: [52.0, 36.0, 12.0], 4: [42.0, 40.0, 18.0], 5: [32.0, 43.0, 25.0]}
+## 每章魂兽的年份：第三章起没有十年的，第五章出万年（黑色魂环）。权重依次是 十年 / 百年 / 千年 / 万年
+const AGE_WEIGHTS := {1: [70.0, 25.0, 5.0, 0.0], 2: [50.0, 38.0, 12.0, 0.0], 3: [0.0, 68.0, 32.0, 0.0], 4: [0.0, 45.0, 55.0, 0.0], 5: [0.0, 0.0, 82.0, 18.0]}
+## 每章魂兽的攻击力倍数，和每章魂兽的特点（被咬到时）
+const CH_POWER := {1: 1.0, 2: 1.35, 3: 1.8, 4: 2.3, 5: 3.0}
+const CH_TRAIT := {1: "", 2: "poison", 3: "pack", 4: "frost", 5: "drag"}
+const TRAIT_TEXT := {
+	"poison": "这里的魂兽带毒：被咬会中毒，持续掉血",
+	"pack": "这里的魂兽成群：拽出一只，同窝的会跑来帮忙",
+	"frost": "这里的魂兽带寒气：被咬会冻得走不快",
+	"drag": "这里的海兽会把人往它那边拖，小心被拖下水",
+}
 
 
 func roll_age(rng: RandomNumberGenerator, min_age := 0, chapter := 1) -> int:
@@ -730,8 +912,15 @@ func roll_age(rng: RandomNumberGenerator, min_age := 0, chapter := 1) -> int:
 	var total := 0.0
 	for i in range(min_age, w.size()):
 		total += float(w[i])
+	if total <= 0.0:
+		for i in w.size():
+			if float(w[i]) > 0.0:
+				return maxi(i, min_age)
+		return min_age
 	var r := rng.randf() * total
 	for i in range(min_age, w.size()):
+		if float(w[i]) <= 0.0:
+			continue
 		r -= float(w[i])
 		if r <= 0.0:
 			return i

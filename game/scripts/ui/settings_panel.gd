@@ -10,10 +10,27 @@ var _server: LineEdit
 func _ready() -> void:
 	add_theme_stylebox_override("panel", UiKit.panel_style())
 	custom_minimum_size = Vector2(560, 0)
+	var outer := VBoxContainer.new()
+	outer.add_theme_constant_override("separation", 10)
+	add_child(outer)
+	# 标题栏：左边标题，右边返回（Esc 也能返回）
+	var head := HBoxContainer.new()
+	outer.add_child(head)
+	var tt := UiKit.title("设置", 36)
+	tt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	head.add_child(tt)
+	var back := UiKit.button("返回（Esc）", 18)
+	back.pressed.connect(func(): closed.emit())
+	head.add_child(back)
+	# 选项多，放进可以滚动的区域，小屏幕也看得到底下的按钮
+	var scroll := ScrollContainer.new()
+	scroll.custom_minimum_size = Vector2(540, 460)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	outer.add_child(scroll)
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 10)
-	add_child(v)
-	v.add_child(UiKit.title("设置", 36))
+	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(v)
 	_slider(v, "鼠标灵敏度", 0.2, 8.0, 0.05, Settings.sensitivity, func(x): Settings.sensitivity = x)
 	_slider(v, "开镜灵敏度倍率", 0.3, 2.0, 0.05, Settings.ads_sensitivity, func(x): Settings.ads_sensitivity = x)
 	_slider(v, "视野 FOV", 70.0, 120.0, 1.0, Settings.fov, func(x): Settings.fov = x)
@@ -37,7 +54,13 @@ func _ready() -> void:
 	v.add_child(reset)
 	var ok := UiKit.button("完成", 22, true)
 	ok.pressed.connect(func(): closed.emit())
-	v.add_child(ok)
+	outer.add_child(ok)
+
+
+func _input(event: InputEvent) -> void:
+	if is_visible_in_tree() and event.is_action_pressed("pause"):
+		closed.emit()
+		get_viewport().set_input_as_handled()
 
 
 func _slider(parent: Control, text: String, lo: float, hi: float, step: float, value: float, setter: Callable) -> void:

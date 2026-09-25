@@ -16,7 +16,15 @@ var items := {"grenade": 2, "pill": 1}
 var rings: Array = []       # [{"age": int, "skill": String, "beast": String}]
 var bones: Array = []        # 拥有的魂骨 "id@年份"（包括装上的）
 var equipped := {}           # 部位 -> "id@年份"
-var bag := {}                # 背包里的素材 key -> 数量（丢进收购箱换金魂币）
+var bag := {}                # （旧版素材，已不用）
+var food := 100.0            # 饱食度
+var bait := "grass"          # 当前鱼饵
+var bounties: Array = []     # 悬赏 [{"ch", "species", "age", "affix", "reward"}]
+var skins: Array = ["default"]      # 拥有的暗器皮肤
+var skin := "default"
+var outfits: Array = ["default"]    # 拥有的装扮
+var outfit := "default"
+var codex := {}                     # 猎魂录：魂兽 -> {"k": 杀了几只, "s": 星星（位：1 杀 5 只 / 2 带词缀 / 4 千年或精英）}
 var chapter := 1
 var quest := 0              # 当前章节的任务进度
 var quest_count := 0        # 当前任务的计数（击杀数等）
@@ -65,6 +73,24 @@ func load_profile() -> void:
 			if slot != "" and not equipped.has(slot):
 				equipped[slot] = str(b)
 	bag = d.get("bag", {})
+	food = clampf(float(d.get("food", 100.0)), 0.0, 100.0)
+	bait = str(d.get("bait", "grass"))
+	if not Data.BAITS.has(bait):
+		bait = "grass"
+	bounties = d.get("bounties", [])
+	skins = (d.get("skins", ["default"]) as Array).filter(func(s): return Data.GUN_SKINS.has(str(s)))
+	outfits = (d.get("outfits", ["default"]) as Array).filter(func(s): return Data.OUTFITS.has(str(s)))
+	if not "default" in skins:
+		skins.append("default")
+	if not "default" in outfits:
+		outfits.append("default")
+	codex = d.get("codex", {})
+	skin = str(d.get("skin", "default"))
+	outfit = str(d.get("outfit", "default"))
+	if not skin in skins:
+		skin = "default"
+	if not outfit in outfits:
+		outfit = "default"
 	chapter = int(d.get("chapter", 1))
 	quest = int(d.get("quest", 0))
 	quest_count = int(d.get("quest_count", 0))
@@ -85,7 +111,7 @@ func save_profile() -> void:
 	_save_t = 0.0
 	var d := {
 		"version": VERSION, "money": money, "xp": xp, "level": level, "weapons": weapons,
-		"upgrades": upgrades, "items": items, "rings": rings, "bones": bones, "equipped": equipped, "bag": bag,
+		"upgrades": upgrades, "items": items, "rings": rings, "bones": bones, "equipped": equipped, "bag": bag, "food": food, "bait": bait, "bounties": bounties, "skins": skins, "skin": skin, "outfits": outfits, "outfit": outfit, "codex": codex,
 		"chapter": chapter, "quest": quest, "quest_count": quest_count, "kills": kills, "loadout": loadout,
 	}
 	var f := FileAccess.open(path, FileAccess.WRITE)
@@ -109,6 +135,14 @@ func reset() -> void:
 	bones = []
 	equipped = {}
 	bag = {}
+	food = 100.0
+	bait = "grass"
+	bounties = []
+	skins = ["default"]
+	skin = "default"
+	outfits = ["default"]
+	outfit = "default"
+	codex = {}
 	chapter = 1
 	quest = 0
 	quest_count = 0
@@ -177,7 +211,7 @@ func weapon_stats(id: String) -> Dictionary:
 	var d := Data.weapon_stats(id, upgrades.get(id, {}))
 	# 魂骨：爆头加成、伤害加成
 	d["headshot"] = d["headshot"] * (1.0 + bone_bonus("headshot"))
-	d["damage"] = d["damage"] * (1.0 + bone_bonus("dmg"))
+	d["damage"] = d["damage"] * (1.0 + bone_bonus("dmg") + codex_stars() * 0.005)
 	var rk := 1.0 / (1.0 + bone_bonus("reload"))
 	d["reload"] = d["reload"] * rk
 	d["reload_empty"] = d["reload_empty"] * rk
@@ -200,9 +234,10 @@ func buy_item(id: String) -> bool:
 		items["gold_bites"] = item_count("gold_bites") + 5
 		mark_dirty()
 		return true
-	if item_count(id) >= int(it["max"]) or not spend(int(it["price"])):
+	var n := int(it.get("bundle", 1))
+	if item_count(id) + n > int(it["max"]) or not spend(int(it["price"])):
 		return false
-	items[id] = item_count(id) + 1
+	items[id] = item_count(id) + n
 	mark_dirty()
 	return true
 
@@ -268,8 +303,41 @@ func add_ring(age: int, skill: String, beast: String) -> void:
 	mark_dirty()
 
 
+## 猎魂录一共几颗星（每颗：体力 +2、伤害 +0.5%）
+func codex_stars() -> int:
+	var n := 0
+	for sp in codex:
+		var s := int(codex[sp].get("s", 0))
+		n += (s & 1) + ((s >> 1) & 1) + ((s >> 2) & 1)
+	return n
+
+
+func species_stars(sp: String) -> int:
+	var s := int(codex.get(sp, {}).get("s", 0))
+	return (s & 1) + ((s >> 1) & 1) + ((s >> 2) & 1)
+
+
+## 打死一只：记进猎魂录，返回这次新点亮的星（0 = 没有）
+func codex_kill(sp: String, age: int, has_affix: bool, elite: bool) -> int:
+	var e: Dictionary = codex.get(sp, {"k": 0, "s": 0})
+	e["k"] = int(e.get("k", 0)) + 1
+	var s := int(e.get("s", 0))
+	var before := s
+	if int(e["k"]) >= Data.CODEX_KILLS:
+		s |= 1
+	if has_affix:
+		s |= 2
+	if age >= 2 or elite:
+		s |= 4
+	e["s"] = s
+	codex[sp] = e
+	mark_dirty()
+	var gained := s & ~before
+	return gained
+
+
 func max_hp() -> float:
-	return 100.0 + (level - 1) * 3.0 + bone_bonus("hp")
+	return 100.0 + (level - 1) * 3.0 + bone_bonus("hp") + codex_stars() * 2.0
 
 
 func max_soul() -> float:
@@ -347,6 +415,38 @@ func take_mat(key: String) -> bool:
 		bag.erase(key)
 	mark_dirty()
 	return true
+
+
+## 外观：kind = "skin"（暗器皮肤）或 "outfit"（装扮）
+func owns_look(kind: String, id: String) -> bool:
+	return id in (skins if kind == "skin" else outfits)
+
+
+func buy_look(kind: String, id: String) -> bool:
+	var d: Dictionary = (Data.GUN_SKINS if kind == "skin" else Data.OUTFITS).get(id, {})
+	if d.is_empty() or owns_look(kind, id) or d.has("boss") or d.has("codex") or not spend(int(d["price"])):
+		return false
+	(skins if kind == "skin" else outfits).append(id)
+	mark_dirty()
+	return true
+
+
+func unlock_look(kind: String, id: String) -> bool:
+	if owns_look(kind, id):
+		return false
+	(skins if kind == "skin" else outfits).append(id)
+	mark_dirty()
+	return true
+
+
+func wear(kind: String, id: String) -> void:
+	if not owns_look(kind, id):
+		return
+	if kind == "skin":
+		skin = id
+	else:
+		outfit = id
+	mark_dirty()
 
 
 func title() -> String:

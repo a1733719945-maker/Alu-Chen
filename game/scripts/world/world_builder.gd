@@ -30,9 +30,10 @@ const ENV := {
 	"forest": {"sky": "sky_dusk", "u": 0.613, "elev": 4.7, "heading": -70.0, "light_elev": 17.0, "sun": Color(1.0, 0.72, 0.45), "energy": 1.55,
 		"ambient": 0.75, "exposure": 1.05, "white": 5.0, "glow": 0.7, "bloom": 0.08, "fog": Color(0.86, 0.66, 0.5), "fog_d": 0.006,
 		"scatter": 0.35, "aerial": 0.5, "fog_sky": 0.25, "vol": 0.012, "vol_albedo": Color(1.0, 0.85, 0.7), "sat": 1.12, "contrast": 1.06},
-	"deepforest": {"sky": "sky_night", "u": 0.600, "elev": 13.8, "heading": -40.0, "light_elev": 40.0, "sun": Color(0.6, 0.72, 1.0), "energy": 1.0,
-		"ambient": 0.75, "exposure": 1.3, "white": 4.0, "glow": 0.95, "bloom": 0.1, "fog": Color(0.1, 0.15, 0.26), "fog_d": 0.006,
-		"scatter": 0.2, "aerial": 0.3, "fog_sky": 0.3, "vol": 0.012, "vol_albedo": Color(0.6, 0.72, 1.0), "sat": 1.1, "contrast": 1.08},
+	# 月夜：月光别太亮（用户反馈太亮、月亮从山前面透出来）——月光、曝光、辉光、月晕都压低，天空多被雾盖住
+	"deepforest": {"sky": "sky_night", "u": 0.600, "elev": 13.8, "heading": -40.0, "light_elev": 28.0, "sun": Color(0.6, 0.72, 1.0), "energy": 0.42,
+		"ambient": 0.6, "exposure": 1.0, "white": 4.0, "glow": 0.5, "bloom": 0.03, "fog": Color(0.08, 0.12, 0.2), "fog_d": 0.0045,
+		"scatter": 0.04, "aerial": 0.3, "fog_sky": 0.85, "vol": 0.01, "vol_albedo": Color(0.6, 0.72, 1.0), "vol_e": 0.6, "sky_e": 0.55, "sat": 1.05, "contrast": 1.08},
 	"snow": {"sky": "sky_snow", "u": 0.62, "elev": 16.6, "heading": 999.0, "light_elev": 32.0, "sun": Color(0.95, 0.97, 1.0), "energy": 1.0,
 		"ambient": 0.95, "exposure": 0.85, "white": 6.0, "glow": 0.4, "bloom": 0.03, "fog": Color(0.82, 0.86, 0.92), "fog_d": 0.003,
 		"scatter": 0.1, "aerial": 0.6, "fog_sky": 0.4, "sat": 1.0, "contrast": 1.05},
@@ -156,6 +157,7 @@ func _environment() -> void:
 	var e: Dictionary = ENV[biome]
 	var pano := PanoramaSkyMaterial.new()
 	pano.panorama = load("res://assets/sky/%s.hdr" % e["sky"])
+	pano.energy_multiplier = float(e.get("sky_e", 1.0))
 	var sky := Sky.new()
 	sky.sky_material = pano
 	sky.radiance_size = Sky.RADIANCE_SIZE_256
@@ -207,7 +209,7 @@ func _environment() -> void:
 	env.adjustment_saturation = e["sat"]
 	env.adjustment_contrast = e["contrast"]
 	if e.has("vol"):
-		sun.light_volumetric_fog_energy = 2.2
+		sun.light_volumetric_fog_energy = float(e.get("vol_e", 2.2))
 		env.volumetric_fog_density = e["vol"]
 		env.volumetric_fog_albedo = e["vol_albedo"]
 		env.volumetric_fog_anisotropy = 0.6

@@ -3,7 +3,7 @@ extends Node3D
 ## 地上的东西：魂兽掉的素材、魂骨，玩家丢出去的东西，倒地时掉的暗器。
 ##
 ## 谁都能捡（走过去自动捡，自己刚丢的 1 秒内不会捡回来）。
-## 按 T 把背包里的东西丢出去：丢给队友，或者丢进暗器铺旁边的收购箱换金魂币（How to Fish 那样）。
+## 按 T 把手上的东西丢出去：丢给队友，或者丢进暗器铺旁边的收购箱换金魂币（How to Fish 那样）。
 ## 东西在地上放太久，海鸥会飞下来叼走；有人倒地太久没人救，海鸥也会把他叼走（回码头复活）。
 ##
 ## 联机：谁丢的谁广播（gi），捡的时候问房主（gitake），房主确认后广播（gigone），不会两个人捡到同一个。
@@ -74,7 +74,7 @@ func _build_box() -> void:
 	light.omni_range = 5.0
 	light.position = Vector3(0, 1.5, 0)
 	root.add_child(light)
-	var l := U.label3d("唐门收购箱\n按 T 把东西丢进来卖", 44, Color(1.0, 0.85, 0.45), 10)
+	var l := U.label3d("唐门收购箱\n拿着魂骨、道具按 T 丢进来卖", 44, Color(1.0, 0.85, 0.45), 10)
 	l.position = Vector3(0, 2.2, 0)
 	l.fixed_size = false
 	l.pixel_size = 0.006
@@ -126,6 +126,22 @@ func _on_add(msg: Array) -> void:
 
 
 func _make_node(kind: String, key: String) -> Node3D:
+	var n := item_model(kind, key)
+	var col := Data.item_color(kind, key)
+	# 脚下一圈光，远处也看得见
+	var ring := U.part(n, U.torus(0.3, 0.36, 24, 4), U.glow(col, 2.0, true), Vector3(0, -0.12, 0), Vector3.ZERO, Vector3.ONE, false)
+	ring.name = "Ring"
+	var l := U.label3d(Data.item_name(kind, key), 30, col, 8)
+	l.position = Vector3(0, 0.55, 0)
+	l.fixed_size = true
+	l.pixel_size = 0.0008
+	l.name = "Label"
+	n.add_child(l)
+	return n
+
+
+## 东西本身的模型（地上的、手里拿着的都用这个）
+static func item_model(kind: String, key: String) -> Node3D:
 	var n := Node3D.new()
 	var col := Data.item_color(kind, key)
 	match kind:
@@ -154,7 +170,12 @@ func _make_node(kind: String, key: String) -> Node3D:
 			p.emission_sphere_radius = 0.3
 			n.add_child(p)
 		"item":
-			if key == "grenade":
+			if key == "meat":
+				# 烤肉：一根骨头穿着一大块焦黄的肉
+				U.part(n, U.capsule(0.025, 0.42), U.mat(Color(0.92, 0.88, 0.78), 0.6), Vector3.ZERO, Vector3(0, 0, PI / 2), Vector3.ONE, false)
+				U.part(n, U.sphere(0.13, 12, 8), U.mat(Color(0.55, 0.27, 0.1), 0.45), Vector3(0.06, 0, 0), Vector3.ZERO, Vector3(1.3, 1.0, 1.0), false)
+				U.part(n, U.sphere(0.06, 8, 6), U.mat(Color(0.92, 0.88, 0.78), 0.6), Vector3(-0.2, 0.02, 0), Vector3.ZERO, Vector3.ONE, false)
+			elif key == "grenade":
 				U.part(n, U.sphere(0.16, 10, 6), U.mat(Color(0.85, 0.2, 0.25), 0.4, 0.3), Vector3.ZERO, Vector3.ZERO, Vector3(1, 0.7, 1), false)
 				U.part(n, U.torus(0.1, 0.19, 16, 5), U.mat(Color(0.95, 0.75, 0.3), 0.3, 0.0, 0.9), Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
 			else:
@@ -165,16 +186,6 @@ func _make_node(kind: String, key: String) -> Node3D:
 			var crystal := U.part(n, U.sphere(0.16, 6, 3), cm, Vector3.ZERO, Vector3.ZERO, Vector3(0.8, 1.4, 0.8), false)
 			crystal.name = "Crystal"
 			U.part(n, U.sphere(0.1, 6, 3), cm, Vector3(0.14, -0.06, 0.05), Vector3(0.4, 0, 0.3), Vector3(0.8, 1.2, 0.8), false)
-	# 脚下一圈光，远处也看得见
-	var ring := U.part(n, U.torus(0.3, 0.36, 24, 4), U.glow(col, 2.0, true), Vector3(0, -0.12, 0), Vector3.ZERO, Vector3.ONE, false)
-	ring.name = "Ring"
-	var l := U.label3d(Data.item_name(kind, key), 30, col, 8)
-	l.position = Vector3(0, 0.55, 0)
-	l.fixed_size = true
-	l.pixel_size = 0.0008
-	l.no_depth_test = false
-	l.name = "Label"
-	n.add_child(l)
 	return n
 
 
@@ -332,7 +343,7 @@ func _on_gone(msg: Array) -> void:
 			Profile.add_bone(key)
 			if Profile.bones.size() > had:
 				var on := Profile.is_equipped(key)
-				world.hud.toast("捡到魂骨【%s】%s  %s" % [nm, Data.bone_desc(key), "已装上" if on else "（K 打开武魂面板换上）"], UiKit.GOLD, 5.0)
+				world.hud.toast("捡到魂骨【%s】%s  %s" % [nm, Data.bone_desc(key), "已装上" if on else "（按 5 拿出来，左键装上）"], UiKit.GOLD, 5.0)
 				Sfx.play("level_up", -6.0)
 				world.player.on_bones_changed()
 		"item":
@@ -374,16 +385,18 @@ func gull_steal(iid: int) -> void:
 	var node: Node3D = it["node"]
 	var pos: Vector3 = it["pos"]
 	_on_gone([iid, 0, 2])
-	_start_gull(pos, node, null, false)
+	var gl := _start_gull(iid, pos, node, null, false)
+	gl["item"] = [it["kind"], it["key"], it["n"], it["owner"]]
 	world.hud.feed("海鸥叼走了 %s" % Data.item_name(str(it["kind"]), str(it["key"])), Color(0.8, 0.85, 0.9))
 
 
 ## 海鸥叼走倒地的人。local = true 时是叼自己（位置由这边动），否则只跟着别人的位置显示
-func gull_carry(target: Node3D, local: bool) -> void:
-	_start_gull(target.global_position, null, target, local)
+## gid：物品的海鸥用物品 id，叼人的用 -玩家 id（大家算出来一样，打下来时对得上）
+func gull_carry(target: Node3D, local: bool, gid: int) -> void:
+	_start_gull(gid, target.global_position, null, target, local)
 
 
-func _start_gull(pos: Vector3, cargo: Node3D, target: Node3D, local: bool) -> void:
+func _start_gull(gid: int, pos: Vector3, cargo: Node3D, target: Node3D, local: bool) -> Dictionary:
 	var g := BeastModels.instance_model({"model": "pigeon", "fit": "w", "size": 2.6 if target else 1.8, "tint": Color(1.3, 1.3, 1.35)})
 	add_child(g)
 	BeastModels.play_role(g, "run")
@@ -391,8 +404,21 @@ func _start_gull(pos: Vector3, cargo: Node3D, target: Node3D, local: bool) -> vo
 	away = away.normalized() if away.length() > 1.0 else Vector3.FORWARD
 	var from := pos + away * 30.0 + Vector3(0, 26.0, 0)
 	g.global_position = from
-	_gulls.append({"node": g, "t": 0.0, "from": from, "pos": pos, "cargo": cargo, "target": target, "local": local, "away": away, "cried": false})
+	# 海鸥也是魂兽：打得到。打下来它叼的东西 / 人会掉下来
+	var sb := StaticBody3D.new()
+	sb.collision_layer = U.LAYER_BEAST
+	sb.collision_mask = 0
+	sb.set_meta("gull", gid)
+	var cs := CollisionShape3D.new()
+	var sh := SphereShape3D.new()
+	sh.radius = 1.1 if target else 0.8
+	cs.shape = sh
+	sb.add_child(cs)
+	g.add_child(sb)
+	var gl := {"gid": gid, "node": g, "t": 0.0, "from": from, "pos": pos, "cargo": cargo, "target": target, "local": local, "away": away, "cried": false, "dead": false, "vy": 0.0}
+	_gulls.append(gl)
 	Sfx.play_at("gull_cry", pos + Vector3(0, 10, 0), 2.0, 0.1)
+	return gl
 
 
 const GULL_DOWN := 1.6
@@ -403,6 +429,20 @@ func _update_gulls(dt: float) -> void:
 	for gl in _gulls.duplicate():
 		gl["t"] += dt
 		var g: Node3D = gl["node"]
+		if gl["dead"]:
+			# 被打下来了：翻着跟头掉下去
+			gl["vy"] = float(gl["vy"]) - 14.0 * dt
+			if is_instance_valid(g):
+				g.global_position += Vector3(0, float(gl["vy"]) * dt, 0)
+				g.rotation.z += dt * 9.0
+				var gy: float = world.island.height_at(g.global_position.x, g.global_position.z)
+				if g.global_position.y < maxf(gy, Island.WATER_Y) or gl["t"] > 3.0:
+					world.fx.poof(g.global_position)
+					g.queue_free()
+					_gulls.erase(gl)
+			else:
+				_gulls.erase(gl)
+			continue
 		var t: float = gl["t"]
 		var target: Node3D = gl["target"]
 		var grab: Vector3 = gl["pos"]
@@ -459,6 +499,57 @@ func on_message(from: int, type: String, data: Variant) -> void:
 			_on_gone(d)
 		"gull":
 			gull_steal(int(data[0]))
+		"gullhit":
+			if Net.is_host():
+				_host_gull_hit(int(data[0]), from)
+		"gulldown":
+			_on_gull_down(data)
+
+
+func _find_gull(gid: int) -> Dictionary:
+	for gl in _gulls:
+		if int(gl["gid"]) == gid and not gl["dead"]:
+			return gl
+	return {}
+
+
+func _host_gull_hit(gid: int, from: int) -> void:
+	var gl := _find_gull(gid)
+	if gl.is_empty():
+		return
+	var g: Node3D = gl["node"]
+	var pos: Vector3 = g.global_position if is_instance_valid(g) else gl["pos"]
+	var msg := [gid, from, pos]
+	Net.send(0, "gulldown", msg)
+	_on_gull_down(msg)
+	# 叼着的东西重新掉回地上（房主生成，大家都能捡）
+	if gl.has("item"):
+		var it: Array = gl["item"]
+		spawn(str(it[0]), str(it[1]), int(it[2]), int(it[3]), pos, Vector3(0, -1.0, 0))
+
+
+func _on_gull_down(msg: Array) -> void:
+	var gl := _find_gull(int(msg[0]))
+	var killer := int(msg[1])
+	if gl.is_empty():
+		return
+	gl["dead"] = true
+	gl["t"] = 0.0
+	var g: Node3D = gl["node"]
+	if is_instance_valid(g):
+		for sb in g.find_children("*", "StaticBody3D", true, false):
+			(sb as StaticBody3D).collision_layer = 0
+		world.fx.impact_beast(g.global_position, Vector3.UP, Color(1, 1, 1), true)
+	Sfx.play_at("gull_cry", msg[2], 2.0, 0.1, 1.5)
+	var cargo: Node3D = gl["cargo"]
+	if is_instance_valid(cargo):
+		cargo.queue_free()
+	if gl["local"]:
+		world.gull_dropped_me()
+	world.hud.feed("%s 打下了海鸥！" % world.peer_name(killer), Color(0.85, 0.95, 1.0))
+	if killer == Net.my_id:
+		Profile.add_money(25)
+		world.hud.toast("打下了海鸥  +25 金魂币", UiKit.GOLD, 2.0)
 
 
 ## 客人刚进来时，房主把地上的东西发过去

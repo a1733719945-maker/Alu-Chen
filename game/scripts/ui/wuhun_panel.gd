@@ -59,12 +59,23 @@ func open() -> void:
 		var b := UiKit.label("瓶颈！吸收第%d魂环才能继续升级" % (Profile.rings.size() + 1), 17, Color(1, 0.8, 0.4))
 		b.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		left.add_child(b)
+	# 猎魂录：这张图每种魂兽三颗星
+	var stars := Profile.codex_stars()
+	left.add_child(UiKit.bold("猎魂录  ★%d（体力 +%d · 伤害 +%.1f%%）" % [stars, stars * 2, stars * 0.5], 16, UiKit.GOLD))
+	var tip := UiKit.label("★ 杀 5 只  ★★ 杀带词缀的  ★★★ 杀千年或王。本图集齐送专属皮肤", 12, UiKit.MIST)
+	tip.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	left.add_child(tip)
+	var wld: Node = get_tree().get_first_node_in_group("world")
+	if wld:
+		for e in wld.codex_page():
+			var n := int(e[1])
+			left.add_child(UiKit.label("%s  %s" % ["★".repeat(n) + "☆".repeat(3 - n), Data.BEASTS[e[0]]["name"]], 14, UiKit.GOLD if n >= 3 else UiKit.MOON))
 	# 中：魂环与魂技树
 	var mid := VBoxContainer.new()
 	mid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	mid.add_theme_constant_override("separation", 10)
 	_body.add_child(mid)
-	mid.add_child(UiKit.label("魂环与魂技（这一版开放前三环，后续章节解锁更多）", 18, UiKit.JADE))
+	mid.add_child(UiKit.label("魂环与魂技（Q 攻击 · F 辅助 · 双击 Shift 位移）", 18, UiKit.JADE))
 	var tree: Array = Data.SKILL_TREE[w["id"]]
 	for i in tree.size():
 		var row := PanelContainer.new()
@@ -85,11 +96,9 @@ func open() -> void:
 			rv.add_child(d)
 		else:
 			rv.add_child(UiKit.label("%s · %d 级后吸收，至少%s" % [head, (i + 1) * 10, Data.age_name(Data.RING_MIN_AGE[i])], 17, UiKit.MIST))
-			for sid in tree[i]:
-				var s: Dictionary = Data.SKILLS[sid]
-				var d := UiKit.label("可选【%s】%s" % [s["name"], s["desc"]], 16, UiKit.MOON)
-				d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-				rv.add_child(d)
+			var d := UiKit.label("会得到什么魂技，吸收了才知道：同一种魂兽总给同一个魂技，年份越高越强", 15, UiKit.MOON)
+			d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			rv.add_child(d)
 	# 右：魂骨（六个部位，点"装上"换）
 	var right := VBoxContainer.new()
 	right.custom_minimum_size.x = 330

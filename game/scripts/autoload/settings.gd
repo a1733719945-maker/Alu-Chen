@@ -21,6 +21,7 @@ var max_fps := 0                   # 0 = 不限
 var server_url := DEFAULT_SERVER
 var show_fps := false
 var quality := 2                   # 画质：0 低 / 1 中 / 2 高（草和植被密度下次进地图生效）
+var scope_zoom := 6.0              # 狙击镜倍率（开镜时滚轮调，4~12 倍，记住上次的）
 
 
 func _ready() -> void:
@@ -47,6 +48,8 @@ func _register_inputs() -> void:
 		"grenade": [KEY_G],
 		"pill": [KEY_H],
 		"throw": [KEY_T],
+		"bait": [KEY_B],
+		"map": [KEY_M],
 		"wuhun_panel": [KEY_K],
 		"weapon_1": [KEY_1],
 		"weapon_2": [KEY_2],
@@ -81,6 +84,10 @@ func _register_inputs() -> void:
 	var side := InputEventMouseButton.new()
 	side.button_index = MOUSE_BUTTON_XBUTTON1
 	InputMap.action_add_event("lure", side)
+	# 另一个侧键放攻击魂技
+	var side2 := InputEventMouseButton.new()
+	side2.button_index = MOUSE_BUTTON_XBUTTON2
+	InputMap.action_add_event("skill", side2)
 
 
 func load_settings() -> void:
@@ -90,6 +97,7 @@ func load_settings() -> void:
 	player_name = cfg.get_value("player", "name", player_name)
 	wuhun = int(cfg.get_value("player", "wuhun", wuhun))
 	sensitivity = float(cfg.get_value("input", "sensitivity", sensitivity))
+	scope_zoom = clampf(float(cfg.get_value("input", "scope_zoom", scope_zoom)), 4.0, 12.0)
 	ads_sensitivity = float(cfg.get_value("input", "ads_sensitivity", ads_sensitivity))
 	invert_y = bool(cfg.get_value("input", "invert_y", invert_y))
 	fov = float(cfg.get_value("video", "fov", fov))
@@ -108,6 +116,7 @@ func save_settings() -> void:
 	cfg.set_value("player", "name", player_name)
 	cfg.set_value("player", "wuhun", wuhun)
 	cfg.set_value("input", "sensitivity", sensitivity)
+	cfg.set_value("input", "scope_zoom", scope_zoom)
 	cfg.set_value("input", "ads_sensitivity", ads_sensitivity)
 	cfg.set_value("input", "invert_y", invert_y)
 	cfg.set_value("video", "fov", fov)

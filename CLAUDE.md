@@ -21,6 +21,18 @@
 | 要好看的 3D 模型 | Quaternius CC0 动画模型（`assets/models/creatures`） |
 | 至少 4 小时流程，和朋友玩 | 五章、50 级、五个魂环；联机时"猎杀 N 只"按人数加量（`Data.quest_target`） |
 | 画面要好 | Poly Haven HDR 天空、CC0 地面贴图、程序树、草、体积雾，画质 低/中/高 |
+| 魂兽太容易逃、没多样性 | 四种性格（凶暴的追着打不逃、狡猾装死、魂骨兽必掉魂骨），逃跑时间 24 秒 |
+| 要 How to Fish 那样丢出去卖 | T 丢出手上的东西，丢进暗器铺旁的收购箱卖钱；放久了海鸥叼走 |
+| 不要背包、要数字键物品栏 | 1-5 物品栏，T 丢的是手上拿的东西；不掉素材、不乱掉魂环 |
+| Boss 打不到身体、在水下、复活后仇恨还在 | 包围盒受击体积、露出水面、魂技按表面距离、复活保护 + 脱战 |
+| 魂技要有位移、减伤、变大、加速 | 飞索、瞬移、变大、飞行、隐身、减伤 |
+| 队友互动 | 丢东西给队友、倒地掉暗器队友能捡、按住 F 救人、海鸥叼走倒地的人 |
+| 枪没配件、没手感 | 全息 / 光学瞄具、夜光照门、激光、制退器、抛壳、新枪声、更狠的后坐；**用户还想要更好的枪感，下一轮继续** |
+| 在水上飘很怪 | 深水会沉，要游、要憋气，憋不住掉血；魂环落水沉底或冲上岸 |
+| Boss 太卡通 | 着色器流光 + 魂环 + 光轮 + 光柱 + 出场字幕 |
+| 验证很费 token | 改完先打包、告诉用户怎么更新，**等用户说要验证再跑全流程**；只做语法检查和一两段短测 |
+| Boss 太卡通、要更好的素材 | 还没解决：需要写实的怪物模型，免费 CC0 里没有合适的，要用户提供 Sketchfab 账号 / 付费素材，或者接受现在的着色器方案 |
+| 要有投入、紧迫感、耐玩 | 鱼饵、饱食度、词缀、悬赏、兽潮、精英、外观、每章更难 |
 
 ## 仓库和发布
 
@@ -34,7 +46,38 @@
 1. `6efaec7` 第一版：引魂索 + 联机
 2. `81002e7` 第二版：成长、魂环魂技、Boss、第二章、CS 式枪感、画面
 3. `fe59d2a` 第三版：五章、3D 动画魂兽和 Boss、新字体、物理
-4. `ff03fb5` 魂技单键 Q + 轮盘，图标化 HUD（当前最新，CI 通过、已发布）
+4. `ff03fb5` 魂技单键 Q + 轮盘，图标化 HUD
+5. 第四版（2026-09-26，在用户本机 Windows 桌面会话里做的，本机没有 git/Python/Node，改完打包成补丁让用户上传）：
+   - 魂兽性格 `Data.TEMPERS`（胆小 / 凶暴 / 狡猾 / 魂骨兽），`Beast._fierce`、`_swim`
+   - 地上的东西 + 收购箱 + 海鸥：`world/loot.gd`（`Loot`）。**没有背包**（用户不要）：物品栏 1 主暗器 / 2 袖箭 / 3 唐莲 / 4 回血丹 / 5 魂骨（`Player.select_slot`），T 丢出手上的东西（`Player._drop_current`），左键用道具。魂兽不掉素材，只掉魂骨、偶尔掉药和唐莲
+   - 魂环只在有人卡瓶颈、年份够的时候掉（`World._host_maybe_drop_ring`），用户说捡一堆魂环不合理
+   - 弹道：`Fx.tracer` 是朝镜头的辉光光迹（TRACER_SHADER）+ 飞行的弩箭模型 `Fx.bolt_model`；用户说原来的弹道是"白色方框"
+   - 跑步时按左键 / 右键会取消冲刺、马上开枪 / 开镜；设置页有返回键和 Esc；HUD 暗器名不写"手枪 · 半自动"
+   - 魂骨六部位：`Data.BONES / BONE_SLOTS / bone_stat`，存档 `Profile.bones`（"id@年份"）+ `equipped` + `bag`
+   - 倒地 / 队友按住 F 救 / 海鸥叼走 / 倒地掉暗器：`World._update_down`、`_update_revive`，`Player.lost_guns / borrowed`
+   - 下水会沉、憋气、溺水：`Player._physics_process`（swimming）、`under / air`；HUD 水下滤镜，`Sfx.set_underwater`
+   - 魂技新类型：giant 变大、blink 瞬移、grapple 飞索、fly 飞行、invis 隐身，buff 支持 stat2（减伤 dr）
+   - Boss：受击体积按模型包围盒（`Boss._measure_box`，头是弱点球，`Data.BOSSES.weak`），`surface_dist / segment_hit` 给魂技用；
+     90 米脱战、没目标回血；外观 `Boss._decorate`（HOLY_SHADER 流光 + 边缘光、四个魂环、光轮、光柱、光点）；HUD `boss_intro` 出场字幕
+   - 暗器配件（`WeaponModels._holo / _acog / _attachments`，准星是 RETICLE_SHADER）、抛壳 `Fx.shell`、星形火光
+   - 新音效用 `tools/GenSfx2.cs` + `tools/gen_sfx2.ps1` 合成（Windows 自带 PowerShell 就能跑）。**跑过 gen_sfx.py 以后要再跑一次 gen_sfx2.ps1**，不然枪声会被旧版覆盖
+   - 用户反馈"Remotion 画 Boss"：Remotion 只能出 2D 视频 / 图片，做不了 3D 模型，所以用着色器和特效来做威猛、神圣感
+
+6. 第四版后续（4.2，同一天，用户边玩边提）：
+   - 按键重排：Q 攻击魂技 / F 辅助魂技（没东西可交互时）/ 双击 Shift 位移魂技，**不要轮盘**（`SkillSystem.cast_cat`、`CATS`）；轻点 Ctrl 翻滚（0.36 秒无敌，`Player._roll_t`）；M 地图（`ui/map_view.gd`）；B 鱼饵
+   - 魂技 = 武魂 + 魂兽种类 + 年份决定（`Data.skill_for`、`AGE_TIERS`），吸收前不告诉玩家，不再二选一
+   - 鱼饵 `Data.BAITS`（咬钩扣）、词缀 `Data.AFFIXES`（Beast.affixes）、饱食度 `Profile.food`、烤肉、悬赏 `Profile.bounties`（World._check_bounty）、兽潮 `World._host_tide`
+   - 精英魂兽（小 Boss，temper = "elite"）固定刷新点 `World._init_elites`；陆地魂兽不消失（跑回老家转悠 `Beast._roam_tick`）
+   - 每章差异：`AGE_WEIGHTS` 第三章起没有十年、第五章万年；`CH_POWER` 伤害倍数；`CH_TRAIT` 毒 / 成群 / 冰冻 / 拖拽
+   - 外观：`Data.GUN_SKINS / OUTFITS`，暗器铺"外观"页，Boss 送专属皮肤；联机同步在 hello / prog 里
+   - Boss 新招：延迟重击（红圈最后 0.35 秒才出）、冲击环、扇形连扫、二阶段全场大招（绿圈安全）——`World.boss_shockwave / boss_cone / boss_ultimate`，`Boss._moves`；Boss 只留一个年份魂环
+   - 狙击镜是画中画（`ViewModel._setup_scope`，SubViewport + LENS_SHADER，手里的东西在 VM_LAYER 层），孔雀翎是红点；弹道是 TRACER_SHADER + 弩箭模型
+   - 海鸥能打下来（`Loot._host_gull_hit`），叼着的东西 / 人会掉下来
+   - 开船过场动画：`tools/boat_anim`（Remotion，React + SVG）渲染成 `assets/cutscene/voyage/000~149.jpg`（导入设成有损压缩），`ui/voyage.gd` 播放，`main._travel` 调用。重新渲染：装便携 Node，在**短路径**（比如 %TEMP%\ba）里 `npm install` 和 `npm run render`（长路径下 npm 安装脚本会失败）
+   - 自动测试时 `Data.autotest = true`：关掉精英、兽潮、饥饿，钓上来的魂兽固定胆小无词缀（`bait = "test"`），不然随机因素会让 CI 偶发失败
+   - 用户问答后又改了四点：暗器按章节开放（`Data.WEAPON_UNLOCK`，暗器铺显示"第X章开放"）；猎魂录（`Profile.codex`、`World._codex_kill`，每种魂兽 3 星，集齐一张图送专属皮肤 `CODEX_MAP_SKIN`）；所有粒子用圆形渐变贴图（`Fx._soft_tex`）；坐船要所有人按 F（`World._host_boat_check`）
+   - 开船动画最后转成了一个 Ogg Theora 视频 `assets/cutscene/voyage.ogv`（ffmpeg：`-c:v libtheora -q:v 8`），`ui/voyage.gd` 用 VideoStreamPlayer 播。原因：GitHub 网页上传一次最多 100 个文件，150 帧图片传不上去
+   - **教训**：PowerShell 批量替换时，单个 `@(@(a,b))` 会被拆开，把整个文件的某个字母全换掉了（出过一次事故，从备份恢复）。现在用 `Rep 文件 旧 新` 一对一替换；函数别叫 `R`（是内置别名）
 
 ## 技术概要
 

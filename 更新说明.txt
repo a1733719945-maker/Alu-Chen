@@ -1,0 +1,12 @@
+﻿斗罗猎魂 4.2 补丁 —— 怎么更新
+============================
+
+这个补丁包含上次上传（adcf007）之后的全部改动（4.1 也在里面，4.1 没传的话不用再传了）。
+
+1. 打开 https://github.com/a1733719945-maker/Alu-Chen/tree/claude/douluo-multiplayer-game-lza8mi
+2. Add file -> Upload files，把本文件夹里的 game、docs、tools 三个文件夹，和 CLAUDE.md、.gitignore 一起拖进去（同名文件会覆盖）。
+   .gitignore 是隐藏文件，资源管理器里看不到的话：查看 -> 显示 -> 勾选"隐藏的项目"。它不传也没关系。
+3. 选 Commit directly to the claude/douluo-multiplayer-game-lza8mi branch，点 Commit changes。
+4. 等 Actions 的"测试并打包"变绿（15~25 分钟），下面这个链接里就是新的 DouluoHunter-Windows.zip：
+   https://github.com/a1733719945-maker/Alu-Chen/releases/tag/latest-claude-douluo-multiplayer-game-lza8mi
+5. 朋友们重新下载解压。所有人都要更新才能一起联机。存档不会丢。

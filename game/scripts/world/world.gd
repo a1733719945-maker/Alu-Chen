@@ -61,6 +61,15 @@ var _down_t := 0.0
 var _carry_t := -1.0
 var _revive_t := 0.0
 var _revive_peer := 0
+var _boat_ready := {}      # 房主：谁已经上船按了 F
+var _boat_count := [0, 1]  # 大家显示用：[已上船, 总人数]
+var _i_boarded := false
+var elites := {}           # 精英刷新点 key -> {"species", "age", "pos", "id", "t"}（房主）
+var _elite_init := false
+var _cap_t := 0.0
+var _tide_t := Data.TIDE_FIRST   # 下一波兽潮倒计时（房主）
+var _tide_left := 0
+var _tide_spawn_t := 0.0
 
 
 func _init(p_chapter := 1) -> void:
@@ -120,7 +129,9 @@ func _ready() -> void:
 	Profile.changed.connect(_on_profile_changed)
 	Sfx.play_ambient("ambient", -16.0)
 	capture_mouse(true)
-	hud.chapter_banner(str(ch["name"]), str(ch["intro"]))
+	var ch_trait := str(Data.CH_TRAIT.get(chapter, ""))
+	hud.chapter_banner(str(ch["name"]), str(ch["intro"]) + (("\n" + str(Data.TRAIT_TEXT[ch_trait])) if ch_trait != "" else ""))
+	_ensure_bounties()
 	_last_prog = [Profile.level, Profile.rings.size()]
 	if Net.is_host():
 		get_tree().create_timer(0.5).timeout.connect(_host_check_quest)
@@ -136,7 +147,7 @@ func _exit_tree() -> void:
 
 
 func _my_info() -> Dictionary:
-	return {"name": Settings.display_name(), "wuhun": Settings.wuhun, "level": Profile.level, "rings": _ring_summary()}
+	return {"name": Settings.display_name(), "wuhun": Settings.wuhun, "level": Profile.level, "rings": _ring_summary(), "outfit": Profile.outfit, "skin": Profile.skin}
 
 
 func _ring_summary() -> Array:
@@ -210,7 +221,10 @@ func _process(dt: float) -> void:
 				_boss_snap_t = 0.0
 				Net.send(0, "bsnap", boss.snapshot())
 		_host_rings(dt)
+		_host_elites(dt)
+		_host_tide(dt)
 	_update_hazards(dt)
+	_update_boss_moves(dt)
 	_update_grenades(dt)
 	_update_rings_visual(dt)
 	_update_down(dt)
@@ -350,6 +364,13 @@ func local_fire(g: Gun, origin: Vector3, dirs: Array[Vector3], muzzle: Vector3) 
 				ex.append(b.get_rid())
 				from = end
 				continue
+			elif col is Node and (col as Node).has_meta("gull"):
+				# 打海鸥：它叼着的东西 / 队友会掉下来
+				fx.impact_beast(end, hit["normal"], Color(0.95, 0.95, 1.0), false)
+				hud.hitmarker(false, false)
+				Sfx.play("hit", -3.0, 0.05)
+				Net.send_host("gullhit", [int((col as Node).get_meta("gull"))])
+				break
 			elif col is Node and (col as Node).has_meta("boss"):
 				var weak: bool = bool((col as Node).get_meta("weak")) or crit
 				boss_dmg += float(w["damage"]) * _falloff(w, hit_dist) * (float(w["headshot"]) if weak else 1.0) * dmg_mult
@@ -364,9 +385,9 @@ func local_fire(g: Gun, origin: Vector3, dirs: Array[Vector3], muzzle: Vector3) 
 		ends.append(end)
 	for e in ends:
 		if single:
-			fx.tracer(muzzle, e, w["tracer"], 0.02, 420.0, 4.0)
+			fx.tracer(muzzle, e, w["tracer"], 0.06 if g.id != "zhuihun" else 0.09, 300.0 if g.id != "zhuihun" else 420.0, 5.0, true)
 		else:
-			fx.tracer(muzzle, e, w["tracer"], 0.009, 280.0, 1.6)
+			fx.tracer(muzzle, e, w["tracer"], 0.025, 240.0, 1.8)
 	fx.muzzle_flash(muzzle, dirs[0], w["tracer"], not single or g.id == "zhuihun")
 	Net.send(0, "shot", [g.id, muzzle, ends])
 
@@ -402,8 +423,8 @@ func local_fire(g: Gun, origin: Vector3, dirs: Array[Vector3], muzzle: Vector3) 
 
 # ------------------------------------------------------------------ 引魂索拽出魂兽
 
-func request_yank(pos: Vector3, habitat: String, species: String, age: int) -> void:
-	Net.send_host("yank", [pos, habitat, species, age, player.global_position])
+func request_yank(pos: Vector3, habitat: String, species: String, age: int, bait := "grass") -> void:
+	Net.send_host("yank", [pos, habitat, species, age, player.global_position, bait])
 
 
 ## 这一点有没有能站的东西（地面、码头、浮冰），有就返回高度，没有返回 -INF
@@ -443,20 +464,26 @@ func _launch_velocity(from: Vector3, owner_pos: Vector3, _species: String) -> Ve
 	return hor / t_total + Vector3(0, vy, 0)
 
 
-func _host_spawn(owner: int, pos: Vector3, species: String, age: int, owner_pos: Vector3, temper := "") -> Beast:
+func _host_spawn(owner: int, pos: Vector3, species: String, age: int, owner_pos: Vector3, temper := "", bait := "grass", with_affix := true) -> Beast:
 	if not Data.BEASTS.has(species):
 		return null
-	age = clampi(age, 0, 2)
+	age = clampi(age, 0, 3)
 	var id := next_beast_id
 	next_beast_id += 1
 	var spawn := pos + Vector3(0, 0.4, 0)
 	if not island.is_land(pos.x, pos.z):
 		spawn.y = maxf(spawn.y, Island.WATER_Y + 0.3)
 	var vel := _launch_velocity(spawn, owner_pos, species)
+	if bait == "test":
+		# 自动测试：固定胆小、没词缀，结果稳定
+		temper = "flee"
+		with_affix = false
 	if temper == "":
-		temper = Data.roll_temper(rng, species, age)
-	var b := _spawn_beast(id, species, age, spawn, vel, owner, false, temper)
-	Net.send(0, "bsp", [id, species, age, spawn, vel, owner, temper])
+		temper = Data.roll_temper(rng, species, age, bait)
+	var affixes: Array = Data.roll_affixes(rng, age, chapter, bait) if with_affix else []
+	var b := _spawn_beast(id, species, age, spawn, vel, owner, false, temper, affixes)
+	b.reward_k = float(Data.BAITS.get(bait, Data.BAITS["grass"])["reward"])
+	Net.send(0, "bsp", [id, species, age, spawn, vel, owner, temper, affixes])
 	if temper == "fierce" and owner == Net.my_id:
 		hud.toast("凶暴的%s！它会一直追着你打" % Data.BEASTS[species]["name"], Color(1.0, 0.45, 0.35), 2.5)
 	elif temper == "bone":
@@ -464,9 +491,9 @@ func _host_spawn(owner: int, pos: Vector3, species: String, age: int, owner_pos:
 	return b
 
 
-func _spawn_beast(id: int, species: String, age: int, pos: Vector3, vel: Vector3, owner: int, proxy: bool, temper := "flee") -> Beast:
+func _spawn_beast(id: int, species: String, age: int, pos: Vector3, vel: Vector3, owner: int, proxy: bool, temper := "flee", affixes: Array = []) -> Beast:
 	var b := Beast.new()
-	b.setup(self, id, species, age, owner, proxy, temper)
+	b.setup(self, id, species, age, owner, proxy, temper, affixes)
 	beasts_root.add_child(b)
 	b.launch(pos, vel)
 	beasts[id] = b
@@ -537,6 +564,15 @@ func _host_kill(b: Beast) -> void:
 	if b.last_dist >= KB["far_dist"]:
 		mult *= KB["far"]
 		tags.append("远距离 %d 米 ×%.1f" % [roundi(b.last_dist), KB["far"]])
+	if b.temper == "elite":
+		mult *= Data.ELITE_REWARD
+		tags.append("精英 ×%d" % int(Data.ELITE_REWARD))
+	if not b.affixes.is_empty():
+		mult *= 1.0 + 0.5 * b.affixes.size()
+		tags.append("%s +%d%%" % [Data.affix_names(b.affixes), 50 * b.affixes.size()])
+	if b.reward_k > 1.0:
+		mult *= b.reward_k
+		tags.append("鱼饵 ×%.1f" % b.reward_k)
 	var reward := roundi(base * mult * Data.KILL_MONEY)
 	var xp_total := roundi(xp * mult)
 	var rewards := {}
@@ -550,9 +586,15 @@ func _host_kill(b: Beast) -> void:
 	var st := _stat(killer)
 	st["kills"] += 1
 	st["earned"] += reward
-	var msg := [b.id, killer, b.species, b.age, b.global_position, tags, rewards, st["kills"], st["earned"]]
+	var msg := [b.id, killer, b.species, b.age, b.global_position, tags, rewards, st["kills"], st["earned"], b.affixes, b.temper == "elite"]
 	Net.send(0, "bk", msg)
 	_on_kill(msg)
+	# 词缀：分裂成两只小的；自爆（先出红圈）
+	if "split" in b.affixes:
+		for i in 2:
+			_host_spawn(1, b.global_position + Vector3(randf_range(-1, 1), 0.3, randf_range(-1, 1)), b.species, maxi(b.age - 1, 0), nearest_player_pos(b.global_position), "fierce", "grass", false)
+	if "blast" in b.affixes:
+		boss_telegraph(b.global_position, 5.5, 1.1, 30.0 * (1.0 + b.age * 0.5), "slam", b.global_position)
 	_host_maybe_drop_ring(b, killer)
 	_host_drop_loot(b)
 	_host_quest_event("kill", 1)
@@ -567,14 +609,22 @@ func beast_escaped(b: Beast, reason: String) -> void:
 	_on_escape(msg)
 
 
-## 打死魂兽掉东西：素材（能卖钱），魂骨兽必掉魂骨，千年的小概率掉
+## 打死魂兽掉东西：魂骨兽必掉魂骨，千年的小概率掉；偶尔掉回血丹、佛怒唐莲
 func _host_drop_loot(b: Beast) -> void:
 	var at := b.global_position + Vector3(0, 0.5, 0)
-	var n := 1 + (1 if b.age >= 2 else 0)
-	for i in n:
-		loot.spawn("mat", Data.mat_key(b.species, b.age), 1, 0, at, Vector3(randf_range(-2.5, 2.5), 5.5, randf_range(-2.5, 2.5)))
+	# 魂兽肉：吃了回饱食度，也能丢进收购箱卖
+	var meats := (3 if b.temper == "elite" else (1 if rng.randf() < 0.55 else 0))
+	for i in meats:
+		loot.spawn("item", "meat", 1, 0, at, Vector3(randf_range(-2, 2), 5.0, randf_range(-2, 2)))
+	var r := rng.randf()
+	if r < 0.07 + b.age * 0.03:
+		loot.spawn("item", "pill", 1, 0, at, Vector3(randf_range(-2, 2), 5.5, randf_range(-2, 2)))
+	elif r < 0.11 + b.age * 0.05:
+		loot.spawn("item", "grenade", 1, 0, at, Vector3(randf_range(-2, 2), 5.5, randf_range(-2, 2)))
+	if b.temper == "elite":
+		loot.spawn("item", "pill", 1, 0, at, Vector3(randf_range(-2, 2), 6.0, randf_range(-2, 2)))
 	var chance := 0.012 + (0.05 if b.age >= 2 else 0.0)
-	if b.temper == "bone" or rng.randf() < chance:
+	if b.temper == "bone" or b.temper == "elite" or rng.randf() < chance:
 		var bid: String = Data.BONE_BY_BEAST.get(b.species, "")
 		if bid != "":
 			loot.spawn("bone", "%s@%d" % [bid, b.age], 1, 0, at, Vector3(randf_range(-1.5, 1.5), 7.0, randf_range(-1.5, 1.5)))
@@ -583,19 +633,251 @@ func _host_drop_loot(b: Beast) -> void:
 			hud.feed(msg, UiKit.GOLD)
 
 
-## 魔狼 / 犀牛 咬到玩家
+# ------------------------------------------------------------------ 猎魂录：每种魂兽三颗星，集齐一张图送专属皮肤
+
+func _codex_kill(species: String, age: int, affixes: Array, elite: bool) -> void:
+	var gained := Profile.codex_kill(species, age, not affixes.is_empty(), elite)
+	if gained == 0:
+		return
+	var what := []
+	if gained & 1:
+		what.append("猎杀 %d 只" % Data.CODEX_KILLS)
+	if gained & 2:
+		what.append("打倒带词缀的")
+	if gained & 4:
+		what.append("打倒千年 / 精英")
+	var stars := Profile.species_stars(species)
+	hud.toast("猎魂录 · %s %s（%s）  体力 +2  伤害 +0.5%%" % [Data.BEASTS[species]["name"], "★".repeat(stars) + "☆".repeat(3 - stars), "，".join(what)], UiKit.GOLD, 4.0)
+	Sfx.play("quest_done", -4.0)
+	player.on_bones_changed()
+	# 这张图的魂兽全部三颗星：送专属皮肤
+	var all3 := true
+	for sp in _map_species():
+		if Profile.species_stars(str(sp)) < 3:
+			all3 = false
+	var skin := str(Data.CODEX_MAP_SKIN.get(island.map_id, ""))
+	if all3 and skin != "" and Profile.unlock_look("skin", skin):
+		hud._show_banner("猎魂录 · %s 集齐！" % str(Data.CHAPTERS[chapter]["name"]), "解锁专属暗器皮肤【%s】（暗器铺 → 外观）" % Data.GUN_SKINS[skin]["name"], UiKit.GOLD, 6.0)
+
+
+## 这张图猎魂录的进度（武魂面板用）：[[魂兽 id, 星星数], ...]
+func codex_page() -> Array:
+	var out: Array = []
+	for sp in _map_species():
+		out.append([sp, Profile.species_stars(str(sp))])
+	return out
+
+
+# ------------------------------------------------------------------ 悬赏（每个人自己的，打完换新的）
+
+## 这张地图上能抓到的魂兽
+func _map_species() -> Array:
+	var out: Array = []
+	for h in island.habitats:
+		var type := str(h["type"])
+		if Data.HABITATS.has(type):
+			var s := str(Data.HABITATS[type]["beast"])
+			if not s in out:
+				out.append(s)
+	for w in island.water_types:
+		if Data.HABITATS.has(str(w)):
+			var s2 := str(Data.HABITATS[str(w)]["beast"])
+			if not s2 in out:
+				out.append(s2)
+	return out
+
+
+func _ensure_bounties() -> void:
+	Profile.bounties = Profile.bounties.filter(func(b): return int(b.get("ch", 0)) == chapter and Data.BEASTS.has(str(b.get("species", ""))))
+	while Profile.bounties.size() < Data.BOUNTY_N:
+		Profile.bounties.append(_new_bounty())
+	Profile.mark_dirty()
+	hud.update_bounties()
+
+
+func _new_bounty() -> Dictionary:
+	var sp := _map_species()
+	var species: String = sp[rng.randi() % sp.size()] if not sp.is_empty() else "rabbit"
+	var age := Data.roll_age(rng, 0, chapter)
+	if rng.randf() < 0.35:
+		age = mini(age + 1, 2)
+	var affix := ""
+	if rng.randf() < 0.4:
+		var keys: Array = Data.AFFIXES.keys()
+		affix = str(keys[rng.randi() % keys.size()])
+	var base: float = float(Data.BEASTS[species]["reward"]) * float(Data.AGES[age]["reward"]) * 4.0 * (1.7 if affix != "" else 1.0)
+	return {"ch": chapter, "species": species, "age": age, "affix": affix, "reward": maxi(roundi(base / 10.0) * 10, 30)}
+
+
+func bounty_text(b: Dictionary) -> String:
+	var a := str(b.get("affix", ""))
+	return "%s%s%s · %s  →  %d" % [Data.age_name(int(b["age"])), ("以上 · " if int(b["age"]) > 0 else " · "), ("[%s]" % Data.AFFIXES[a]["name"]) if a != "" else "", Data.BEASTS[b["species"]]["name"], int(b["reward"])]
+
+
+func _check_bounty(species: String, age: int, affixes: Array) -> void:
+	for i in Profile.bounties.size():
+		var b: Dictionary = Profile.bounties[i]
+		if str(b["species"]) != species or age < int(b["age"]):
+			continue
+		if str(b.get("affix", "")) != "" and not str(b["affix"]) in affixes:
+			continue
+		Profile.add_money(int(b["reward"]))
+		hud.quest_done("悬赏完成：%s" % bounty_text(b), int(b["reward"]))
+		Sfx.play("sell", 0.0)
+		Profile.bounties[i] = _new_bounty()
+		Profile.mark_dirty()
+		hud.update_bounties()
+		return
+
+
+# ------------------------------------------------------------------ 兽潮：隔一阵子一大波凶暴魂兽从四面八方冲过来
+
+func _host_tide(dt: float) -> void:
+	if boss or Data.autotest:
+		return
+	if _tide_left > 0:
+		_tide_spawn_t -= dt
+		if _tide_spawn_t <= 0.0:
+			_tide_spawn_t = rng.randf_range(1.8, 3.0)
+			_tide_left -= 1
+			_host_tide_spawn()
+			if _tide_left <= 0:
+				_tide_t = rng.randf_range(Data.TIDE_GAP[0], Data.TIDE_GAP[1])
+		return
+	_tide_t -= dt
+	if _tide_t <= 0.0:
+		_tide_left = 8 + 3 * (_all_peers().size() - 1)
+		_tide_spawn_t = 3.0
+		Net.send(0, "tide", [])
+		_on_tide()
+
+
+func _on_tide() -> void:
+	hud._show_banner("兽潮来了！", "一大波凶暴魂兽正从四面八方冲过来，守住！", Color(1.0, 0.4, 0.3), 4.5)
+	Sfx.play("boss_roar", 0.0, 0.0, 1.2)
+	player.trauma = minf(player.trauma + 0.5, 1.0)
+
+
+func _host_tide_spawn() -> void:
+	var targets := alive_players()
+	if targets.is_empty():
+		return
+	var tp: Dictionary = targets[rng.randi() % targets.size()]
+	var center: Vector3 = tp["pos"]
+	var land: Array = _map_species().filter(func(s): return not island.is_water_habitat(str(Data.BEASTS[s]["habitat"])))
+	if land.is_empty():
+		return
+	for k in 16:
+		var a := rng.randf() * TAU
+		var r := rng.randf_range(24.0, 36.0)
+		var p := center + Vector3(cos(a) * r, 0, sin(a) * r)
+		if island.is_land(p.x, p.z):
+			p.y = island.height_at(p.x, p.z) + 0.3
+			var species: String = land[rng.randi() % land.size()]
+			_host_spawn(1, p, species, Data.roll_age(rng, 0, chapter), center, "fierce", "blood")
+			return
+
+
+## 精英魂兽（小 Boss）：每张地图在陆地栖息地附近固定几个点，打死了 2 分钟后原地重生
+func _host_elites(dt: float) -> void:
+	if Data.autotest:
+		return
+	if not _elite_init:
+		if _t < 3.0:
+			return
+		_elite_init = true
+		_init_elites()
+	for key in elites:
+		var e: Dictionary = elites[key]
+		if int(e["id"]) != 0:
+			if not beasts.has(int(e["id"])):
+				e["id"] = 0
+				e["t"] = Data.ELITE_RESPAWN
+			continue
+		e["t"] = float(e["t"]) - dt
+		if float(e["t"]) <= 0.0:
+			_host_spawn_elite(key)
+	# 地上游荡的魂兽太多了：收掉离所有人最远的普通魂兽
+	_cap_t += dt
+	if _cap_t > 2.0:
+		_cap_t = 0.0
+		if beasts.size() > 28:
+			var far: Beast = null
+			var fd := 60.0
+			for b: Beast in beasts.values():
+				if b.alive() and b.temper != "elite":
+					var d := nearest_player_pos(b.global_position).distance_to(b.global_position)
+					if d > fd:
+						fd = d
+						far = b
+			if far:
+				beast_escaped(far, "despawn")
+
+
+func _init_elites() -> void:
+	var age := 1 if chapter <= 2 else 2
+	for h in island.habitats:
+		if chapter >= 5:
+			age = 2
+		if elites.size() >= Data.ELITE_MAX:
+			break
+		var type := str(h["type"])
+		if not Data.HABITATS.has(type) or island.is_water_habitat(type):
+			continue
+		var species := str(Data.HABITATS[type]["beast"])
+		# 守在栖息地往岛中心那边一点，路过就能碰到
+		var c: Vector2 = h["center"]
+		var p := c + (-c).normalized() * minf(8.0, c.length() * 0.2)
+		if not island.is_land(p.x, p.y):
+			p = c
+		if not island.is_land(p.x, p.y):
+			continue
+		elites[type] = {"species": species, "age": age, "pos": Vector3(p.x, island.height_at(p.x, p.y) + 0.6, p.y), "id": 0, "t": 0.0}
+
+
+func _host_spawn_elite(key: String) -> void:
+	var e: Dictionary = elites[key]
+	var id := next_beast_id
+	next_beast_id += 1
+	e["id"] = id
+	var pos: Vector3 = e["pos"]
+	var affixes: Array = Data.roll_affixes(rng, int(e["age"]), chapter, "grass", true)
+	_spawn_beast(id, str(e["species"]), int(e["age"]), pos, Vector3.ZERO, 1, false, "elite", affixes)
+	Net.send(0, "bsp", [id, e["species"], e["age"], pos, Vector3.ZERO, 1, "elite", affixes])
+
+
+## 魔狼 / 犀牛 咬到玩家（章节越后越疼，还带这一章的特点：毒 / 冰冻 / 拖拽）
 func beast_bite(b: Beast, peer: int, dmg: float) -> void:
+	dmg *= float(Data.CH_POWER.get(chapter, 1.0))
+	var ch_trait := str(Data.CH_TRAIT.get(chapter, ""))
 	if peer == Net.my_id:
 		player.take_damage(dmg, b.global_position)
+		_apply_trait(ch_trait, b.global_position, dmg)
 	else:
-		Net.send(peer, "dmg", [dmg, b.global_position])
+		Net.send(peer, "dmg", [dmg, b.global_position, ch_trait])
 	Sfx.play_at("bite_attack", b.global_position, 0.0, 0.1)
+
+
+func _apply_trait(ch_trait: String, from: Vector3, dmg: float) -> void:
+	if player.dead:
+		return
+	match ch_trait:
+		"poison":
+			player.poison(maxf(dmg * 0.25, 2.0), 4.0)
+		"frost":
+			player.add_buff("speed", -0.45, 2.5)
+			hud.toast("被冻住了，走不快", Color(0.6, 0.85, 1.0), 1.5)
+		"drag":
+			var to := from - player.global_position
+			to.y = 0.0
+			player.velocity += to.normalized() * 9.0 + Vector3.UP * 3.0
+			hud.toast("被拖过去了！", Color(0.6, 0.8, 1.0), 1.2)
 
 
 ## 金刚猿扔石头
 func beast_throw_rock(b: Beast, target: Vector3) -> void:
 	var from := b.global_position + Vector3(0, 1.4 * Data.AGES[b.age]["scale"], 0)
-	var dmg: float = float(Data.BEASTS[b.species].get("hurt", 12.0)) * (1.0 + b.age * 0.5)
+	var dmg: float = float(Data.BEASTS[b.species].get("hurt", 12.0)) * (1.0 + b.age * 0.5) * float(Data.CH_POWER.get(chapter, 1.0))
 	_host_hazard("rock", from, target, 1.0, 2.2, dmg)
 
 
@@ -622,6 +904,9 @@ func _on_kill(msg: Array) -> void:
 	Sfx.play_at("kill_burst", pos, 0.0, 0.05)
 	var mine: Array = rewards.get(Net.my_id, rewards.get(str(Net.my_id), [0, 0]))
 	var who := peer_name(killer)
+	if killer == Net.my_id:
+		_check_bounty(species, age, msg[9] if msg.size() > 9 else [])
+		_codex_kill(species, age, msg[9] if msg.size() > 9 else [], bool(msg[10]) if msg.size() > 10 else false)
 	hud.feed("%s 击杀 %s·%s" % [who, Data.age_name(age), Data.BEASTS[species]["name"]], Data.age_color(age))
 	_gain(int(mine[0]), int(mine[1]))
 	if killer == Net.my_id:
@@ -665,6 +950,8 @@ func _on_escape(msg: Array) -> void:
 		"burrow":
 			fx.dirt_puff(pos)
 			hud.feed("%s 逃回了窝里" % nm, Color(0.7, 0.7, 0.7))
+		"despawn":
+			pass
 		"fly":
 			fx.poof(pos)
 			hud.feed("%s 飞走了" % nm, Color(0.7, 0.7, 0.7))
@@ -681,15 +968,22 @@ func _remove_beast(b: Beast) -> void:
 
 # ------------------------------------------------------------------ 魂环
 
+## 魂环只在有人用得上的时候才掉：有人卡在瓶颈、这只魂兽的年份也够。
+## 地上已经有够多没人吸收的魂环就不掉了（不会掉一地没用的魂环）
 func _host_maybe_drop_ring(b: Beast, killer: int) -> void:
-	var chance: float = float(Data.AGES[b.age]["ring_drop"])
-	# 打的人正好卡在瓶颈、年份也够：必掉
-	var info: Dictionary = peer_info.get(killer, {})
-	var lv := int(info.get("level", 1))
-	var nr: int = (info.get("rings", []) as Array).size()
-	if nr < Data.RING_MIN_AGE.size() and lv >= (nr + 1) * 10 and b.age >= int(Data.RING_MIN_AGE[nr]):
-		chance = 1.0
-	if rng.randf() > chance:
+	var need := 0
+	var killer_needs := false
+	for id in peer_info:
+		var info: Dictionary = peer_info[id]
+		var lv := int(info.get("level", 1))
+		var nr: int = (info.get("rings", []) as Array).size()
+		if nr < 5 and lv >= (nr + 1) * 10 and b.age >= int(Data.RING_MIN_AGE[nr]):
+			need += 1
+			if int(id) == killer:
+				killer_needs = true
+	if need <= rings.size():
+		return
+	if not killer_needs and rng.randf() > 0.6:
 		return
 	_host_drop_ring(b.global_position + Vector3(0, 1.0, 0), b.age, b.species)
 
@@ -760,7 +1054,22 @@ func _start_absorb(age: int, species: String) -> void:
 	hud.absorb_start(age, species)
 	fx.absorb(player, Data.age_color(age))
 	Sfx.play("absorb", -2.0)
-	get_tree().create_timer(3.0).timeout.connect(func(): hud.choose_skill(age, species))
+	# 魂技由武魂 + 魂兽 + 年份决定，吸收完才揭晓
+	get_tree().create_timer(3.0).timeout.connect(func(): _reveal_skill(age, species))
+
+
+func _reveal_skill(age: int, species: String) -> void:
+	var owned: Array = []
+	for r in Profile.rings:
+		owned.append(str(r["skill"]))
+	var sid := Data.skill_for(Data.wuhun_id(Settings.wuhun), species, age, owned)
+	finish_absorb(age, species, sid)
+	var s: Dictionary = Data.SKILLS[sid]
+	var cat := "攻击（Q）"
+	for c in SkillSystem.CATS:
+		if str(s["type"]) in SkillSystem.CATS[c]:
+			cat = {"attack": "攻击魂技 · 按 Q", "support": "辅助魂技 · 按 F", "move": "位移魂技 · 双击 Shift"}[c]
+	hud._show_banner("领悟魂技 · %s" % s["name"], "%s\n%s" % [s["desc"], cat], Data.age_color(age) if age > 0 else Color.WHITE, 6.0)
 
 
 ## 界面选好魂技后调用
@@ -770,7 +1079,7 @@ func finish_absorb(age: int, species: String, sid: String) -> void:
 	player.soul = Profile.max_soul()
 	player.hp = Profile.max_hp()
 	skills.current = Profile.rings.size() - 1
-	hud.toast("吸收了%s魂环！获得魂技【%s】（轻按 Q 释放，按住 Q 切换）" % [Data.age_name(age), Data.SKILLS[sid]["name"]], Data.age_color(age), 6.0)
+	hud.toast("吸收了%s魂环！获得魂技【%s】" % [Data.age_name(age), Data.SKILLS[sid]["name"]], Data.age_color(age), 6.0)
 	Sfx.play("level_up", -2.0)
 	_broadcast_prog()
 	if ups > 0:
@@ -813,7 +1122,9 @@ func _altar_text() -> String:
 func _boat_text() -> String:
 	var nxt := int(Data.CHAPTERS[chapter].get("next", 0))
 	if _cur_quest().get("type", "") == "boat" and Data.CHAPTERS.has(nxt):
-		return "按 F 上船，前往%s" % Data.CHAPTERS[nxt]["name"]
+		if _i_boarded:
+			return "你已经上船了（%d/%d），等其他人都按 F" % [_boat_count[0], _boat_count[1]]
+		return "按 F 上船，前往%s（人齐了一起出发，已上船 %d/%d）" % [Data.CHAPTERS[nxt]["name"], _boat_count[0], maxi(_boat_count[1], _all_peers().size())]
 	return "渡船：打败这里的 Boss 之后才能出发"
 
 
@@ -842,6 +1153,7 @@ func interact() -> void:
 				hud.toast(_altar_text(), Color(0.9, 0.9, 0.9))
 		"boat":
 			if _cur_quest().get("type", "") == "boat":
+				_i_boarded = true
 				Net.send_host("boat", [])
 			else:
 				hud.toast(_boat_text(), Color(0.9, 0.9, 0.9))
@@ -936,7 +1248,7 @@ func _on_quest_done(msg: Array) -> void:
 
 func _broadcast_prog() -> void:
 	peer_info[Net.my_id] = _my_info()
-	var p := [Profile.level, _ring_summary()]
+	var p := [Profile.level, _ring_summary(), Profile.outfit, Profile.skin]
 	if p == _last_prog:
 		return
 	_last_prog = p
@@ -1017,6 +1329,13 @@ func _on_boss_dead(msg: Array) -> void:
 	hud.boss_bar("")
 	_gain(int(mine[0]), int(mine[1]))
 	# 魂骨：每人拿一块自己还没有的
+	# 每章 Boss 送一款专属外观
+	for sid in Data.GUN_SKINS:
+		if str(Data.GUN_SKINS[sid].get("boss", "")) == kind and Profile.unlock_look("skin", sid):
+			hud.feed("解锁了暗器皮肤【%s】（暗器铺 → 外观）" % Data.GUN_SKINS[sid]["name"], UiKit.GOLD)
+	for oid in Data.OUTFITS:
+		if str(Data.OUTFITS[oid].get("boss", "")) == kind and Profile.unlock_look("outfit", oid):
+			hud.feed("解锁了装扮【%s】（暗器铺 → 外观）" % Data.OUTFITS[oid]["name"], UiKit.GOLD)
 	var got := ""
 	for bid in d["bones"]:
 		if Profile.add_bone(str(bid) + "@2", true):
@@ -1050,16 +1369,168 @@ func _on_hazard(msg: Array) -> void:
 	Sfx.play_at("spit" if kind != "rock" else "throw", msg[1], 0.0, 0.1)
 
 
-func boss_telegraph(center: Vector3, radius: float, delay: float, dmg: float, kind: String, _src: Vector3) -> void:
+## late = true：红圈只在砸下来前 0.35 秒才出现（要看 Boss 起手、听声音判断，翻滚躲）
+func boss_telegraph(center: Vector3, radius: float, delay: float, dmg: float, kind: String, _src: Vector3, late := false) -> void:
 	center.y = maxf(island.height_at(center.x, center.z), Island.WATER_Y)
-	var msg := [center, radius, delay, dmg, kind]
+	var msg := [center, radius, delay, dmg, kind, late]
 	Net.send(0, "tg", msg)
 	_on_telegraph(msg)
 
 
 func _on_telegraph(msg: Array) -> void:
-	var node := fx.telegraph(msg[0], float(msg[1]), float(msg[2]))
-	_telegraphs.append({"center": msg[0], "radius": float(msg[1]), "t": float(msg[2]), "dmg": float(msg[3]), "kind": str(msg[4]), "node": node})
+	var late := msg.size() > 5 and bool(msg[5]) and float(msg[2]) > 0.45
+	var e := {"center": msg[0], "radius": float(msg[1]), "t": float(msg[2]), "dmg": float(msg[3]), "kind": str(msg[4]), "node": null}
+	if late:
+		Sfx.play_at("boss_roar", msg[0], -6.0, 0.05, 1.5)
+		get_tree().create_timer(float(msg[2]) - 0.35).timeout.connect(func():
+			if _telegraphs.has(e):
+				e["node"] = fx.telegraph(e["center"], e["radius"], 0.35))
+	else:
+		e["node"] = fx.telegraph(msg[0], float(msg[1]), float(msg[2]))
+	_telegraphs.append(e)
+
+
+# ------------------------------------------------------------------ Boss 的新招式：冲击环、扇形横扫、全场大招（留安全区）
+
+var _waves: Array = []
+var _cones: Array = []
+var _zones: Array = []
+
+
+## 冲击环：从中心往外扩的一圈红墙，贴地的人被扫到。跳过去或者翻滚穿过去
+func boss_shockwave(center: Vector3, max_r: float, speed: float, dmg: float) -> void:
+	center.y = maxf(island.height_at(center.x, center.z), Island.WATER_Y)
+	var msg := [center, max_r, speed, dmg]
+	Net.send(0, "sw", msg)
+	_on_shockwave(msg)
+
+
+func _on_shockwave(msg: Array) -> void:
+	var n := MeshInstance3D.new()
+	var cm := CylinderMesh.new()
+	cm.top_radius = 1.0
+	cm.bottom_radius = 1.0
+	cm.height = 0.9
+	cm.cap_top = false
+	cm.cap_bottom = false
+	cm.radial_segments = 64
+	n.mesh = cm
+	n.material_override = U.glow(Color(1.0, 0.35, 0.15), 3.0, true)
+	n.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	fx.add_child(n)
+	n.global_position = (msg[0] as Vector3) + Vector3(0, 0.45, 0)
+	_waves.append({"c": msg[0], "r": 0.5, "max": float(msg[1]), "spd": float(msg[2]), "dmg": float(msg[3]), "hit": false, "node": n})
+	Sfx.play_at("slam", msg[0], 4.0)
+
+
+## 扇形横扫：地上先出扇形，一会儿后扇形里的人挨打
+func boss_cone(origin: Vector3, dir: Vector3, half: float, reach: float, delay: float, dmg: float) -> void:
+	origin.y = maxf(island.height_at(origin.x, origin.z), Island.WATER_Y)
+	var msg := [origin, Vector3(dir.x, 0, dir.z).normalized(), half, reach, delay, dmg]
+	Net.send(0, "cone", msg)
+	_on_cone(msg)
+
+
+func _on_cone(msg: Array) -> void:
+	var o: Vector3 = msg[0]
+	var d: Vector3 = msg[1]
+	var half := float(msg[2])
+	var reach := float(msg[3])
+	var im := ImmediateMesh.new()
+	im.surface_begin(Mesh.PRIMITIVE_TRIANGLES)
+	var seg := 18
+	var base := atan2(d.x, d.z)
+	for i in seg:
+		var a0 := base - half + 2.0 * half * i / seg
+		var a1 := base - half + 2.0 * half * (i + 1) / seg
+		im.surface_add_vertex(Vector3.ZERO)
+		im.surface_add_vertex(Vector3(sin(a0), 0, cos(a0)) * reach)
+		im.surface_add_vertex(Vector3(sin(a1), 0, cos(a1)) * reach)
+	im.surface_end()
+	var n := MeshInstance3D.new()
+	n.mesh = im
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.albedo_color = Color(1.0, 0.2, 0.1, 0.35)
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	n.material_override = m
+	n.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	fx.add_child(n)
+	n.global_position = o + Vector3(0, 0.15, 0)
+	_cones.append({"o": o, "d": d, "half": half, "reach": reach, "t": float(msg[4]), "dmg": float(msg[5]), "node": n})
+
+
+## 全场大招：一大片都会被砸，只有几个绿圈安全（翻滚也躲不掉，要跑进绿圈）
+func boss_ultimate(center: Vector3, radius: float, safes: Array, delay: float, dmg: float) -> void:
+	var msg := [center, radius, safes, delay, dmg]
+	Net.send(0, "ult", msg)
+	_on_ultimate(msg)
+
+
+func _on_ultimate(msg: Array) -> void:
+	var nodes: Array = [fx.telegraph(msg[0], float(msg[1]), float(msg[3]))]
+	for s in msg[2]:
+		nodes.append(fx.telegraph(s, 4.5, 0.3, Color(0.3, 1.0, 0.4)))
+	_zones.append({"c": msg[0], "r": float(msg[1]), "safes": msg[2], "t": float(msg[3]), "dmg": float(msg[4]), "nodes": nodes})
+	hud._show_banner("躲进绿圈！", "Boss 要砸整片地了", Color(0.5, 1.0, 0.5), float(msg[3]))
+	Sfx.play("boss_roar", 3.0, 0.0, 0.7)
+	player.trauma = minf(player.trauma + 0.6, 1.0)
+
+
+func _update_boss_moves(dt: float) -> void:
+	var me := player.global_position
+	var my_ground: float = island.height_at(me.x, me.z)
+	for w in _waves.duplicate():
+		w["r"] = float(w["r"]) + float(w["spd"]) * dt
+		var n: MeshInstance3D = w["node"]
+		if is_instance_valid(n):
+			n.scale = Vector3(w["r"], 1.0, w["r"])
+		var c: Vector3 = w["c"]
+		var d := Vector2(me.x - c.x, me.z - c.z).length()
+		if not w["hit"] and not player.dead and absf(d - float(w["r"])) < 0.9 and me.y - maxf(my_ground, Island.WATER_Y) < 0.7:
+			w["hit"] = true
+			player.take_damage(float(w["dmg"]), c)
+			var push := Vector3(me.x - c.x, 0, me.z - c.z).normalized()
+			player.velocity += push * 7.0 + Vector3.UP * 5.0
+		if float(w["r"]) > float(w["max"]):
+			_waves.erase(w)
+			if is_instance_valid(n):
+				n.queue_free()
+	for cn in _cones.duplicate():
+		cn["t"] = float(cn["t"]) - dt
+		if float(cn["t"]) <= 0.0:
+			_cones.erase(cn)
+			var n2: MeshInstance3D = cn["node"]
+			if is_instance_valid(n2):
+				n2.queue_free()
+			var o: Vector3 = cn["o"]
+			var to := Vector3(me.x - o.x, 0, me.z - o.z)
+			fx.shockwave(o + (cn["d"] as Vector3) * float(cn["reach"]) * 0.5, float(cn["reach"]) * 0.5, Color(1.0, 0.4, 0.2))
+			Sfx.play_at("slam", o, 0.0, 0.1, 1.2)
+			if to.length() < float(cn["reach"]) and to.normalized().angle_to(cn["d"]) < float(cn["half"]) and absf(me.y - o.y) < 3.5:
+				player.take_damage(float(cn["dmg"]), o)
+				player.velocity += to.normalized() * 6.0 + Vector3.UP * 3.0
+	for z in _zones.duplicate():
+		z["t"] = float(z["t"]) - dt
+		if float(z["t"]) <= 0.0:
+			_zones.erase(z)
+			for nd in z["nodes"]:
+				if is_instance_valid(nd):
+					(nd as Node).queue_free()
+			var c2: Vector3 = z["c"]
+			fx.explosion(c2 + Vector3.UP, 12.0, Color(1.0, 0.5, 0.3))
+			Sfx.play_at("boom", c2, 6.0)
+			player.trauma = 1.0
+			var safe := false
+			for s in z["safes"]:
+				if Vector2(me.x - (s as Vector3).x, me.z - (s as Vector3).z).length() < 4.7:
+					safe = true
+			if not safe and Vector2(me.x - c2.x, me.z - c2.z).length() < float(z["r"]) and not player.dead:
+				var inv := player.invuln_t
+				player.invuln_t = 0.0
+				player.take_damage(float(z["dmg"]), c2)
+				player.invuln_t = inv
 
 
 func _update_hazards(dt: float) -> void:
@@ -1274,9 +1745,25 @@ func _update_down(dt: float) -> void:
 	if _down_t <= 0.0 or give_up:
 		_carry_t = 0.0
 		player.carried = true
-		loot.gull_carry(player, true)
+		loot.gull_carry(player, true, -Net.my_id)
 		Net.send(0, "gullbody", [Net.my_id])
 		hud.death_countdown(-2.0)
+
+
+## 换了外观：自己手里的重建，告诉队友
+func on_look_changed() -> void:
+	player.viewmodel.apply_look()
+	_broadcast_prog()
+
+
+## 叼着我的海鸥被打下来了：掉回地上，接着等队友救
+func gull_dropped_me() -> void:
+	if _carry_t < 0.0:
+		return
+	_carry_t = -1.0
+	player.carried = false
+	_down_t = 15.0
+	hud.feed("海鸥被打下来了，你掉回了地上！", Color(0.6, 1.0, 0.7))
 
 
 ## 按住 F 把倒地的队友拉起来
@@ -1327,6 +1814,8 @@ func _on_peer_left(id: int) -> void:
 	peer_info.erase(id)
 	if Net.is_host():
 		_host_check_quest.call_deferred()   # 人数变了，任务量跟着变
+		if not _boat_ready.is_empty():
+			_host_boat_check.call_deferred("")
 
 
 func _add_remote(id: int, info: Dictionary) -> void:
@@ -1347,11 +1836,12 @@ func _add_remote(id: int, info: Dictionary) -> void:
 
 
 func hello_payload(want_reply: bool) -> Array:
-	return [Settings.display_name(), Settings.wuhun, want_reply, Profile.level, _ring_summary()]
+	return [Settings.display_name(), Settings.wuhun, want_reply, Profile.level, _ring_summary(), Profile.outfit, Profile.skin]
 
 
 func _info_from_hello(d: Array) -> Dictionary:
-	return {"name": str(d[0]), "wuhun": int(d[1]), "level": int(d[3]) if d.size() > 3 else 1, "rings": d[4] if d.size() > 4 else []}
+	return {"name": str(d[0]), "wuhun": int(d[1]), "level": int(d[3]) if d.size() > 3 else 1, "rings": d[4] if d.size() > 4 else [],
+		"outfit": str(d[5]) if d.size() > 5 else "default", "skin": str(d[6]) if d.size() > 6 else "default"}
 
 
 ## 联机消息都从 Main 转到这里（Main 会先缓存世界还没建好时收到的消息）
@@ -1370,6 +1860,9 @@ func on_message(from: int, type: String, data: Variant) -> void:
 			if peer_info.has(from):
 				peer_info[from]["level"] = int(d[0])
 				peer_info[from]["rings"] = d[1]
+				if d.size() > 3:
+					peer_info[from]["outfit"] = str(d[2])
+					peer_info[from]["skin"] = str(d[3])
 				if remotes.has(from):
 					remotes[from].set_info(peer_info[from])
 			if Net.is_host():
@@ -1385,12 +1878,20 @@ func on_message(from: int, type: String, data: Variant) -> void:
 				muzzle = remotes[from].muzzle_global()
 			var single: bool = w["pellets"] == 1
 			for e in d[2]:
-				fx.tracer(muzzle, e, w["tracer"], 0.02 if single else 0.009, 420.0 if single else 280.0, 4.0 if single else 1.6)
+				fx.tracer(muzzle, e, w["tracer"], 0.06 if single else 0.025, 300.0 if single else 240.0, 5.0 if single else 1.8, single)
 			Sfx.play_at(w["sound"], muzzle, 0.0, 0.06)
 		"yank":
 			if Net.is_host():
 				var d: Array = data
-				_host_spawn(from, d[0], str(d[2]), int(d[3]), d[4])
+				_host_spawn(from, d[0], str(d[2]), int(d[3]), d[4], "", str(d[5]) if d.size() > 5 else "grass")
+				# 星斗大森林：成群的魂兽，同窝的会跑来帮忙
+				if str(Data.CH_TRAIT.get(chapter, "")) == "pack" and rng.randf() < 0.45:
+					for k in rng.randi_range(1, 2):
+						var a := rng.randf() * TAU
+						var q: Vector3 = (d[4] as Vector3) + Vector3(cos(a) * 18.0, 0, sin(a) * 18.0)
+						if island.is_land(q.x, q.z):
+							q.y = island.height_at(q.x, q.z) + 0.3
+							_host_spawn(1, q, str(d[2]), int(d[3]), d[4], "fierce", "grass")
 		"hit":
 			if Net.is_host():
 				var d: Array = data
@@ -1405,7 +1906,7 @@ func on_message(from: int, type: String, data: Variant) -> void:
 		"bsp":
 			var d: Array = data
 			if not beasts.has(int(d[0])):
-				_spawn_beast(int(d[0]), str(d[1]), int(d[2]), d[3], d[4], int(d[5]), true, str(d[6]) if d.size() > 6 else "flee")
+				_spawn_beast(int(d[0]), str(d[1]), int(d[2]), d[3], d[4], int(d[5]), true, str(d[6]) if d.size() > 6 else "flee", d[7] if d.size() > 7 else [])
 		"bs":
 			var arr: PackedFloat32Array = data
 			var i := 0
@@ -1423,6 +1924,8 @@ func on_message(from: int, type: String, data: Variant) -> void:
 			fx.damage_number(data[0], float(data[1]), false)
 		"dmg":
 			player.take_damage(float(data[0]), data[1])
+			if (data as Array).size() > 2:
+				_apply_trait(str(data[2]), data[1], float(data[0]))
 		"ring":
 			_on_ring(data)
 		"ringgone":
@@ -1484,6 +1987,12 @@ func on_message(from: int, type: String, data: Variant) -> void:
 			_on_hazard(data)
 		"tg":
 			_on_telegraph(data)
+		"sw":
+			_on_shockwave(data)
+		"cone":
+			_on_cone(data)
+		"ult":
+			_on_ultimate(data)
 		"bossspawn":
 			_on_boss_spawn(data)
 		"bsnap":
@@ -1511,9 +2020,10 @@ func on_message(from: int, type: String, data: Variant) -> void:
 				_host_quest_event("altar", 1)
 		"boat":
 			if Net.is_host() and _cur_quest().get("type", "") == "boat":
-				var next := int(Data.CHAPTERS[chapter]["next"])
-				Net.send(0, "travel", [next])
-				_travel(next)
+				_boat_ready[from] = true
+				_host_boat_check(peer_name(from))
+		"boatready":
+			_on_boat_ready(data)
 		"travel":
 			_travel(int(data[0]))
 		"died":
@@ -1528,14 +2038,39 @@ func on_message(from: int, type: String, data: Variant) -> void:
 		"gullbody":
 			var gp := int(data[0])
 			if remotes.has(gp):
-				loot.gull_carry(remotes[gp], false)
+				loot.gull_carry(remotes[gp], false, -gp)
 				hud.feed("海鸥把 %s 叼走了……" % peer_name(gp), Color(0.8, 0.85, 0.9))
 		"feedall":
 			hud.feed(str(data[0]), UiKit.GOLD)
-		"gi", "gitake", "gigone", "gull":
+		"tide":
+			_on_tide()
+		"gi", "gitake", "gigone", "gull", "gullhit", "gulldown":
 			loot.on_message(from, type, data)
 		"init":
 			_apply_init(data)
+
+
+## 所有人都上船按了 F 才出发（有人走了也重新算）
+func _host_boat_check(who: String) -> void:
+	var peers := _all_peers()
+	for k in _boat_ready.keys():
+		if not k in peers:
+			_boat_ready.erase(k)
+	var msg := [_boat_ready.size(), peers.size(), who]
+	Net.send(0, "boatready", msg)
+	_on_boat_ready(msg)
+	if _boat_ready.size() >= peers.size() and _cur_quest().get("type", "") == "boat":
+		var next := int(Data.CHAPTERS[chapter]["next"])
+		Net.send(0, "travel", [next])
+		_travel(next)
+
+
+func _on_boat_ready(msg: Array) -> void:
+	_boat_count = [int(msg[0]), int(msg[1])]
+	if str(msg[2]) != "":
+		hud.feed("%s 上船了（%d/%d）" % [str(msg[2]), int(msg[0]), int(msg[1])], Color(0.6, 0.85, 1.0))
+	if int(msg[0]) < int(msg[1]):
+		hud.toast("已上船 %d/%d，等所有人走到船边按 F" % [int(msg[0]), int(msg[1])], Color(0.6, 0.85, 1.0), 3.0)
 
 
 func _travel(next: int) -> void:
@@ -1551,7 +2086,7 @@ func _send_init(to: int) -> void:
 	var list := []
 	for b: Beast in beasts.values():
 		if b.alive():
-			list.append([b.id, b.species, b.age, b.global_position, b.owner_peer, b.hp / b.max_hp, b.temper])
+			list.append([b.id, b.species, b.age, b.global_position, b.owner_peer, b.hp / b.max_hp, b.temper, b.affixes])
 	var rl := []
 	for rid in rings:
 		var r: Dictionary = rings[rid]
@@ -1567,7 +2102,7 @@ func _apply_init(d: Array) -> void:
 	quest_count = int(d[2])
 	for e in d[3]:
 		if not beasts.has(int(e[0])):
-			var b := _spawn_beast(int(e[0]), str(e[1]), int(e[2]), e[3], Vector3.ZERO, int(e[4]), true, str(e[6]) if e.size() > 6 else "flee")
+			var b := _spawn_beast(int(e[0]), str(e[1]), int(e[2]), e[3], Vector3.ZERO, int(e[4]), true, str(e[6]) if e.size() > 6 else "flee", e[7] if e.size() > 7 else [])
 			b.set_hp_from_ratio(float(e[5]))
 	for r in d[4]:
 		if not rings.has(int(r[0])):

@@ -69,6 +69,17 @@ var _water_t := 0.0
 var _no_target_t := 0.0
 var _play_dead := 0.0
 var _temper_fx: Node3D
+var size_k := 1.0                # 精英魂兽大一圈
+var affixes: Array = []          # 词缀（Data.AFFIXES）
+var reward_k := 1.0              # 鱼饵带来的奖励倍数（房主）
+var _since_hit := 99.0
+var _thunder_cd := 0.0
+var _frenzy_on := false
+var _aggro_t := 0.0              # 精英：挨打后追人的时间
+var _roam := false               # 陆地魂兽跑回老家以后就在附近转悠，不会凭空消失
+var _roam_to := Vector3.ZERO
+var _roam_t := 0.0
+var _far_t := 0.0
 
 # 魂技效果（房主算）
 var root_t := 0.0
@@ -97,8 +108,9 @@ var _dead_t := -1.0
 var _dead_ground := 0.0
 
 
-func setup(p_world: Node, p_id: int, p_species: String, p_age: int, p_owner: int, p_proxy: bool, p_temper := "flee") -> void:
+func setup(p_world: Node, p_id: int, p_species: String, p_age: int, p_owner: int, p_proxy: bool, p_temper := "flee", p_affixes: Array = []) -> void:
 	world = p_world
+	affixes = p_affixes.filter(func(a): return Data.AFFIXES.has(str(a)))
 	temper = p_temper if Data.TEMPERS.has(p_temper) else "flee"
 	id = p_id
 	species = p_species
@@ -107,10 +119,13 @@ func setup(p_world: Node, p_id: int, p_species: String, p_age: int, p_owner: int
 	proxy = p_proxy
 	name = "B%d" % id
 	max_hp = Data.beast_max_hp(species, age)
+	if temper == "elite":
+		size_k = Data.ELITE_SIZE
+		max_hp *= Data.ELITE_HP
 	hp = max_hp
 	collision_layer = U.LAYER_BEAST
 	collision_mask = U.LAYER_WORLD
-	mass = Data.AGES[age]["mass"] * (2.0 if Data.BEASTS[species].get("heavy", false) else 1.0)
+	mass = Data.AGES[age]["mass"] * (2.0 if Data.BEASTS[species].get("heavy", false) else 1.0) * (3.0 if temper == "elite" else 1.0)
 	gravity_scale = G_RISE
 	linear_damp = 0.05
 	angular_damp = 1.2
@@ -118,16 +133,19 @@ func setup(p_world: Node, p_id: int, p_species: String, p_age: int, p_owner: int
 	var i := 0
 	for s in BeastModels.shapes(species, age):
 		var cs := CollisionShape3D.new()
-		cs.shape = s["shape"]
+		cs.shape = _scaled_shape(s["shape"], size_k)
 		cs.transform = s["xform"]
+		cs.position *= size_k
 		add_child(cs)
 		if s["head"]:
 			head_shapes[i] = true
 		i += 1
 	model = BeastModels.build(species, age)
+	model.scale *= size_k
 	add_child(model)
 	aura = BeastModels.aura(age, species)
 	aura.top_level = true
+	aura.scale = Vector3.ONE * size_k
 	add_child(aura)
 	_hp_label = U.label3d("", 34, Data.age_color(age), 8)
 	_hp_label.top_level = true
@@ -149,11 +167,44 @@ func setup(p_world: Node, p_id: int, p_species: String, p_age: int, p_owner: int
 		_play_dead = randf_range(2.5, 4.5)
 
 
+## 词缀：疾速跑得快，狂暴半血以下更快更狠
+func _spd() -> float:
+	var k := 1.6 if "swift" in affixes else 1.0
+	if _frenzy_on:
+		k *= 1.45
+	return k
+
+
+func _dmgk() -> float:
+	return 1.6 if _frenzy_on else 1.0
+
+
+static func _scaled_shape(sh: Shape3D, k: float) -> Shape3D:
+	if is_equal_approx(k, 1.0):
+		return sh
+	if sh is BoxShape3D:
+		(sh as BoxShape3D).size *= k
+	elif sh is SphereShape3D:
+		(sh as SphereShape3D).radius *= k
+	elif sh is CapsuleShape3D:
+		(sh as CapsuleShape3D).radius *= k
+		(sh as CapsuleShape3D).height *= k
+	return sh
+
+
+func is_land_beast() -> bool:
+	return not world.island.is_water_habitat(str(Data.BEASTS[species]["habitat"])) and not motion() in ["fly", "flutter"]
+
+
+func display_name() -> String:
+	return str(Data.BEASTS[species]["name"]) + ("王" if temper == "elite" else "")
+
+
 ## 性格的样子：凶暴的眼睛发红光，魂骨兽全身金光、往上飘金色光点
 func _build_temper_fx() -> void:
 	if temper == "flee" or temper == "sly":
 		return
-	var s: float = Data.AGES[age]["scale"]
+	var s: float = Data.AGES[age]["scale"] * size_k
 	var bs := BeastModels.body_size(species) * s
 	_temper_fx = Node3D.new()
 	add_child(_temper_fx)
@@ -161,6 +212,10 @@ func _build_temper_fx() -> void:
 	var light := OmniLight3D.new()
 	light.light_color = col
 	light.light_energy = 1.4 if temper == "fierce" else 2.6
+	if temper == "elite":
+		# 精英：头顶一圈橙色的冠 + 身下第二道光环
+		var crown := U.part(_temper_fx, U.torus(bs.x * 0.22 + 0.1, bs.x * 0.22 + 0.16, 32, 5), U.glow(Color(1.0, 0.55, 0.15), 5.0), Vector3(0, bs.y * 0.62, -bs.z * 0.2), Vector3.ZERO, Vector3.ONE, false)
+		crown.name = "Crown"
 	light.omni_range = maxf(bs.length() * 1.2, 3.0)
 	light.position = Vector3(0, bs.y * 0.3, -bs.z * 0.3)
 	_temper_fx.add_child(light)
@@ -190,6 +245,8 @@ func launch(pos: Vector3, vel: Vector3) -> void:
 	spawn_pos = pos
 	linear_velocity = vel
 	angular_velocity = Vector3(randf_range(-4, 4), randf_range(-6, 6), randf_range(-4, 4))
+	if temper == "elite":
+		angular_velocity = Vector3.ZERO
 	if motion() in ["slither", "charge"]:
 		angular_velocity *= 0.5
 	var flat := Vector3(vel.x, 0, vel.z)
@@ -218,6 +275,8 @@ static func _now() -> float:
 ## 身体护甲（铁甲犀）：打头不减伤；被"破甲"后也不减
 func armor_factor(headshot: bool) -> float:
 	var a: float = float(Data.BEASTS[species].get("armor", 0.0))
+	if "armor" in affixes:
+		a = maxf(a, 0.5)
 	if headshot or armor_break or a <= 0.0:
 		return 1.0
 	return 1.0 - a
@@ -236,6 +295,8 @@ func take_hit(dmg: float, impulse: Vector3, local_point: Vector3, headshot: bool
 		air_hits += 1
 	last_hitter = shooter
 	last_headshot = headshot
+	_aggro_t = 12.0
+	_since_hit = 0.0
 	last_dist = dist
 	var real := dmg * armor_factor(headshot) * (mark_mult if mark_t > 0.0 else 1.0)
 	hp -= real
@@ -285,16 +346,29 @@ func _physics_process(delta: float) -> void:
 		angular_velocity = angular_velocity.lerp(Vector3.ZERO, 1.0 - exp(-8.0 * delta))
 		return
 
-	if global_position.y < Island.WATER_Y - 0.2 and not world.island.is_land(global_position.x, global_position.z):
+	var over_water: bool = not world.island.is_land(global_position.x, global_position.z)
+	var swimmer: bool = (temper == "fierce" or temper == "elite" or is_land_beast()) and life > 0.2 and not m in ["fly", "flutter"]
+	if over_water and swimmer and global_position.y < Island.WATER_Y + 0.25 and _swoop_t <= 0.0:
+		# 凶暴的掉进水里也不逃，游过来咬人；陆地魂兽往岸上游。浮在水面上，打得到
+		_swim(delta)
+		return
+	elif over_water and global_position.y < Island.WATER_Y - 0.2 and not swimmer:
 		if m != "fly" or state != State.AIR:
-			if temper == "fierce" and state != State.AIR:
-				_swim(delta)
-				return
 			world.beast_escaped(self, "splash")
 			return
-	_water_t = 0.0
+	elif not over_water:
+		_water_t = 0.0
 
-	if temper == "fierce":
+	if temper == "elite":
+		pass
+	elif is_land_beast():
+		# 陆地魂兽不会凭空消失；只有周围 110 米都没人、过了 40 秒才悄悄收掉（省性能）
+		var np: Vector3 = world.nearest_player_pos(global_position)
+		_far_t = _far_t + delta if np.distance_to(global_position) > 110.0 else 0.0
+		if _far_t > 40.0:
+			world.beast_escaped(self, "despawn")
+			return
+	elif temper == "fierce":
 		if life > FIERCE_GIVE_UP:
 			world.beast_escaped(self, "timeout")
 			return
@@ -310,6 +384,10 @@ func _physics_process(delta: float) -> void:
 			elif m == "flutter" and life > 1.4 and linear_velocity.y < 0.5:
 				state = State.FLEE
 			elif touching and linear_velocity.y > -2.0 and life > 0.3:
+				if "thunder" in affixes and _thunder_cd <= 0.0:
+					# 雷霆：落地震出一圈雷环（地上先出红圈）
+					_thunder_cd = 4.0
+					world.boss_telegraph(global_position, 4.5 * size_k, 0.55, 12.0 * (1.0 + age * 0.5), "slam", global_position)
 				state = State.GROUND
 				ground_time = 0.0
 				air_hits = 0
@@ -332,8 +410,12 @@ func _physics_process(delta: float) -> void:
 		State.FLEE:
 			if not m in ["fly", "flutter"]:
 				gravity_scale = G_RISE
-			if temper == "fierce":
+			if temper == "elite":
+				_elite(delta, m, touching)
+			elif temper == "fierce":
 				_fierce(delta, m, touching)
+			elif _roam:
+				_roam_tick(delta, m, touching)
 			else:
 				_flee(delta, m, touching)
 
@@ -437,6 +519,14 @@ func _vanish() -> void:
 
 
 func _update_effects(delta: float) -> void:
+	_since_hit += delta
+	_thunder_cd -= delta
+	if "regen" in affixes and _since_hit > 2.0 and hp < max_hp:
+		hp = minf(hp + max_hp * 0.035 * delta, max_hp)
+	if "frenzy" in affixes and not _frenzy_on and hp < max_hp * 0.5:
+		_frenzy_on = true
+		world.fx.aura_burst(global_position, Color(1.0, 0.2, 0.1), 3.0 * size_k)
+		Sfx.play_at("boss_roar", global_position, -6.0, 0.1, 1.6)
 	var f := 0
 	if mark_t > 0.0:
 		mark_t -= delta
@@ -476,7 +566,7 @@ func _flee(delta: float, m: String, touching: bool) -> void:
 			var to := escape_target - global_position
 			to.y = 0
 			if to.length() < 1.6:
-				world.beast_escaped(self, "burrow")
+				_start_roam()
 				return
 			if hop_timer <= 0.0 and touching:
 				hop_timer = 0.42
@@ -557,7 +647,8 @@ func _fierce(delta: float, m: String, touching: bool) -> void:
 	var dir := flat.normalized() if dist > 0.01 else -global_basis.z
 	var s: float = Data.AGES[age]["scale"]
 	var reach: float = 1.3 + BeastModels.body_size(species).z * s * 0.45
-	var dmg: float = float(Data.BEASTS[species].get("hurt", 8.0)) * (1.0 + age * 0.5)
+	var dmg: float = float(Data.BEASTS[species].get("hurt", 8.0)) * (1.0 + age * 0.5) * (Data.ELITE_DMG if temper == "elite" else 1.0) * _dmgk()
+	reach *= size_k
 	match m:
 		"fly", "flutter":
 			# 在头顶盘旋，冷却好了俯冲下来啄一口，再拉起来
@@ -603,7 +694,7 @@ func _fierce(delta: float, m: String, touching: bool) -> void:
 			if _charge_t > 0.0:
 				_charge_t -= delta
 				if touching:
-					linear_velocity = Vector3(_charge_dir.x * 12.5, minf(linear_velocity.y, 0.5), _charge_dir.z * 12.5)
+					linear_velocity = Vector3(_charge_dir.x * 12.5 * _spd(), minf(linear_velocity.y, 0.5), _charge_dir.z * 12.5 * _spd())
 				angular_velocity = Vector3.ZERO
 				_face(_charge_dir, 0.4)
 				if dist < reach and _atk_cd <= 0.0:
@@ -630,6 +721,7 @@ func _fierce(delta: float, m: String, touching: bool) -> void:
 				speed = 5.5
 			elif m == "slither":
 				speed = 4.8
+			speed *= _spd()
 			_face(dir, 0.35)
 			if dist > reach * 0.8:
 				if touching:
@@ -645,29 +737,161 @@ func _fierce(delta: float, m: String, touching: bool) -> void:
 				angular_velocity = Vector3.ZERO
 			if dist < reach and absf(to.y) < 2.5 and _atk_cd <= 0.0:
 				_atk_cd = randf_range(1.1, 1.6)
+				if m == "slither" and world.island.is_water_habitat(str(Data.BEASTS[species]["habitat"])):
+					_atk_cd += 0.6
 				world.beast_bite(self, int(tp["peer"]), dmg)
 				BeastModels.play_attack(model)
 				if touching:
 					linear_velocity = -dir * 3.5 + Vector3.UP * 2.5
 
 
-## 凶暴的魂兽掉进水里：浮到水面，朝玩家游；泡太久就放弃逃走
+## 跑回老家了：以后就在附近转悠（还能再找到它、打它），有人靠近就跑开一段
+func _start_roam() -> void:
+	_roam = true
+	_roam_t = 0.0
+	_roam_to = global_position
+
+
+func _roam_tick(delta: float, m: String, touching: bool) -> void:
+	_roam_t -= delta
+	var np: Vector3 = world.nearest_player_pos(global_position)
+	var away := global_position - np
+	away.y = 0.0
+	var dir := Vector3.ZERO
+	var speed := 2.4
+	if away.length() < 9.0:
+		dir = away.normalized()
+		speed = 7.5 if temper != "bone" else 10.0
+		_roam_t = 0.0
+	else:
+		if _roam_t <= 0.0:
+			_roam_t = randf_range(3.0, 7.0)
+			var c := escape_target if escape_target != Vector3.ZERO else global_position
+			_roam_to = c + Vector3(randf_range(-10, 10), 0, randf_range(-10, 10))
+		var to := _roam_to - global_position
+		to.y = 0.0
+		if to.length() > 1.5:
+			dir = to.normalized()
+	if not touching:
+		return
+	if dir == Vector3.ZERO:
+		linear_velocity = Vector3(0, minf(linear_velocity.y, 0.5), 0)
+		angular_velocity = Vector3.ZERO
+		return
+	if m == "hop":
+		hop_timer -= delta
+		if hop_timer <= 0.0:
+			hop_timer = 0.45
+			linear_velocity = dir * (speed * 0.7) + Vector3.UP * 3.2
+	else:
+		linear_velocity = Vector3(dir.x * speed, minf(linear_velocity.y, 0.5), dir.z * speed)
+	angular_velocity = Vector3.ZERO
+	_face(dir, 0.25)
+
+
+## 精英：在老家附近守着；有人走近 20 米或者打了它就追着打；人跑出 45 米就回老家慢慢回血
+func _elite(delta: float, m: String, touching: bool) -> void:
+	_aggro_t = maxf(_aggro_t - delta, 0.0)
+	var home := spawn_pos
+	var tp: Dictionary = world.nearest_player(global_position)
+	var fight := false
+	if not tp.is_empty():
+		var tpos: Vector3 = tp["pos"]
+		var near := tpos.distance_to(global_position) < 20.0
+		var leashed := Vector2(tpos.x - home.x, tpos.z - home.z).length() > 45.0
+		fight = (near or _aggro_t > 0.0) and not leashed
+	if fight:
+		_fierce(delta, m, touching)
+		return
+	var to := home - global_position
+	if m in ["fly", "flutter"]:
+		gravity_scale = 0.0
+		linear_velocity = linear_velocity.lerp((to + Vector3.UP * 3.0).limit_length(6.0), 1.0 - exp(-2.0 * delta))
+		angular_velocity = angular_velocity.lerp(Vector3.ZERO, 1.0 - exp(-6.0 * delta))
+	else:
+		to.y = 0.0
+		if touching:
+			if to.length() > 2.5:
+				var dir := to.normalized()
+				linear_velocity = Vector3(dir.x * 5.0, minf(linear_velocity.y, 0.5), dir.z * 5.0)
+				_face(dir, 0.2)
+			else:
+				linear_velocity = Vector3(0, minf(linear_velocity.y, 0.5), 0)
+			angular_velocity = Vector3.ZERO
+	if to.length() < 4.0:
+		hp = minf(hp + max_hp * 0.04 * delta, max_hp)
+
+
+## 凶暴的魂兽在水里：水里的魂兽（鱼、鲨、鬼藤）贴着水面飞快游过来，
+## 离人近了就从水里扑出来咬；陆上的魂兽掉进水里就狗刨着往人那边游，泡太久放弃逃走
 func _swim(delta: float) -> void:
 	_water_t += delta
-	if _water_t > 12.0:
+	_atk_cd -= delta
+	var native: bool = world.island.is_water_habitat(str(Data.BEASTS[species]["habitat"]))
+	if not native and _water_t > 20.0 and temper != "elite":
 		world.beast_escaped(self, "splash")
 		return
+	if life > FIERCE_GIVE_UP:
+		world.beast_escaped(self, "timeout")
+		return
+	if _swoop_t > 0.0:
+		# 正在扑出水面：交给物理，别马上拉回水里
+		_swoop_t -= delta
+		gravity_scale = G_RISE
+		return
+	state = State.FLEE
 	gravity_scale = 0.2
 	var tp: Dictionary = world.nearest_player(global_position)
-	var dir := Vector3.ZERO
-	if not tp.is_empty():
-		dir = Vector3(tp["pos"].x - global_position.x, 0, tp["pos"].z - global_position.z).normalized()
-	var v := dir * 3.2
-	v.y = (Island.WATER_Y - 0.25 - global_position.y) * 3.0
+	if not (temper == "fierce" or temper == "elite"):
+		# 不凶的陆地魂兽掉进水里：往岸上（离人远的方向）游，不会凭空消失
+		var np2: Vector3 = world.nearest_player_pos(global_position)
+		var aw: Vector3 = global_position - np2
+		aw.y = 0.0
+		var hv := (spawn_pos - global_position)
+		hv.y = 0.0
+		var d: Vector3 = (hv.normalized() + aw.normalized() * 0.5).normalized() * 3.0
+		d.y = (Island.WATER_Y + 0.02 - global_position.y) * 3.0
+		linear_velocity = linear_velocity.lerp(d, 1.0 - exp(-3.0 * delta))
+		angular_velocity = Vector3.ZERO
+		return
+	if tp.is_empty():
+		_no_target_t += delta
+		if _no_target_t > 10.0:
+			world.beast_escaped(self, "splash")
+		linear_velocity = linear_velocity.lerp(Vector3(0, (Island.WATER_Y - 0.4 - global_position.y) * 3.0, 0), 1.0 - exp(-3.0 * delta))
+		return
+	_no_target_t = 0.0
+	var tpos: Vector3 = tp["pos"]
+	var flat := Vector3(tpos.x - global_position.x, 0, tpos.z - global_position.z)
+	var dist := flat.length()
+	var dir := flat.normalized() if dist > 0.01 else -global_basis.z
+	var s: float = Data.AGES[age]["scale"]
+	var reach: float = 1.3 + BeastModels.body_size(species).z * s * 0.45
+	var dmg: float = float(Data.BEASTS[species].get("hurt", 8.0)) * (1.0 + age * 0.5) * _dmgk()
+	var speed := (7.5 if native else 3.2) * (1.0 + age * 0.1) * _spd()
+	var v := dir * speed
+	# 贴着水面游（背鳍露出来）；绕着人转一点，不是直线撞过来
+	v += dir.cross(Vector3.UP) * sin(life * 1.7 + id) * speed * 0.35
+	v.y = (Island.WATER_Y + 0.02 - global_position.y) * 4.0
 	linear_velocity = linear_velocity.lerp(v, 1.0 - exp(-4.0 * delta))
 	angular_velocity = Vector3.ZERO
-	if dir != Vector3.ZERO:
-		_face(dir, 0.2)
+	_face(dir, 0.25)
+	# 扑出水面咬人
+	if native and _atk_cd <= 0.0 and dist < 9.0 + reach:
+		_atk_cd = randf_range(2.2, 3.2)
+		var up := 5.5 + dist * 0.25
+		linear_velocity = dir * clampf(dist * 1.6, 6.0, 14.0) + Vector3.UP * up
+		state = State.AIR
+		air_hits = 0
+		_swoop_t = 0.45
+		gravity_scale = G_RISE
+		BeastModels.play_attack(model)
+		world.fx.splash(Vector3(global_position.x, Island.WATER_Y, global_position.z), true)
+		Sfx.play_at("splash_big", global_position, -2.0, 0.1)
+	elif dist < reach and absf(tpos.y - global_position.y) < 2.5 and _atk_cd <= 0.0:
+		_atk_cd = 1.5
+		world.beast_bite(self, int(tp["peer"]), dmg)
+		BeastModels.play_attack(model)
 
 
 func _attack_then_flee(delta: float, m: String, touching: bool) -> void:
@@ -702,12 +926,16 @@ func _attack_then_flee(delta: float, m: String, touching: bool) -> void:
 
 
 func _run_to_escape(_delta: float, touching: bool, speed: float, habitat: String) -> void:
+	speed *= _spd()
 	if escape_target == Vector3.ZERO or escape_target.distance_to(spawn_pos) < 0.01:
 		escape_target = world.island.escape_point(habitat, global_position)
 	var to := escape_target - global_position
 	to.y = 0
 	if to.length() < 2.0:
-		world.beast_escaped(self, "burrow")
+		if is_land_beast():
+			_start_roam()
+		else:
+			world.beast_escaped(self, "burrow")
 		return
 	if touching:
 		var dir := to.normalized()
@@ -753,18 +981,20 @@ func _process(delta: float) -> void:
 	var ring := aura.get_node("Ring")
 	ring.position.y = sin(_anim_t * 3.0) * 0.06
 	var s: float = Data.AGES[age]["scale"]
-	_hp_label.global_position = global_position + Vector3(0, BeastModels.label_height(species) * s, 0)
+	_hp_label.global_position = global_position + Vector3(0, BeastModels.label_height(species) * s * size_k, 0)
 	var tag := ""
 	var tn: String = Data.TEMPERS[temper]["name"]
 	if tn != "":
 		tag += " [%s]" % tn
+	if not affixes.is_empty():
+		tag += " %s%s" % [Data.affix_names(affixes), "！" if _frenzy_on else ""]
 	if flags & FLAG_MARK:
 		tag += " 易伤"
 	if flags & FLAG_ROOT:
 		tag += " 缠绕"
 	if flags & FLAG_BURN:
 		tag += " 灼烧"
-	_hp_label.text = "%s · %s  %d%s" % [Data.age_name(age), Data.BEASTS[species]["name"], ceili(maxf(hp, 0.0)), tag]
+	_hp_label.text = "%s · %s  %d%s" % [Data.age_name(age), display_name(), ceili(maxf(hp, 0.0)), tag]
 	_update_status_fx()
 
 

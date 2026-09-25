@@ -25,6 +25,10 @@ var pitch := 0.0
 var _dead := false
 var _flags := 0
 var _scale := 1.0
+var _robe_parts: Array = []
+var _accent_parts: Array = []
+var _hat: Node3D
+var _look := ""
 var _flash := [0.0, 0.0, 0.0]
 
 
@@ -54,12 +58,13 @@ func setup(p_world: Node, id: int, p_info: Dictionary) -> void:
 	leg_r = _limb(body, Vector3(0.12, 0.62, 0), robe, 0.09, 0.62)
 	arm_l = _limb(body, Vector3(-0.33, 1.38, 0), robe, 0.07, 0.56)
 	arm_r = _limb(body, Vector3(0.33, 1.38, 0), robe, 0.07, 0.56)
-	for id2 in Data.WEAPON_ORDER:
-		var w := WeaponModels.build_small(id2)
-		w.position = Vector3(0, -0.52, -0.15)
-		w.visible = false
-		arm_r.add_child(w)
-		weapons[id2] = w
+	for mi in body.find_children("*", "MeshInstance3D", true, false):
+		if (mi as MeshInstance3D).material_override == robe:
+			_robe_parts.append(mi)
+		elif (mi as MeshInstance3D).material_override == accent:
+			_accent_parts.append(mi)
+	_hat = Node3D.new()
+	head.add_child(_hat)
 	var coil := U.part(arm_l, U.torus(0.07, 0.09, 20, 6), U.glow(Color(0.45, 0.8, 1.0), 2.5), Vector3(0, -0.4, 0))
 	coil.rotation.x = PI / 2
 	ring_root = Node3D.new()
@@ -78,6 +83,7 @@ func setup(p_world: Node, id: int, p_info: Dictionary) -> void:
 
 func set_info(p_info: Dictionary) -> void:
 	info = p_info
+	_apply_look(str(info.get("outfit", "default")), str(info.get("skin", "default")))
 	label.text = "%s\n%d 级%s" % [str(info.get("name", "魂师")), int(info.get("level", 1)), Data.titles(int(info.get("level", 1)))]
 	for c in ring_root.get_children():
 		c.queue_free()
@@ -87,6 +93,44 @@ func set_info(p_info: Dictionary) -> void:
 		var col := Data.age_color(int(rs[i]))
 		var r := U.part(ring_root, U.torus(0.55, 0.62, 40, 6), U.glow(col, 2.0), Vector3(0, 0.25 + i * 0.35, 0), Vector3.ZERO, Vector3.ONE, false)
 		r.name = "R%d" % i
+
+
+## 装扮（长袍颜色、点缀、帽子）和手里暗器的皮肤
+func _apply_look(outfit: String, skin: String) -> void:
+	var key := outfit + "|" + skin
+	if key == _look:
+		return
+	_look = key
+	var of: Dictionary = Data.OUTFITS.get(outfit, Data.OUTFITS["default"])
+	var robe := U.mat(of["robe"], 0.8, 0.0, 0.5 if outfit == "gold" else 0.0)
+	for mi in _robe_parts:
+		(mi as MeshInstance3D).material_override = robe
+	if of.has("accent"):
+		var acc := U.mat(of["accent"], 0.5, 0.6 if outfit == "flame" else 0.0, 0.6)
+		for mi in _accent_parts:
+			(mi as MeshInstance3D).material_override = acc
+	for c in _hat.get_children():
+		c.queue_free()
+	match str(of.get("hat", "")):
+		"douli":
+			U.part(_hat, U.cyl(0.03, 0.42, 0.18, 16), U.mat(Color(0.72, 0.6, 0.38), 0.9), Vector3(0, 0.2, 0))
+		"hood":
+			U.part(_hat, U.sphere(0.24, 14, 10), robe, Vector3(0, 0.04, 0.05), Vector3.ZERO, Vector3(1.05, 1.0, 1.1))
+		"crown":
+			var gold := U.mat(Color(1.0, 0.82, 0.35), 0.25, 0.4, 0.9)
+			U.part(_hat, U.torus(0.15, 0.2, 20, 6), gold, Vector3(0, 0.2, 0))
+			for k in 6:
+				var a := TAU * k / 6.0
+				U.part(_hat, U.cyl(0.0, 0.03, 0.09, 6), gold, Vector3(cos(a) * 0.17, 0.26, sin(a) * 0.17))
+	for id2 in weapons:
+		(weapons[id2] as Node).queue_free()
+	weapons.clear()
+	for id2 in Data.WEAPON_ORDER:
+		var w := WeaponModels.build_small(id2, skin)
+		w.position = Vector3(0, -0.52, -0.15)
+		w.visible = false
+		arm_r.add_child(w)
+		weapons[id2] = w
 
 
 func flash_ring(slot: int) -> void:

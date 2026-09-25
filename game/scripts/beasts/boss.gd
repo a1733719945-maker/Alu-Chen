@@ -57,6 +57,12 @@ var _mark_t := 0.0
 var _mark_mult := 1.0
 var _no_target_t := 0.0
 var _halo: Node3D
+var _sp_cd := 5.0                # 特殊招式（延迟重击 / 冲击环 / 连扫）冷却
+var _combo_n := 0
+var _combo_t := 0.0
+var _combo_peer := 0
+var _ult_cd := 0.0               # 二阶段全场大招
+var _ult_ready := false
 var _soul_rings: Array = []
 var _pillar: MeshInstance3D
 
@@ -190,7 +196,7 @@ func _build() -> void:
 
 ## 让 Boss 看起来威猛、有神圣感：
 ##   材质变暗、更有光泽，外面再叠一层流动的金色能量 + 边缘光（HOLY_SHADER）；
-##   身上四个魂环（三个千年紫、一个万年黑红）；头后面一圈圣光光轮；天上照下来一道光柱；金色光点往上飘；眼睛发光
+##   一个加粗发亮的年份魂环（魂兽只有一个魂环）；头后面一圈圣光光轮；天上照下来一道光柱；金色光点往上飘；眼睛发光
 func _decorate() -> void:
 	var holy := ShaderMaterial.new()
 	holy.shader = Shader.new()
@@ -218,8 +224,12 @@ func _decorate() -> void:
 			mi.set_surface_override_material(i, m)
 	var c := _box.get_center()
 	var big := maxf(size.x, size.z)
-	# 魂环
-	var ages := [2, 2, 2, 3]
+	# 魂兽只有一个魂环（代表它的年份）：就是 _build 里那一圈，这里只把它加粗、加亮
+	var ring0 := head.get_node("Ring") as MeshInstance3D
+	var rr0 := big * 0.6
+	ring0.mesh = U.torus(rr0 - 0.3, rr0 + 0.3, 96, 10)
+	ring0.material_override = U.glow(Data.age_color(int(cfg.get("age", 2))), 6.0)
+	var ages: Array = []
 	for i in ages.size():
 		var col := Data.age_color(ages[i])
 		var rr := big * (0.62 + i * 0.05)
@@ -313,6 +323,7 @@ func take_hit(dmg: float, weak: bool, shooter: int) -> float:
 	damagers[shooter] = float(damagers.get(shooter, 0.0)) + real
 	if hp <= max_hp * 0.5 and phase == 1:
 		phase = 2
+		_ult_ready = true
 		world.boss_phase2()
 	if hp <= 0.0:
 		hp = 0.0
@@ -452,6 +463,7 @@ func _think(dt: float) -> void:
 			return
 	else:
 		_no_target_t = 0.0
+		_moves(dt)
 	var speed_k := 0.5 if _root_t > 0.0 else (1.35 if phase == 2 else 1.0)
 	_root_t = maxf(_root_t - dt, 0.0)
 	match ai:
@@ -461,6 +473,92 @@ func _think(dt: float) -> void:
 			_think_air(dt, speed_k)
 		_:
 			_think_land(dt, speed_k)
+
+
+## 新招式（学黑神话 / 艾尔登法环）：看起手、踩节奏翻滚才能躲
+##   延迟重击：起手时长不固定，红圈只在最后 0.35 秒出现
+##   冲击环：脚下扩散的红墙，跳过去或者翻滚穿过去（二阶段连着两圈）
+##   连扫：三～四下扇形横扫，每一下都重新对准人
+##   全场大招（二阶段）：一大片都砸，只有几个绿圈安全
+func _moves(dt: float) -> void:
+	_sp_cd -= dt
+	_ult_cd -= dt
+	var h := head.global_position
+	var o := Vector3(h.x, world.island.height_at(h.x, h.z), h.z)
+	if _combo_n > 0:
+		_combo_t -= dt
+		if _combo_t <= 0.0:
+			_combo_t = 0.75 if phase == 1 else 0.6
+			_combo_n -= 1
+			var tp := _target_by_peer(_combo_peer)
+			if not tp.is_empty():
+				world.boss_cone(o, (tp["pos"] as Vector3) - o, deg_to_rad(38.0), 12.0 + maxf(size.x, size.z) * 0.6, 0.5, 30.0)
+				BeastModels.play_role(model, "attack")
+		return
+	if state != "idle" and state != "dive_attack":
+		return
+	if phase == 2 and (_ult_ready or _ult_cd <= 0.0):
+		_ult_ready = false
+		_ult_cd = 45.0
+		_ultimate()
+		return
+	if _sp_cd > 0.0:
+		return
+	_sp_cd = randf_range(6.0, 9.0) if phase == 1 else randf_range(4.0, 6.0)
+	_atk_cd = maxf(_atk_cd, 2.0)
+	var tp2 := _pick_target()
+	if tp2.is_empty():
+		return
+	var r := randf()
+	if r < 0.35:
+		world.boss_shockwave(o, 42.0, 11.0 if phase == 1 else 14.0, 26.0)
+		BeastModels.play_role(model, "attack")
+		if phase == 2:
+			get_tree().create_timer(0.9).timeout.connect(func():
+				if not dead:
+					world.boss_shockwave(o, 42.0, 14.0, 26.0))
+	elif r < 0.7:
+		var delay := randf_range(1.0, 2.0)
+		world.boss_telegraph(tp2["pos"], 5.5, delay, 42.0, "slam", h, true)
+		get_tree().create_timer(delay - 0.2).timeout.connect(func():
+			if not dead:
+				BeastModels.play_role(model, "attack"))
+	else:
+		_combo_n = 3 if phase == 1 else 4
+		_combo_t = 0.3
+		_combo_peer = int(tp2["peer"])
+
+
+func _target_by_peer(peer: int) -> Dictionary:
+	for p in _targets():
+		if int(p["peer"]) == peer:
+			return p
+	return _pick_target()
+
+
+func _ultimate() -> void:
+	var ps := _targets()
+	if ps.is_empty():
+		return
+	var c := Vector3.ZERO
+	for p in ps:
+		c += p["pos"]
+	c /= ps.size()
+	c.y = world.island.height_at(c.x, c.z)
+	var safes: Array = []
+	for k in 3:
+		for tries in 20:
+			var a := randf() * TAU
+			var rr := randf_range(7.0, 14.0)
+			var q := c + Vector3(cos(a) * rr, 0, sin(a) * rr)
+			if world.island.is_land(q.x, q.z):
+				q.y = world.island.height_at(q.x, q.z)
+				safes.append(q)
+				break
+	if safes.is_empty():
+		safes.append(c)
+	world.boss_ultimate(c, 32.0, safes, 4.0, 70.0)
+	BeastModels.play_role(model, "attack")
 
 
 func _summon_tick(dt: float) -> void:

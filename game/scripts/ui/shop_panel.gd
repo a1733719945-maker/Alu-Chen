@@ -1,6 +1,6 @@
 class_name ShopPanel
 extends ColorRect
-## 唐门暗器铺：买暗器、升级、买道具。
+## 唐门暗器铺：买暗器、升级、买道具和鱼饵、买外观（暗器皮肤、装扮）。
 
 signal closed
 
@@ -37,7 +37,7 @@ func _ready() -> void:
 	var tabs := HBoxContainer.new()
 	tabs.add_theme_constant_override("separation", 8)
 	v.add_child(tabs)
-	for t in [["weapons", "暗器"], ["upgrades", "升级"], ["items", "道具"]]:
+	for t in [["weapons", "暗器"], ["upgrades", "升级"], ["items", "道具 · 鱼饵"], ["looks", "外观"]]:
 		var b := UiKit.button(t[1], 20)
 		b.custom_minimum_size.x = 130
 		b.pressed.connect(func(): _tab = t[0]; refresh())
@@ -75,6 +75,13 @@ func refresh() -> void:
 		"items":
 			for id in Data.ITEMS:
 				_item_row(id)
+		"looks":
+			_list.add_child(UiKit.bold("暗器皮肤（所有暗器通用，队友也看得到）", 20, UiKit.JADE))
+			for id in Data.GUN_SKIN_ORDER:
+				_look_row("skin", id)
+			_list.add_child(UiKit.bold("装扮（长袍和帽子，第一人称能看到袖子）", 20, UiKit.JADE))
+			for id in Data.OUTFIT_ORDER:
+				_look_row("outfit", id)
 
 
 func _row() -> HBoxContainer:
@@ -95,7 +102,6 @@ func _weapon_row(id: String) -> void:
 	h.add_child(v)
 	var t := HBoxContainer.new()
 	t.add_child(UiKit.title(str(w["name"]), 30, UiKit.MOON))
-	t.add_child(UiKit.label("  " + str(w["cat"]), 17, UiKit.JADE))
 	v.add_child(t)
 	var d := UiKit.label(str(w["desc"]), 16, UiKit.MIST)
 	d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -103,8 +109,11 @@ func _weapon_row(id: String) -> void:
 	var pellets := int(w["pellets"])
 	var dmg := ("%d×%d" % [int(w["damage"]), pellets]) if pellets > 1 else str(int(w["damage"]))
 	v.add_child(UiKit.label("伤害 %s · 射速 %d/分 · 弹匣 %d · 爆头 ×%.1f" % [dmg, int(w["rpm"]), int(w["mag"]), float(w["headshot"])], 15, UiKit.MOON))
+	var unlock := int(Data.WEAPON_UNLOCK.get(id, 1))
 	if Profile.has_weapon(id):
 		h.add_child(UiKit.label("已拥有", 20, UiKit.JADE))
+	elif int(world.chapter) < unlock:
+		h.add_child(UiKit.label("第%s章开放" % Data.RING_NAMES[unlock - 1], 18, UiKit.MIST))
 	else:
 		var b := UiKit.button("%d 金魂币 购买" % int(w["price"]), 20, true)
 		b.disabled = Profile.money < int(w["price"])
@@ -145,6 +154,48 @@ func _upgrade_block(id: String) -> void:
 					world.on_upgraded(id)
 				refresh())
 			h.add_child(b)
+
+
+func _look_row(kind: String, id: String) -> void:
+	var d: Dictionary = (Data.GUN_SKINS if kind == "skin" else Data.OUTFITS)[id]
+	var h := _row()
+	# 色块预览
+	var sw := ColorRect.new()
+	sw.custom_minimum_size = Vector2(46, 46)
+	var pal: Dictionary = d.get("pal", {})
+	sw.color = (pal.get("lacquer", Color(0.32, 0.05, 0.05)) as Color) if kind == "skin" else (d["robe"] as Color)
+	h.add_child(sw)
+	var v := VBoxContainer.new()
+	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	h.add_child(v)
+	v.add_child(UiKit.label(str(d["name"]), 20, UiKit.MOON))
+	v.add_child(UiKit.label(str(d.get("desc", "")), 15, UiKit.MIST))
+	var worn := (Profile.skin if kind == "skin" else Profile.outfit) == id
+	if worn:
+		h.add_child(UiKit.label("穿着", 18, UiKit.JADE))
+	elif Profile.owns_look(kind, id):
+		var b := UiKit.button("换上", 18, true)
+		b.pressed.connect(func():
+			Profile.wear(kind, id)
+			Sfx.play("switch", -4.0)
+			world.on_look_changed()
+			refresh())
+		h.add_child(b)
+	elif d.has("boss"):
+		h.add_child(UiKit.label("打 Boss 解锁", 16, UiKit.MIST))
+	elif d.has("codex"):
+		h.add_child(UiKit.label("集齐猎魂录解锁", 16, UiKit.MIST))
+	else:
+		var b2 := UiKit.button("%d 金魂币" % int(d["price"]), 18, true)
+		b2.disabled = Profile.money < int(d["price"])
+		b2.pressed.connect(func():
+			if Profile.buy_look(kind, id):
+				Profile.wear(kind, id)
+				Sfx.play("coin", -2.0)
+				world.on_look_changed()
+				world.hud.toast("买到了【%s】，已经换上" % d["name"], UiKit.GOLD)
+			refresh())
+		h.add_child(b2)
 
 
 func _item_row(id: String) -> void:

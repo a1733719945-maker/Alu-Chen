@@ -103,9 +103,23 @@ var _cs: CollisionShape3D
 # 暗器：倒地掉在地上的（lost）、从地上捡来的队友的（borrowed：id -> 主人）
 var lost_guns: Array = []
 var borrowed := {}
-var bag_sel := 0
-var _t_hold := -1.0
-var _t_scrolled := false
+# 物品栏（数字键）：1 主暗器（再按 1 换别的主暗器）/ 2 袖箭 / 3 佛怒唐莲 / 4 回血丹 / 5 没装上的魂骨
+const SLOT_NAMES := ["主暗器", "袖箭", "佛怒唐莲", "回血丹", "魂骨"]
+var slot := 1
+var _last_gun_slot := 1
+var _spare_idx := 0
+var _primary_pick := ""          # 上次拿的主暗器
+var _slot4 := "pill"             # 4 号位现在拿的是回血丹还是烤肉
+var _starve_t := 0.0
+var _climb_t := 0.0
+var _ctrl_t := -1.0              # Ctrl 按下多久（轻点 = 翻滚，按住 = 蹲）
+var _roll_t := 0.0
+var _roll_cd := 0.0
+var _roll_dir := Vector3.ZERO
+var _poison_t := 0.0
+var _poison_dps := 0.0
+var _poison_tick := 0.0
+var _food_warn := 0
 
 
 func _ready() -> void:
@@ -184,7 +198,11 @@ func rebuild_guns() -> void:
 		if guns[i].id == keep_id:
 			gun_idx = i
 	gun = guns[gun_idx]
-	viewmodel.set_weapon(gun.id, true)
+	if slot >= 2 and slot_ready(slot):
+		_show_slot_item()
+	else:
+		slot = 1 if gun.id == "xiujian" else 0
+		viewmodel.set_weapon(gun.id, true)
 	weapon_changed.emit(gun)
 	ammo_changed.emit(gun)
 
@@ -267,6 +285,7 @@ func revive() -> void:
 	dead = false
 	carried = false
 	hp = Profile.max_hp()
+	Profile.food = maxf(Profile.food, 40.0)
 	shield = 0.0
 	soul = Profile.max_soul()
 	air = max_air()
@@ -351,49 +370,6 @@ func pick_gun(id: String, owner: int) -> void:
 			switch_weapon(i)
 
 
-## 背包里能丢出去的东西（按 T）
-func bag_entries() -> Array:
-	var out: Array = []
-	for id in borrowed:
-		out.append({"kind": "gun", "key": id, "n": 1, "owner": int(borrowed[id])})
-	for k in Profile.bag:
-		out.append({"kind": "mat", "key": k, "n": int(Profile.bag[k])})
-	for b in Profile.bones:
-		out.append({"kind": "bone", "key": b, "n": 1, "on": Profile.is_equipped(b)})
-	for it in ["pill", "grenade"]:
-		if Profile.item_count(it) > 0:
-			out.append({"kind": "item", "key": it, "n": Profile.item_count(it)})
-	for g in guns:
-		if g.id != "xiujian" and not borrowed.has(g.id):
-			out.append({"kind": "gun", "key": g.id, "n": 1, "owner": Net.my_id})
-	return out
-
-
-func _throw_selected() -> void:
-	var es := bag_entries()
-	if es.is_empty():
-		world.hud.toast("背包是空的。打死魂兽掉的素材、魂骨走过去就能捡", Color(0.85, 0.85, 0.85))
-		return
-	bag_sel = clampi(bag_sel, 0, es.size() - 1)
-	var e: Dictionary = es[bag_sel]
-	match str(e["kind"]):
-		"mat":
-			if not Profile.take_mat(str(e["key"])):
-				return
-		"bone":
-			if not Profile.remove_bone(str(e["key"])):
-				return
-			on_bones_changed()
-		"item":
-			if not Profile.use_item(str(e["key"])):
-				return
-		"gun":
-			_remove_gun(str(e["key"]))
-			rebuild_guns()
-	world.loot.throw_entry(e, cam.global_position, aim_dir(), velocity)
-	viewmodel.throw_anim()
-
-
 # ------------------------------------------------------------------ 魂技位移
 
 func start_giant(scale_to: float, dur: float) -> void:
@@ -453,7 +429,11 @@ func _ads_sens_factor() -> float:
 	# 开镜后按视野缩放，保证"屏幕上移动同样距离需要的鼠标距离"一致
 	var cur := deg_to_rad(cam.fov) * 0.5
 	var hip := deg_to_rad(_hip_vfov) * 0.5
-	return tan(cur) / tan(hip) * lerpf(1.0, Settings.ads_sensitivity, ads)
+	var k := tan(cur) / tan(hip) * lerpf(1.0, Settings.ads_sensitivity, ads)
+	if scoped:
+		# 狙击镜是画中画，主画面没怎么放大：按倍率降灵敏度，镜子里瞄得住
+		k *= clampf(2.2 / Settings.scope_zoom, 0.15, 1.0)
+	return k
 
 
 ## 狙击镜的晃动（度）：按住 Shift 屏息 4 秒会稳住
@@ -496,7 +476,9 @@ func _physics_process(dt: float) -> void:
 	_strafe = input.x
 	var crouching := can_move and Input.is_action_pressed("crouch")
 	crouch_k = move_toward(crouch_k, 1.0 if crouching and fly_t <= 0.0 and not swimming else 0.0, dt / 0.12)
-	var sprinting := can_move and Input.is_action_pressed("sprint") and input.y < -0.3 and ads < 0.3 and not crouching and not gun.reloading
+	# 跑的时候按左键 / 右键：马上停下来开枪 / 开镜
+	var sprinting := can_move and Input.is_action_pressed("sprint") and input.y < -0.3 and ads < 0.3 and not crouching and not gun.reloading \
+		and not Input.is_action_pressed("fire") and not Input.is_action_pressed("aim")
 	sprint_k = move_toward(sprint_k, 1.0 if sprinting and is_on_floor() else 0.0, dt / 0.15)
 	var max_speed := WALK_SPEED
 	if sprinting:
@@ -513,6 +495,22 @@ func _physics_process(dt: float) -> void:
 	var hv := Vector3(velocity.x, 0, velocity.z)
 	var jump_held := can_move and Input.is_action_pressed("jump")
 	var jump_pressed := can_move and Input.is_action_just_pressed("jump")
+	# 翻滚：移动中轻点 Ctrl。翻滚的前 0.36 秒无敌（躲 Boss 的重击、横扫、冲击环）
+	_roll_cd -= dt
+	if can_move and Input.is_action_just_pressed("crouch"):
+		_ctrl_t = 0.0
+	if _ctrl_t >= 0.0:
+		_ctrl_t += dt
+		if not Input.is_action_pressed("crouch"):
+			if _ctrl_t < 0.22 and wish.length() > 0.1 and _roll_cd <= 0.0 and is_on_floor() and fly_t <= 0.0:
+				_roll_dir = wish.normalized()
+				_roll_t = 0.42
+				_roll_cd = 0.9
+				invuln_t = maxf(invuln_t, 0.36)
+				Sfx.play("jump", -4.0, 0.05, 0.7)
+				viewmodel.land(0.5)
+				_punch_v.z += 45.0 * (1.0 if _roll_dir.dot(Basis(Vector3.UP, yaw) * Vector3.RIGHT) > 0.0 else -1.0)
+			_ctrl_t = -1.0
 
 	# 水：脚下是深水，身子泡进去了就是在游泳（不会浮在水面上走）
 	var ground: float = world.island.height_at(global_position.x, global_position.z)
@@ -525,6 +523,7 @@ func _physics_process(dt: float) -> void:
 		Sfx.play("splash_big" if velocity.y < -8.0 else "splash_small", -2.0, 0.1)
 	_was_wet = wet
 
+	_climb_t = maxf(_climb_t - dt, 0.0)
 	if _grapple_t > 0.0:
 		# 蓝银飞索：直线拉过去
 		_grapple_t -= dt
@@ -556,13 +555,16 @@ func _physics_process(dt: float) -> void:
 			vy = -3.2
 		if input.y < -0.3:
 			vy += aim_dir().y * sw * 0.8
-		# 头最多露出水面一点点
-		if global_position.y + eye_h > Island.WATER_Y + 0.35 and vy > 0.0:
+		# 头最多露出水面一点点（爬岸的时候不限）
+		if global_position.y + eye_h > Island.WATER_Y + 0.35 and vy > 0.0 and _climb_t <= 0.0:
 			vy = 0.0
 		velocity.y = move_toward(velocity.y, vy, 10.0 * dt)
-		# 靠岸按空格爬上去
-		if jump_pressed and is_on_wall() and global_position.y + eye_h > Island.WATER_Y - 0.3:
-			velocity.y = JUMP_VELOCITY * 0.85
+		# 靠岸：顶着岸往前游或者按空格，就能爬上去（岸再陡也能出来）
+		var pushing := is_on_wall() and (jump_held or (wish.length() > 0.1 and wish.dot(get_wall_normal()) < -0.3))
+		if pushing:
+			_climb_t = 0.7
+			velocity.y = 5.5
+			hv = hv.move_toward(-get_wall_normal() * 2.5, 30.0 * dt)
 		_coyote = 0.0
 	elif is_on_floor():
 		_coyote = COYOTE_TIME
@@ -578,10 +580,16 @@ func _physics_process(dt: float) -> void:
 			var target := wish * maxf(max_speed, hv.length())
 			hv = hv.move_toward(target, AIR_ACCEL * dt)
 		velocity.y -= GRAVITY * dt * (0.8 if wet else 1.0)
+		# 刚从水里爬上岸：还顶着岸就继续往上
+		if _climb_t > 0.0 and is_on_wall() and wish.length() > 0.1 and wish.dot(get_wall_normal()) < -0.2:
+			velocity.y = maxf(velocity.y, 5.0)
 		# 魂骨：滑翔
 		if jump_held and velocity.y < -2.0 and Profile.bone_bonus("glide") > 0.0:
 			velocity.y = move_toward(velocity.y, -2.0, 60.0 * dt)
 			hv = hv.move_toward(wish * max_speed * 1.25, AIR_ACCEL * 1.5 * dt)
+	if _roll_t > 0.0:
+		_roll_t -= dt
+		hv = _roll_dir * lerpf(6.0, 12.5, _roll_t / 0.42)
 	# 浅水：走得慢
 	if not swimming and global_position.y < Island.WATER_Y + 0.1 and ground < Island.WATER_Y - 0.2:
 		hv *= 1.0 - clampf((Island.WATER_Y - ground) * 0.25, 0.0, 0.5) * dt * 8.0
@@ -658,48 +666,38 @@ func _process(dt: float) -> void:
 			_throw_grenade()
 		if Input.is_action_just_pressed("pill"):
 			_use_pill()
-		_throw_input(dt)
+		if Input.is_action_just_pressed("throw"):
+			_drop_current()
+		if Input.is_action_just_pressed("bait"):
+			cycle_bait()
 	if input_enabled and not dead and Input.is_action_just_pressed("interact"):
-		world.interact()
+		# F：旁边有能交互的（店、祭坛、魂环、救人）就交互，没有就放辅助魂技
+		if not world.nearest_interactable().is_empty():
+			world.interact()
+		elif active:
+			world.skills.cast_cat("support")
 	if not active and world.hud.wheel_open():
 		world.hud.close_wheel()
 		_q_t = -1.0
 
 
-## T：轻按把选中的东西丢出去；按住 T 滚鼠标滚轮换要丢的东西
-func _throw_input(dt: float) -> void:
-	if Input.is_action_just_pressed("throw"):
-		_t_hold = 0.0
-		_t_scrolled = false
-	if _t_hold < 0.0:
-		return
-	if Input.is_action_pressed("throw"):
-		_t_hold += dt
-	else:
-		if not _t_scrolled:
-			_throw_selected()
-		_t_hold = -1.0
+## 魂技：Q 攻击魂技，双击 Shift 位移魂技（F 辅助魂技在交互那里）。不用选，自动放能放的
+var _shift_t := -9.0
 
 
-func bag_open() -> bool:
-	return _t_hold >= 0.0 and input_enabled
-
-
-## Q：轻按放当前魂技；按住弹出魂技轮盘，移动鼠标选，松开就放
-func _skill_input(dt: float) -> void:
+func _skill_input(_dt: float) -> void:
+	var now := Time.get_ticks_msec() / 1000.0
 	if Input.is_action_just_pressed("skill"):
-		_q_t = 0.0
-	if _q_t < 0.0:
-		return
-	if Input.is_action_pressed("skill"):
-		_q_t += dt
-		if _q_t > WHEEL_HOLD and Profile.rings.size() >= 2 and not world.hud.wheel_open():
-			world.hud.open_wheel(world.skills.current)
-	else:
-		_q_t = -1.0
-		if world.hud.wheel_open():
-			world.skills.current = world.hud.close_wheel()
-		world.skills.cast(world.skills.current)
+		world.skills.cast_cat("attack")
+	if Input.is_action_just_pressed("sprint"):
+		if now - _shift_t < 0.3:
+			world.skills.cast_cat("move")
+			_shift_t = -9.0
+		else:
+			_shift_t = now
+	var a: int = world.skills.pick("attack")
+	if a >= 0:
+		world.skills.current = a
 
 
 func _update_stats(dt: float) -> void:
@@ -759,10 +757,12 @@ func _update_stats(dt: float) -> void:
 		return
 	var max_hp := Profile.max_hp()
 	var regen := buff("regen") + (5.0 if buffs.has("all") else 0.0) + Profile.bone_bonus("regen")
-	if _since_hurt > REGEN_DELAY:
+	_update_food(dt)
+	_update_poison(dt)
+	if _since_hurt > REGEN_DELAY and Profile.food > 25.0:
 		regen += REGEN_RATE
 	hp = minf(hp + regen * dt, max_hp)
-	var soul_rate := 5.0 * (1.0 + buff("soul"))
+	var soul_rate := 5.0 * (1.0 + buff("soul")) * (0.5 if Profile.food < 25.0 else 1.0)
 	soul = minf(soul + soul_rate * dt, Profile.max_soul())
 	# 屏息
 	var holding := scoped and Input.is_action_pressed("sprint")
@@ -834,7 +834,7 @@ func _update_weapons(dt: float) -> void:
 	fire_buffer -= dt
 	switch_t -= dt
 	var active := input_enabled and not dead and busy_t <= 0.0
-	var want_ads := active and Input.is_action_pressed("aim") and switch_t <= 0.0 and sprint_k < 0.5 and not gun.reloading
+	var want_ads := active and Input.is_action_pressed("aim") and switch_t <= 0.0 and not gun.reloading and slot < 2
 	if want_ads and ads <= 0.0:
 		Sfx.play("ads_in", -6.0, 0.05)
 	ads = move_toward(ads, 1.0 if want_ads else 0.0, dt / float(gun.d["ads_time"]))
@@ -843,23 +843,31 @@ func _update_weapons(dt: float) -> void:
 	if not active:
 		return
 	for i in 5:
-		if Input.is_action_just_pressed("weapon_%d" % (i + 1)) and i < guns.size():
-			switch_weapon(i)
-	if bag_open():
-		# 按住 T 时滚轮换要丢的东西
-		var n := maxi(bag_entries().size(), 1)
-		if Input.is_action_just_pressed("weapon_next"):
-			bag_sel = (bag_sel + 1) % n
-			_t_scrolled = true
-			Sfx.play("ui_click", -10.0)
-		elif Input.is_action_just_pressed("weapon_prev"):
-			bag_sel = (bag_sel - 1 + n) % n
-			_t_scrolled = true
-			Sfx.play("ui_click", -10.0)
+		if Input.is_action_just_pressed("weapon_%d" % (i + 1)):
+			select_slot(i)
+	if scoped:
+		# 狙击镜开着：滚轮调倍率（往上放大），松开右键再开镜还是这个倍率
+		var z := Settings.scope_zoom
+		if Input.is_action_just_pressed("weapon_prev"):
+			z = minf(z * 1.25, 12.0)
+		elif Input.is_action_just_pressed("weapon_next"):
+			z = maxf(z / 1.25, 4.0)
+		if not is_equal_approx(z, Settings.scope_zoom):
+			Settings.scope_zoom = z
+			Settings.save_settings()
+			Sfx.play("ui_click", -8.0, 0.0, 1.4)
 	elif Input.is_action_just_pressed("weapon_next"):
-		switch_weapon((gun_idx + 1) % guns.size())
+		_cycle_slot(1)
 	elif Input.is_action_just_pressed("weapon_prev"):
-		switch_weapon((gun_idx - 1 + guns.size()) % guns.size())
+		_cycle_slot(-1)
+
+	if slot >= 2:
+		# 手上拿的是道具：左键使用（扔唐莲 / 吃药 / 装魂骨）
+		if not slot_ready(slot):
+			select_slot(_last_gun_slot)
+		elif Input.is_action_just_pressed("fire") and switch_t <= 0.0:
+			_use_slot_item()
+		return
 
 	if Input.is_action_just_pressed("reload"):
 		start_reload()
@@ -868,7 +876,9 @@ func _update_weapons(dt: float) -> void:
 		fire_buffer = FIRE_BUFFER
 	var auto: bool = gun.d["mode"] == "auto"
 	var trigger: bool = fire_buffer > 0.0 or (auto and Input.is_action_pressed("fire"))
-	if trigger and switch_t <= 0.0 and sprint_k < 0.6:
+	if trigger:
+		sprint_k = 0.0
+	if trigger and switch_t <= 0.0:
 		if gun.ammo <= 0 and not gun.reloading:
 			if Input.is_action_just_pressed("fire"):
 				Sfx.play("dry", -6.0)
@@ -879,17 +889,266 @@ func _update_weapons(dt: float) -> void:
 
 
 func switch_weapon(i: int) -> void:
-	if i == gun_idx or i < 0 or i >= guns.size():
+	if i < 0 or i >= guns.size() or (i == gun_idx and slot < 2):
 		return
 	gun.cancel_reload()
 	gun_idx = i
 	gun = guns[i]
+	slot = 1 if gun.id == "xiujian" else 0
+	_last_gun_slot = slot
 	switch_t = 0.3
 	ads = 0.0
 	viewmodel.set_weapon(gun.id)
 	Sfx.play("switch", -8.0)
 	weapon_changed.emit(gun)
 	ammo_changed.emit(gun)
+
+
+# ------------------------------------------------------------------ 物品栏
+
+## 主暗器（袖箭以外的）：拥有的 + 捡来的队友的
+func primaries() -> Array:
+	var out: Array = []
+	for g in guns:
+		if g.id != "xiujian":
+			out.append(g.id)
+	return out
+
+
+func spare_bones() -> Array:
+	return Profile.bones.filter(func(b): return not Profile.is_equipped(str(b)))
+
+
+func spare_bone() -> String:
+	var sp := spare_bones()
+	if sp.is_empty():
+		return ""
+	return str(sp[clampi(_spare_idx, 0, sp.size() - 1)])
+
+
+func slot_ready(i: int) -> bool:
+	match i:
+		0:
+			return not primaries().is_empty()
+		1:
+			return true
+		2:
+			return Profile.item_count("grenade") > 0
+		3:
+			return Profile.item_count("pill") > 0 or Profile.item_count("meat") > 0
+		4:
+			return not spare_bones().is_empty()
+	return false
+
+
+func _gun_index(id: String) -> int:
+	for i in guns.size():
+		if guns[i].id == id:
+			return i
+	return -1
+
+
+func select_slot(i: int) -> void:
+	if not slot_ready(i):
+		var why := ["还没有主暗器，去暗器铺买", "", "没有佛怒唐莲了", "没有回血丹了", "没有多余的魂骨（捡到的魂骨会先自动装上）"]
+		if str(why[i]) != "":
+			world.hud.toast(str(why[i]), Color(0.9, 0.9, 0.9), 1.6)
+		return
+	match i:
+		0:
+			# 已经拿着主暗器再按 1：换下一把主暗器
+			var ps := primaries()
+			if slot == 0 and ps.size() > 1:
+				var cur := ps.find(gun.id)
+				switch_weapon(_gun_index(str(ps[(cur + 1) % ps.size()])))
+			elif slot != 0:
+				var want := _primary_pick if _primary_pick in ps else str(ps[0])
+				switch_weapon(_gun_index(want))
+		1:
+			switch_weapon(_gun_index("xiujian"))
+		_:
+			if i == 4 and slot == 4:
+				_spare_idx = (_spare_idx + 1) % maxi(spare_bones().size(), 1)
+			elif i == 3 and slot == 3 and Profile.item_count("pill") > 0 and Profile.item_count("meat") > 0:
+				_slot4 = "meat" if _slot4 == "pill" else "pill"
+			elif slot == i:
+				return
+			if slot < 2:
+				_last_gun_slot = slot
+			gun.cancel_reload()
+			slot = i
+			ads = 0.0
+			switch_t = 0.25
+			_show_slot_item()
+			Sfx.play("switch", -10.0, 0.05, 1.2)
+	if slot == 0:
+		_primary_pick = gun.id
+
+
+func _show_slot_item() -> void:
+	match slot:
+		2:
+			viewmodel.show_item("item", "grenade")
+		3:
+			if Profile.item_count(_slot4) <= 0:
+				_slot4 = "meat" if _slot4 == "pill" else "pill"
+			viewmodel.show_item("item", _slot4)
+		4:
+			viewmodel.show_item("bone", spare_bone())
+
+
+func _cycle_slot(step: int) -> void:
+	var i := slot
+	for k in 5:
+		i = (i + step + 5) % 5
+		if slot_ready(i):
+			if i == 0 and slot == 0:
+				continue
+			select_slot(i)
+			return
+
+
+## 饱食度：一直在掉（跑步掉得快）；低于 25 不自然回血、魂力回得慢；饿到 0 开始掉血
+func _update_poison(dt: float) -> void:
+	if _poison_t <= 0.0 or dead:
+		return
+	_poison_t -= dt
+	_poison_tick -= dt
+	if _poison_tick <= 0.0:
+		_poison_tick = 0.5
+		take_damage(_poison_dps * 0.5, global_position + Vector3.UP)
+		world.fx.impact_beast(global_position + Vector3(0, 1.2, 0), Vector3.UP, Color(0.5, 1.0, 0.3), false)
+
+
+func _update_food(dt: float) -> void:
+	if Data.autotest:
+		return
+	Profile.food = maxf(Profile.food - Data.FOOD_DRAIN * dt * (1.6 if sprint_k > 0.5 else 1.0), 0.0)
+	var lvl := 2 if Profile.food <= 0.0 else (1 if Profile.food < 25.0 else 0)
+	if lvl > _food_warn:
+		if lvl == 1:
+			world.hud.toast("饿了：不会自己回血，魂力回得慢。按 4 拿出烤肉吃（打死魂兽常掉，暗器铺也有卖）", Color(1.0, 0.7, 0.35), 5.0)
+		else:
+			world.hud.toast("饿坏了，开始掉血！快吃东西", Color(1.0, 0.4, 0.3), 4.0)
+	_food_warn = lvl
+	if Profile.food <= 0.0:
+		_starve_t -= dt
+		if _starve_t <= 0.0:
+			_starve_t = 1.0
+			var inv := invuln_t
+			invuln_t = 0.0
+			take_damage(2.0, global_position + Vector3.UP)
+			invuln_t = inv
+
+
+## 中毒：一段时间内持续掉血（第二章落日森林的魂兽带毒）
+func poison(dps: float, dur: float) -> void:
+	if _poison_t <= 0.0:
+		world.hud.toast("中毒了！持续掉血（回血丹能解）", Color(0.6, 1.0, 0.4), 2.0)
+	_poison_dps = maxf(_poison_dps if _poison_t > 0.0 else 0.0, dps)
+	_poison_t = maxf(_poison_t, dur)
+
+
+func eat_meat() -> void:
+	if Profile.food >= Data.FOOD_MAX - 1.0 and hp >= Profile.max_hp() - 1.0:
+		world.hud.toast("吃不下了", Color(0.9, 0.9, 0.9), 1.2)
+		return
+	if not Profile.use_item("meat"):
+		return
+	Profile.food = minf(Profile.food + Data.MEAT_FOOD, Data.FOOD_MAX)
+	heal(10.0)
+	Sfx.play("pickup", -2.0, 0.05, 0.7)
+	world.hud.toast("吃了烤魂兽肉  饱食 %d" % roundi(Profile.food), Color(1.0, 0.8, 0.5), 1.5)
+
+
+## 鱼饵：B 换下一种（有的才换得到，青草饵不要钱）
+func current_bait() -> String:
+	var b := Profile.bait
+	var item := str(Data.BAITS.get(b, Data.BAITS["grass"])["item"])
+	if item != "" and Profile.item_count(item) <= 0:
+		return "grass"
+	return b
+
+
+func cycle_bait() -> void:
+	var order: Array = Data.BAIT_ORDER
+	var i := order.find(Profile.bait)
+	for k in order.size():
+		i = (i + 1) % order.size()
+		var id := str(order[i])
+		var item := str(Data.BAITS[id]["item"])
+		if item == "" or Profile.item_count(item) > 0:
+			Profile.bait = id
+			Profile.mark_dirty()
+			world.hud.toast("鱼饵：%s" % bait_text(), Color(0.8, 1.0, 0.8), 1.8)
+			Sfx.play("ui_click", -6.0)
+			return
+	world.hud.toast("只有青草饵。去暗器铺买血腥饵、魂晶饵、金骨饵", Color(0.9, 0.9, 0.9), 2.5)
+
+
+func bait_text() -> String:
+	var b := current_bait()
+	var d: Dictionary = Data.BAITS[b]
+	var item := str(d["item"])
+	return "%s%s" % [d["name"], (" ×%d" % Profile.item_count(item)) if item != "" else "（免费）"]
+
+
+## 左键使用手上的道具
+func _use_slot_item() -> void:
+	match slot:
+		2:
+			_throw_grenade()
+		3:
+			if _slot4 == "meat":
+				eat_meat()
+			else:
+				_use_pill()
+		4:
+			var e := spare_bone()
+			if e == "":
+				return
+			var sl := str(Data.bone_data(e)["slot"])
+			var old := str(Profile.equipped.get(sl, ""))
+			Profile.equip_bone(e)
+			on_bones_changed()
+			Sfx.play("level_up", -8.0)
+			world.hud.toast("装上了【%s】%s%s" % [Data.bone_name(e), Data.bone_desc(e), ("，换下来的%s在 5 号位" % Data.bone_name(old)) if old != "" else ""], UiKit.GOLD, 4.0)
+			_spare_idx = 0
+	if slot_ready(slot):
+		_show_slot_item()
+
+
+## T：把手上的东西丢出去（丢给队友，或者丢进收购箱卖掉）
+func _drop_current() -> void:
+	var e := {}
+	match slot:
+		0:
+			var id := gun.id
+			e = {"kind": "gun", "key": id, "owner": int(borrowed.get(id, Net.my_id))}
+			_remove_gun(id)
+			rebuild_guns()
+			var ps := primaries()
+			switch_weapon(_gun_index(str(ps[0]) if not ps.is_empty() else "xiujian"))
+		1:
+			world.hud.toast("袖箭是随身的暗器，不能丢", Color(0.9, 0.9, 0.9), 1.6)
+			return
+		2, 3:
+			var key := "grenade" if slot == 2 else _slot4
+			if not Profile.use_item(key):
+				return
+			e = {"kind": "item", "key": key, "owner": Net.my_id}
+		4:
+			var b := spare_bone()
+			if b == "" or not Profile.remove_bone(b):
+				return
+			e = {"kind": "bone", "key": b, "owner": Net.my_id}
+	world.loot.throw_entry(e, cam.global_position, aim_dir(), velocity)
+	viewmodel.throw_anim()
+	if slot >= 2:
+		if slot_ready(slot):
+			_show_slot_item()
+		else:
+			select_slot(_last_gun_slot)
 
 
 func start_reload() -> void:
@@ -975,6 +1234,7 @@ func _use_pill() -> void:
 		world.hud.toast("没有回血丹了，去暗器铺买", Color(1, 0.7, 0.5))
 		return
 	heal(60.0)
+	_poison_t = 0.0
 	Sfx.play("heal", -4.0)
 	world.fx.heal_burst(global_position)
 

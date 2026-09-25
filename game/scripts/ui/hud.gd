@@ -92,6 +92,11 @@ var _intro: Control
 var _intro_t := 0.0
 var _intro_title: Label
 var _intro_sub: Label
+var _food: ProgressBar
+var _bounty: VBoxContainer
+var _sk_more: Label
+var _minimap: MapView
+var _bigmap: MapView
 
 
 func _ready() -> void:
@@ -138,7 +143,7 @@ func _ready() -> void:
 	_build_top_center()
 
 	_feed = VBoxContainer.new()
-	UiKit.place(_feed, Vector4(1, 0, 1, 0), Vector4(-640, 24, -30, 320))
+	UiKit.place(_feed, Vector4(1, 0, 1, 0), Vector4(-640, 270, -30, 560))
 	_root.add_child(_feed)
 
 	_popup = VBoxContainer.new()
@@ -178,6 +183,19 @@ func _ready() -> void:
 	UiKit.fill(_death_text)
 
 	_build_extras()
+	# 小地图（右上）和大地图（M）
+	_minimap = MapView.new()
+	_minimap.world = world
+	_minimap.clip_contents = true
+	UiKit.place(_minimap, Vector4(1, 0, 1, 0), Vector4(-262, 20, -22, 260))
+	_root.add_child(_minimap)
+	_bigmap = MapView.new()
+	_bigmap.world = world
+	_bigmap.big = true
+	_bigmap.visible = false
+	_bigmap.clip_contents = true
+	UiKit.place(_bigmap, Vector4(0.5, 0.5, 0.5, 0.5), Vector4(-420, -420, 420, 420))
+	_root.add_child(_bigmap)
 	_build_scores()
 	_build_pause()
 	_shop = ShopPanel.new()
@@ -280,52 +298,70 @@ func boss_intro(name: String) -> void:
 	tw.tween_callback(func(): _intro.visible = false)
 
 
+func update_bounties() -> void:
+	if not _bounty:
+		return
+	for c in _bounty.get_children():
+		c.queue_free()
+	var head := UiKit.bold("悬赏令", 15, Color(1.0, 0.6, 0.3), 4)
+	_bounty.add_child(head)
+	for b in Profile.bounties:
+		_bounty.add_child(UiKit.label(world.bounty_text(b), 15, UiKit.MOON, 4))
+
+
 func revive_progress(k: float) -> void:
 	_revive.visible = k >= 0.0
 	if k >= 0.0:
 		_revive.value = clampf(k, 0.0, 1.0)
 
 
-func _update_bag(p: Player) -> void:
-	var es := p.bag_entries()
-	var open := p.bag_open()
-	var sel := clampi(p.bag_sel, 0, maxi(es.size() - 1, 0))
-	var sig := "%s|%d|%d" % [open, sel, es.size()]
-	for e in es:
-		sig += "|%s%d" % [e["key"], int(e["n"])]
-	if sig == _bag_sig:
-		return
-	_bag_sig = sig
-	for c in _bag.get_children():
-		c.queue_free()
-	if es.is_empty():
-		return
-	if not open:
-		var e: Dictionary = es[sel]
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 6)
-		row.add_child(UiKit.keycap("T"))
-		row.add_child(UiKit.label("丢出  %s%s" % [Data.item_name(str(e["kind"]), str(e["key"])), (" ×%d" % int(e["n"])) if int(e["n"]) > 1 else ""], 16, Data.item_color(str(e["kind"]), str(e["key"])), 4))
-		row.add_child(UiKit.label("（按住 T 滚轮换）", 13, UiKit.MIST, 4))
-		_bag.add_child(row)
-		return
-	var head := UiKit.bold("背包 · 滚轮选择，松开 T 收起，轻按 T 丢出", 15, UiKit.GOLD, 4)
-	_bag.add_child(head)
-	var from := clampi(sel - 5, 0, maxi(es.size() - 11, 0))
-	for i in range(from, mini(from + 11, es.size())):
-		var e: Dictionary = es[i]
-		var txt := "%s %s%s" % ["◆" if i == sel else "  ", Data.item_name(str(e["kind"]), str(e["key"])), (" ×%d" % int(e["n"])) if int(e["n"]) > 1 else ""]
-		match str(e["kind"]):
-			"mat":
-				txt += "   值 %d" % Data.item_value("mat", str(e["key"]))
-			"bone":
-				txt += "   %s%s" % [Data.bone_desc(str(e["key"])), "（装着）" if e.get("on", false) else ""]
-			"gun":
-				if int(e.get("owner", 0)) != Net.my_id:
-					txt += "   （%s 的）" % world.peer_name(int(e["owner"]))
-		var l := UiKit.label(txt, 16 if i == sel else 14, Data.item_color(str(e["kind"]), str(e["key"])) if i == sel else UiKit.MOON, 4)
-		_bag.add_child(l)
+## 物品栏（右下）：1 主暗器 2 袖箭 3 佛怒唐莲 4 回血丹 5 魂骨，当前的高亮
+var _hot_sig := ""
 
+
+func _update_hotbar(p: Player) -> void:
+	var parts: Array = []
+	for i in 5:
+		var nm := ""
+		match i:
+			0:
+				nm = str(p.gun.d["name"]) if p.slot == 0 else (str(Data.WEAPONS[p.primaries()[0]]["name"]) if not p.primaries().is_empty() else "")
+				if p.primaries().size() > 1:
+					nm += "…"
+			1:
+				nm = "袖箭"
+			2:
+				nm = "唐莲×%d" % Profile.item_count("grenade") if Profile.item_count("grenade") > 0 else ""
+			3:
+				nm = "回血丹×%d" % Profile.item_count("pill") if Profile.item_count("pill") > 0 else ""
+			4:
+				nm = "魂骨×%d" % p.spare_bones().size() if not p.spare_bones().is_empty() else ""
+		if nm == "":
+			nm = "—"
+		parts.append(("【%d %s】" if i == p.slot else " %d %s ") % [i + 1, nm])
+	var sig := "".join(parts)
+	if sig != _hot_sig:
+		_hot_sig = sig
+		_slots.text = sig
+	# 手上拿的是道具：弹药那里显示数量和用法
+	if p.slot >= 2:
+		match p.slot:
+			2:
+				_weapon.text = "佛怒唐莲"
+				_ammo.text = "×%d" % Profile.item_count("grenade")
+				_reload.text = "左键 扔出去炸  ·  T 丢在地上给队友"
+			3:
+				_weapon.text = "回血丹"
+				_ammo.text = "×%d" % Profile.item_count("pill")
+				_reload.text = "左键 吃掉回血  ·  T 丢给队友"
+			4:
+				var e := p.spare_bone()
+				_weapon.text = Data.bone_name(e)
+				_ammo.text = Data.BONE_SLOT_NAMES.get(str(Data.bone_data(e).get("slot", "")), "")
+				_reload.text = "%s\n左键 装上  ·  T 丢出（丢进收购箱能卖）  ·  再按 5 换一块" % Data.bone_desc(e)
+		_ammo.add_theme_color_override("font_color", UiKit.GOLD)
+	elif _weapon.text != str(p.gun.d["name"]):
+		on_weapon(p.gun)
 
 func _vignette_material() -> ShaderMaterial:
 	var sh := Shader.new()
@@ -413,6 +449,11 @@ func _build_top_left() -> void:
 	qv.add_child(_quest_text)
 	_quest_prog = UiKit.num("", 18, UiKit.GOLD, 4)
 	qv.add_child(_quest_prog)
+	# 悬赏令
+	_bounty = VBoxContainer.new()
+	_bounty.add_theme_constant_override("separation", 0)
+	_bounty.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	tl.add_child(_bounty)
 
 
 func _build_bottom_left() -> void:
@@ -482,6 +523,16 @@ func _build_bottom_left() -> void:
 	_soul = _bar(Color(0.38, 0.62, 1.0), 360, 10, true)
 	_soul.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	srow.add_child(_soul)
+	# 饱食度
+	var frow := HBoxContainer.new()
+	frow.add_theme_constant_override("separation", 10)
+	bl.add_child(frow)
+	var fl := UiKit.bold("饱", 16, Color(1.0, 0.68, 0.3), 4)
+	fl.custom_minimum_size.x = 22
+	frow.add_child(fl)
+	_food = _bar(Color(1.0, 0.62, 0.25), 360, 6, true)
+	_food.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	frow.add_child(_food)
 	_xp = _bar(UiKit.GOLD, 392, 3)
 	bl.add_child(_xp)
 
@@ -776,7 +827,7 @@ func _build_pause() -> void:
 	var quit := UiKit.button("返回主菜单", 22)
 	quit.pressed.connect(func(): world.leave())
 	_pause_menu.add_child(quit)
-	var keys := UiKit.label("WASD 移动 · 空格 跳 · Shift 冲刺（开镜时屏息）· Ctrl 蹲\n左键 射击 · 右键 瞄准 · R 换弹 · 1-5 / 滚轮 换暗器\nE 引魂索 · Q C X 魂技 · G 佛怒唐莲 · H 回血丹 · F 交互 · K 武魂 · Tab 魂师榜", 15, UiKit.MIST)
+	var keys := UiKit.label("WASD 移动 · 空格 跳 · Shift 冲刺（开镜时屏息）· Ctrl 蹲\n左键 射击 · 右键 瞄准 · R 换弹 · 1-5 / 滚轮 换暗器\nE 引魂索 · Q 魂技（按住切换）· T 丢出手上的东西（按住 T 滚轮拿背包里的）\nG 佛怒唐莲 · H 回血丹 · F 交互 / 按住 F 救队友 · K 武魂和魂骨 · Tab 魂师榜", 15, UiKit.MIST)
 	_pause_menu.add_child(keys)
 	_settings = SettingsPanel.new()
 	_settings.visible = false
@@ -884,14 +935,8 @@ func on_ammo(g: Gun) -> void:
 
 
 func on_weapon(g: Gun) -> void:
-	_weapon.text = "%s · %s" % [str(g.d["name"]), str(g.d["cat"])]
+	_weapon.text = str(g.d["name"])
 	on_ammo(g)
-	var parts := []
-	var p: Player = world.player
-	for i in p.guns.size():
-		var nm := str(p.guns[i].d["name"])
-		parts.append(("[%d %s]" if p.guns[i] == g else "%d %s") % [i + 1, nm])
-	_slots.text = "  ".join(parts)
 
 
 func hitmarker(headshot: bool, kill: bool) -> void:
@@ -1054,6 +1099,8 @@ func _process(dt: float) -> void:
 	_shield.value = clampf(p.shield / mhp, 0.0, 1.0)
 	_hp_text.text = "%d%s" % [ceili(p.hp), ("  +%d" % ceili(p.shield)) if p.shield > 0.0 else ""]
 	_soul.value = p.soul / Profile.max_soul()
+	_food.value = Profile.food / Data.FOOD_MAX
+	_food.modulate = Color(1, 0.35, 0.3) if Profile.food < 25.0 and int(Time.get_ticks_msec() / 400) % 2 == 0 else Color.WHITE
 	var need := Data.xp_to_next(Profile.level)
 	_xp.value = float(Profile.xp) / float(need)
 	var cap := "   瓶颈 · 吸收第%s魂环" % Data.RING_NAMES[mini(Profile.rings.size(), 4)] if Profile.at_bottleneck() else ""
@@ -1076,6 +1123,8 @@ func _process(dt: float) -> void:
 		_reload.text = "拉栓…"
 	elif g.ammo == 0:
 		_reload.text = "按 R 换弹"
+	elif p.scoped:
+		_reload.text = "%.1f 倍 · 滚轮调倍率 · 按住 Shift 屏息" % Settings.scope_zoom
 	else:
 		_reload.text = ""
 
@@ -1105,18 +1154,22 @@ func _process(dt: float) -> void:
 		(_water.material as ShaderMaterial).set_shader_parameter("t", Time.get_ticks_msec() / 1000.0)
 	_breath_box.visible = p.air < p.max_air() - 0.05 and not p.dead
 	_breath.value = p.air / p.max_air()
-	_update_bag(p)
+	_update_hotbar(p)
 
 	if world.boss:
 		_boss_bar.value = world.boss.hp / world.boss.max_hp
-	_scope.visible = p.scoped
-	crosshair.visible = not p.scoped
+	_scope.visible = false
+	crosshair.visible = not p.scoped and p.ads < 0.7
 
 	var it: Dictionary = world.nearest_interactable() if not p.dead else {}
 	_interact.text = str(it.get("text", ""))
 
 	_update_lure_ui(p)
 
+	if Input.is_action_just_pressed("map") and not world.paused and not world.ui_open:
+		_bigmap.visible = not _bigmap.visible
+		Sfx.play("ui_click", -6.0)
+	_minimap.visible = not _bigmap.visible
 	var show_scores: bool = Input.is_action_pressed("scoreboard") and not world.paused
 	if show_scores != _scores.visible:
 		_scores.visible = show_scores
@@ -1177,7 +1230,7 @@ func _update_lure_ui(p: Player) -> void:
 	var t := Time.get_ticks_msec() / 1000.0
 	match lure.state:
 		Lure.S.IDLE:
-			_prompt.text = "按住 E 蓄力 · 松开甩出引魂索"
+			_prompt.text = "按住 E 蓄力 · 松开甩出引魂索      B 鱼饵：%s" % p.bait_text()
 			_prompt.add_theme_font_size_override("font_size", 17)
 			_prompt.modulate = Color(1, 1, 1, 0.5)
 		Lure.S.CHARGING:
