@@ -47,6 +47,7 @@ var ads := 0.0
 var bloom := 0.0
 var sprint_k := 0.0
 var crouch_k := 0.0
+var swimming := false
 
 var _coyote := 0.0
 var _jump_buf := 0.0
@@ -176,6 +177,8 @@ func _physics_process(dt: float) -> void:
 			hv = hv.move_toward(wish * max_speed, GROUND_ACCEL * dt)
 		else:
 			hv = hv.move_toward(Vector3.ZERO, GROUND_DECEL * dt)
+	elif swimming:
+		hv = hv.move_toward(wish * 3.2, GROUND_ACCEL * 0.4 * dt)
 	else:
 		_coyote -= dt
 		# 空中：只能往想去的方向加速，不会凭空刹车
@@ -183,13 +186,20 @@ func _physics_process(dt: float) -> void:
 			var target := wish * maxf(max_speed, hv.length())
 			hv = hv.move_toward(target, AIR_ACCEL * dt)
 		velocity.y -= GRAVITY * dt
-	# 湖边：水深过膝就走不动了，不能一直走进深水
-	var depth: float = Island.WATER_Y - world.island.height_at(global_position.x, global_position.z)
-	if depth > 0.2 and global_position.y < Island.WATER_Y + 0.1:  # 站在码头上不算
-		hv *= 1.0 - clampf(depth * 0.25, 0.0, 0.5) * dt * 8.0
-		var out := Vector3(global_position.x, 0, global_position.z).normalized()
-		if depth > 0.9 and hv.dot(out) > 0.0:
-			hv -= out * hv.dot(out)
+	# 下水：浅水走得慢；深水浮在水面上游，头露出水面，可以游回岸边
+	var ground: float = world.island.height_at(global_position.x, global_position.z)
+	var swim_y := Island.WATER_Y - 1.35
+	swimming = ground < swim_y and global_position.y < swim_y + 0.15
+	if swimming:
+		velocity.y = (swim_y - global_position.y) * 6.0
+		hv = hv.limit_length(3.2)
+		_coyote = 0.0
+	elif global_position.y < Island.WATER_Y + 0.1 and ground < Island.WATER_Y - 0.2:
+		hv *= 1.0 - clampf((Island.WATER_Y - ground) * 0.25, 0.0, 0.5) * dt * 8.0
+	# 别游太远
+	var out := Vector3(global_position.x, 0, global_position.z)
+	if out.length() > 150.0 and hv.dot(out.normalized()) > 0.0:
+		hv -= out.normalized() * hv.dot(out.normalized())
 	velocity.x = hv.x
 	velocity.z = hv.z
 

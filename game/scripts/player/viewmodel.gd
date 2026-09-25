@@ -22,8 +22,8 @@ var _land := 0.0
 var _left_throw := 0.0
 var _left_pull := 0.0
 
-const HIP_POS := [Vector3(0.21, -0.2, -0.42), Vector3(0.2, -0.19, -0.44)]
-const ADS_POS := [Vector3(0.0, -0.1, -0.34), Vector3(0.0, -0.125, -0.38)]
+const HIP_POS := [Vector3(0.21, -0.2, -0.42), Vector3(0.2, -0.2, -0.44)]
+const ADS_POS := [Vector3(0.0, -0.1, -0.34), Vector3(0.0, -0.1, -0.38)]
 
 
 func _ready() -> void:
@@ -52,23 +52,23 @@ func _ready() -> void:
 	weapons.append(xj)
 	muzzles.append(m0)
 
-	# 暴雨梨花针：一个漆盒，正面一排排针孔
+	# 暴雨梨花针：一个小漆盒，正面一排排针孔
 	var by := Node3D.new()
 	by.name = "Baoyu"
 	add_child(by)
-	U.part(by, U.capsule(0.045, 0.4), sleeve, Vector3(0.03, -0.07, 0.2), Vector3(PI / 2, 0, 0), Vector3.ONE, false)
-	U.part(by, U.sphere(0.055, 10, 6), skin, Vector3(0.0, -0.06, 0.02), Vector3.ZERO, Vector3(1.1, 0.8, 1.2), false)
-	U.part(by, U.box(Vector3(0.13, 0.11, 0.2)), lacquer, Vector3(0.0, 0.0, -0.05), Vector3.ZERO, Vector3.ONE, false)
-	U.part(by, U.box(Vector3(0.14, 0.012, 0.21)), gold, Vector3(0.0, 0.058, -0.05), Vector3.ZERO, Vector3.ONE, false)
-	U.part(by, U.box(Vector3(0.14, 0.012, 0.21)), gold, Vector3(0.0, -0.058, -0.05), Vector3.ZERO, Vector3.ONE, false)
-	var face := U.part(by, U.box(Vector3(0.12, 0.1, 0.01)), U.mat(Color(0.12, 0.1, 0.08)), Vector3(0.0, 0.0, -0.152), Vector3.ZERO, Vector3.ONE, false)
+	U.part(by, U.capsule(0.042, 0.4), sleeve, Vector3(0.02, -0.06, 0.2), Vector3(PI / 2, 0, 0), Vector3.ONE, false)
+	U.part(by, U.sphere(0.048, 10, 6), skin, Vector3(0.0, -0.05, 0.04), Vector3.ZERO, Vector3(1.1, 0.8, 1.2), false)
+	U.part(by, U.box(Vector3(0.085, 0.07, 0.15)), lacquer, Vector3(0.0, 0.0, -0.03), Vector3.ZERO, Vector3.ONE, false)
+	U.part(by, U.box(Vector3(0.092, 0.008, 0.155)), gold, Vector3(0.0, 0.037, -0.03), Vector3.ZERO, Vector3.ONE, false)
+	U.part(by, U.box(Vector3(0.092, 0.008, 0.155)), gold, Vector3(0.0, -0.037, -0.03), Vector3.ZERO, Vector3.ONE, false)
+	var face := U.part(by, U.box(Vector3(0.078, 0.064, 0.006)), U.mat(Color(0.12, 0.1, 0.08)), Vector3(0.0, 0.0, -0.106), Vector3.ZERO, Vector3.ONE, false)
 	face.name = "Face"
 	for ix in 4:
 		for iy in 3:
-			U.part(by, U.sphere(0.007, 5, 3), gold, Vector3(-0.04 + ix * 0.027, -0.028 + iy * 0.028, -0.158), Vector3.ZERO, Vector3.ONE, false)
-	U.part(by, U.sphere(0.02, 8, 4), U.glow(Color(0.5, 0.8, 1.0), 2.0), Vector3(0.0, 0.07, 0.02), Vector3.ZERO, Vector3.ONE, false)
+			U.part(by, U.sphere(0.005, 5, 3), gold, Vector3(-0.027 + ix * 0.018, -0.018 + iy * 0.018, -0.11), Vector3.ZERO, Vector3.ONE, false)
+	U.part(by, U.sphere(0.013, 8, 4), U.glow(Color(0.5, 0.8, 1.0), 2.0), Vector3(0.0, 0.045, 0.0), Vector3.ZERO, Vector3.ONE, false)
 	var m1 := Node3D.new()
-	m1.position = Vector3(0.0, 0.0, -0.17)
+	m1.position = Vector3(0.0, 0.0, -0.12)
 	by.add_child(m1)
 	weapons.append(by)
 	muzzles.append(m1)

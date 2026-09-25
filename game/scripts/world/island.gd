@@ -14,6 +14,7 @@ var spawn := Vector3.ZERO
 var spawn_yaw := 0.0
 var dock_start := Vector3.ZERO         # 码头在岸上的一端
 var dock_end := Vector3.ZERO           # 伸进湖里的一端
+var dock_y := 0.0                      # 码头木板顶面的高度
 var shop_pos := Vector3.ZERO
 var hill := Vector2(-8, -78)
 
@@ -109,6 +110,7 @@ func _place_landmarks() -> void:
 		z += 1.0
 	dock_start = Vector3(0.0, height_at(0.0, z - 3.0) + 0.35, z - 3.0)
 	dock_end = Vector3(0.0, WATER_Y + 0.45, z + 16.0)
+	dock_y = maxf(dock_start.y, 0.5) + 0.125
 	spawn = Vector3(2.0, height_at(2.0, z - 12.0) + 0.1, z - 12.0)
 	spawn_yaw = 0.0  # 朝北（-Z）
 	shop_pos = Vector3(-12.0, height_at(-12.0, z - 16.0), z - 16.0)

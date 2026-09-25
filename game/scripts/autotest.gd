@@ -29,6 +29,10 @@ var _press_lure_next := false
 func _ready() -> void:
 	print("[autotest] mode=", mode)
 	match mode:
+		"ui":
+			_shots_dir = str(args.get("out", "user://shots"))
+			DirAccess.make_dir_recursive_absolute(_shots_dir)
+			main.start_solo()
 		"solo", "shots":
 			if mode == "shots":
 				_shots_dir = str(args.get("out", "user://shots"))
@@ -123,6 +127,8 @@ func _process(dt: float) -> void:
 			_run_hunt(dt, false)
 		"shots":
 			_run_shots(dt)
+		"ui":
+			_run_ui()
 		"host":
 			_run_host()
 		"client":
@@ -136,7 +142,7 @@ func _habitat_spot(w: World, h: String) -> Dictionary:
 	var isl := w.island
 	match h:
 		"water":
-			return {"stand": isl.dock_end + Vector3(0, 0.2, -2), "target": isl.dock_end + Vector3(4, 0, 10)}
+			return {"stand": Vector3(isl.dock_end.x, isl.dock_y - 0.4, isl.dock_end.z - 2), "target": isl.dock_end + Vector3(4, 0, 10)}
 		"burrow":
 			var b: Vector3 = isl.habitat("burrow")["points"][0]
 			var dir := Vector3(1, 0, 0.3).normalized()
@@ -289,6 +295,61 @@ func _run_host() -> void:
 
 
 # ------------------------------------------------------------------ 截图
+
+func _run_ui() -> void:
+	var w := _world()
+	if not w:
+		return
+	var p := w.player
+	match _step:
+		0:
+			if _step_t > 3.0:
+				p.teleport(Vector3(w.island.dock_end.x, w.island.dock_y + 0.05, w.island.dock_end.z - 1))
+				_aim(p, w.island.dock_end + Vector3(6, -0.5, 14))
+				_next(1)
+		1:
+			if _step_t > 1.2:
+				_next(2)
+				_shot("ui_water")
+				if args.has("water_only"):
+					get_tree().create_timer(0.5).timeout.connect(func(): _pass("water"))
+		2:
+			p.switch_weapon(1)
+			var hb: Vector2 = w.island.habitat("meadow")["center"]
+			p.teleport(Vector3(hb.x, w.island.height_at(hb.x, hb.y) + 0.5, hb.y + 10))
+			_aim(p, Vector3(hb.x, w.island.height_at(hb.x, hb.y) + 1.5, hb.y - 10))
+			_next(3)
+		3:
+			if _step_t > 1.0:
+				_next(4)
+				_shot("ui_shotgun")
+		4:
+			Input.action_press("aim")
+			_next(5)
+		5:
+			if _step_t > 0.6:
+				_next(6)
+				_shot("ui_ads")
+		6:
+			Input.action_release("aim")
+			w.set_paused(true)
+			_next(7)
+		7:
+			if _step_t > 0.5:
+				_next(8)
+				_shot("ui_pause")
+		8:
+			w.set_paused(false)
+			Input.action_press("scoreboard")
+			_next(9)
+		9:
+			if _step_t > 0.5:
+				_next(10)
+				_shot("ui_scores")
+		10:
+			Input.action_release("scoreboard")
+			_pass("界面截图完成")
+
 
 func _run_shots(dt: float) -> void:
 	match _step:

@@ -206,6 +206,9 @@ func _water() -> void:
 	pm.subdivide_depth = 180
 	var sm := ShaderMaterial.new()
 	sm.shader = WATER_SHADER
+	var img := Image.create_from_data(Island.SIZE, Island.SIZE, false, Image.FORMAT_RF, island.heights.to_byte_array())
+	sm.set_shader_parameter("height_tex", ImageTexture.create_from_image(img))
+	sm.set_shader_parameter("terrain_half", float(Island.HALF))
 	var mi := MeshInstance3D.new()
 	mi.name = "Water"
 	mi.mesh = pm
@@ -447,7 +450,7 @@ func _dock_and_shop() -> void:
 	var b := island.dock_end
 	var len := a.distance_to(Vector3(b.x, a.y, b.z))
 	var mid := (a + Vector3(b.x, b.y, b.z)) * 0.5
-	mid.y = maxf(a.y, 0.5)
+	mid.y = island.dock_y - 0.125
 	var dock := U.part(root, U.box(Vector3(3.2, 0.25, len)), wood, mid)
 	var cs := CollisionShape3D.new()
 	var sh := BoxShape3D.new()

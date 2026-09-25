@@ -1,5 +1,6 @@
 shader_type spatial;
-render_mode blend_mix, depth_draw_always, cull_back, diffuse_burley, specular_schlick_ggx;
+// 不能用 depth_draw_always：那样水面会写进深度图，算出来的水深永远是 0
+render_mode blend_mix, depth_draw_opaque, cull_back, diffuse_burley, specular_schlick_ggx;
 // 湖水：顶点波浪 + 深浅变色 + 岸边白沫 + 菲涅尔反光
 
 uniform vec3 shallow_color : source_color = vec3(0.30, 0.68, 0.66);
@@ -8,8 +9,10 @@ uniform vec3 foam_color : source_color = vec3(0.92, 0.97, 0.95);
 uniform float depth_fade = 4.5;
 uniform float foam_width = 0.7;
 uniform float wave_height = 0.12;
-uniform sampler2D depth_texture : hint_depth_texture, filter_linear_mipmap;
 uniform sampler2D screen_texture : hint_screen_texture, filter_linear_mipmap;
+// 岛的高度图（每个像素 1 米），用来算每一处的水深；比读深度图稳定，不挑显卡
+uniform sampler2D height_tex : filter_linear, repeat_disable;
+uniform float terrain_half = 160.0;
 
 varying vec3 world_pos;
 
@@ -44,14 +47,13 @@ float noise(vec2 p) {
 }
 
 void fragment() {
-	// 水下地面有多深
-	float depth_raw = texture(depth_texture, SCREEN_UV).r;
-	vec4 ndc = vec4(SCREEN_UV * 2.0 - 1.0, depth_raw, 1.0);
-	vec4 view = INV_PROJECTION_MATRIX * ndc;
-	view.xyz /= view.w;
-	float floor_dist = -view.z;
-	float surf_dist = -VERTEX.z;
-	float water_depth = max(floor_dist - surf_dist, 0.0);
+	// 水下地面有多深（用高度图算竖直水深）
+	vec2 huv = (world_pos.xz + terrain_half) / (terrain_half * 2.0);
+	float ground = texture(height_tex, clamp(huv, vec2(0.0), vec2(1.0))).r;
+	if (huv.x < 0.0 || huv.y < 0.0 || huv.x > 1.0 || huv.y > 1.0) {
+		ground = -14.0;
+	}
+	float water_depth = max(-ground, 0.0);
 
 	float k = clamp(water_depth / depth_fade, 0.0, 1.0);
 	vec3 col = mix(shallow_color, deep_color, k);
@@ -59,7 +61,7 @@ void fragment() {
 	// 轻微折射：透过浅水能看到水底
 	vec2 ofs = NORMAL.xz * 0.02;
 	vec3 below = texture(screen_texture, SCREEN_UV + ofs).rgb;
-	col = mix(below * shallow_color * 1.6, col, clamp(k * 1.4 + 0.25, 0.0, 1.0));
+	col = mix(below * shallow_color * 1.4, col, clamp(k * 1.6 + 0.35, 0.0, 1.0));
 
 	// 岸边白沫
 	float n = noise(world_pos.xz * 1.5 + TIME * 0.4);
