@@ -74,7 +74,7 @@ func open() -> void:
 		mid.add_child(row)
 		var rv := VBoxContainer.new()
 		row.add_child(rv)
-		var head := "第%s魂环（%s）" % [Data.RING_NAMES[i], Data.SKILL_KEYS[i]]
+		var head := "第%s魂环" % Data.RING_NAMES[i]
 		if have:
 			var r: Dictionary = Profile.rings[i]
 			var s: Dictionary = Data.SKILLS[r["skill"]]

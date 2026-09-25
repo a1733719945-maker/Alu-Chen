@@ -15,6 +15,7 @@ signal hurt(amount: float, from_dir: Vector3)
 signal died
 
 const EYE_HEIGHT := 1.62
+const WHEEL_HOLD := 0.2          # 按住 Q 超过这么久弹出魂技轮盘
 const CROUCH_EYE := 1.12
 const WALK_SPEED := 5.6
 const SPRINT_SPEED := 8.6
@@ -35,6 +36,7 @@ var cam: Camera3D
 var viewmodel: ViewModel
 var lure: Lure
 var input_enabled := true
+var _q_t := -1.0                 # Q 按了多久（-1 没按）
 
 var yaw := 0.0
 var pitch := 0.0
@@ -229,6 +231,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		var d: Vector2 = event.screen_relative
+		if world.hud.wheel_open():
+			# 魂技轮盘打开时鼠标用来选魂技，不转视角
+			world.hud.wheel_mouse(d)
+			return
 		var sens := 0.022 * Settings.sensitivity * _ads_sens_factor()
 		yaw -= deg_to_rad(d.x * sens)
 		pitch -= deg_to_rad(d.y * sens) * (-1.0 if Settings.invert_y else 1.0)
@@ -381,15 +387,33 @@ func _process(dt: float) -> void:
 		viewmodel.throw_anim()
 	viewmodel.pull_anim(1.0 if lure.state == Lure.S.REELING and lp else 0.0)
 	if active:
-		for i in Data.SKILL_KEYS.size():
-			if Input.is_action_just_pressed("skill_%d" % (i + 1)):
-				world.skills.cast(i)
+		_skill_input(dt)
 		if Input.is_action_just_pressed("grenade"):
 			_throw_grenade()
 		if Input.is_action_just_pressed("pill"):
 			_use_pill()
 	if input_enabled and not dead and Input.is_action_just_pressed("interact"):
 		world.interact()
+	if not active and world.hud.wheel_open():
+		world.hud.close_wheel()
+		_q_t = -1.0
+
+
+## Q：轻按放当前魂技；按住弹出魂技轮盘，移动鼠标选，松开就放
+func _skill_input(dt: float) -> void:
+	if Input.is_action_just_pressed("skill"):
+		_q_t = 0.0
+	if _q_t < 0.0:
+		return
+	if Input.is_action_pressed("skill"):
+		_q_t += dt
+		if _q_t > WHEEL_HOLD and Profile.rings.size() >= 2 and not world.hud.wheel_open():
+			world.hud.open_wheel(world.skills.current)
+	else:
+		_q_t = -1.0
+		if world.hud.wheel_open():
+			world.skills.current = world.hud.close_wheel()
+		world.skills.cast(world.skills.current)
 
 
 func _update_stats(dt: float) -> void:

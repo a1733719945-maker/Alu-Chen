@@ -203,6 +203,8 @@ func _process(dt: float) -> void:
 			_run_hunt()
 		"phys":
 			_run_phys()
+		"hudshot":
+			_run_hudshot()
 		"shop":
 			_run_shop()
 		"recoil":
@@ -244,6 +246,40 @@ func _switch_to(p: Player, id: String) -> void:
 		if p.guns[i].id == id:
 			p.switch_weapon(i)
 			return
+
+
+# ------------------------------------------------------------------ 界面截图：魂技栏和魂技轮盘
+
+func _run_hudshot() -> void:
+	var w := _ready_world()
+	if not w:
+		return
+	match _step:
+		0:
+			if _step_t < 2.0:
+				return
+			var tree: Array = Data.SKILL_TREE[Data.wuhun_id(Settings.wuhun)]
+			for i in 4:
+				Profile.add_ring(mini(i, 2), str(tree[i][i % 2]), "wolf")
+			Profile.level = 41
+			Profile.add_item("grenade", 2) if Profile.has_method("add_item") else null
+			w.skills.current = 1
+			w.skills.cooldowns[2] = 6.0
+			_next(1)
+		1:
+			if _step_t < 1.0:
+				return
+			await _shot("hud")
+			w.hud.open_wheel(1)
+			w.hud.wheel_mouse(Vector2(90, 30))
+			_next(2)
+		2:
+			if _step_t < 0.5:
+				return
+			_next(3)
+			await _shot("wheel")
+			w.hud.close_wheel()
+			_next_phase()
 
 
 # ------------------------------------------------------------------ 物理：抛起来、空中连击、死了摔下来

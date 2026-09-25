@@ -89,6 +89,61 @@ static func num(text: String, size := 40, color := MOON, outline := 6) -> Label:
 	return l
 
 
+## 图标：game-icons.net 的白色剪影（assets/icons），用 color 着色
+const ICONS := "res://assets/icons/"
+
+
+static func icon(name: String, size := 24.0, color := MOON) -> TextureRect:
+	var t := TextureRect.new()
+	if ResourceLoader.exists(ICONS + name + ".svg"):
+		t.texture = load(ICONS + name + ".svg")
+	t.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	t.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	t.custom_minimum_size = Vector2(size, size)
+	t.modulate = color
+	t.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return t
+
+
+## 魂技的图标名（按魂技类型）
+static func skill_icon(sid: String) -> String:
+	var t := str(Data.SKILLS.get(sid, {}).get("type", "buff"))
+	return t if ResourceLoader.exists(ICONS + t + ".svg") else "buff"
+
+
+## 键帽：小方框里写按键
+static func keycap(k: String, size := 15) -> PanelContainer:
+	var p := PanelContainer.new()
+	p.custom_minimum_size = Vector2(24, 24)
+	var st := StyleBoxFlat.new()
+	st.bg_color = Color(1, 1, 1, 0.1)
+	st.border_color = Color(1, 1, 1, 0.4)
+	st.set_border_width_all(1)
+	st.set_corner_radius_all(3)
+	st.content_margin_left = 6
+	st.content_margin_right = 6
+	p.add_theme_stylebox_override("panel", st)
+	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var l := bold(k, size, MOON)
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	p.add_child(l)
+	p.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	return p
+
+
+## 图标 + 文字横排
+static func icon_row(name: String, text: String, size := 18, color := MOON, icon_color := MOON) -> HBoxContainer:
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 6)
+	h.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	h.add_child(icon(name, size * 1.2, icon_color))
+	var l := label(text, size, color, 5)
+	l.name = "Text"
+	h.add_child(l)
+	return h
+
+
 static func button(text: String, size := 22, main := false) -> Button:
 	var b := Button.new()
 	b.text = text

@@ -17,12 +17,12 @@
 | 魂兽 | 23 种，除鬼藤外都是带动画的 3D 模型（Quaternius，CC0）：柔骨兔、风铃鸟、月光蛾、疾风魔狼、铁甲犀、金刚猿、曼陀罗蛇、鬼眼鹿、夜翼魔蝠、疾爪龙、地穴魔蛛、碧磷蟾、雪原狼、冰角鹿、冰甲龙、雪魔猿、冰鳞鱼、铁钳蟹、海魂鸥、彩鳞鱼、深海魔鲨、幽灵鳐……分十年 / 百年 / 千年，章节越后越多高年份 |
 | 物理 | Jolt 物理引擎。空中分段重力（上升正常、最高点短暂滞空、下落加快）；空中连击每枪的上推力递减并有上限，魂兽一定会掉下来；被打死的魂兽带死亡动画摔到地上再消失；拽出来的魂兽落在岸上而不是水里 |
 | Boss | 湖主 · 千年曼陀罗蛇、森林之主 · 人面魔蛛、星斗之王 · 泰坦巨猿（扔巨石）、极北之主 · 冰霜巨龙（飞行、冰息、俯冲）、海神岛之主 · 深海魔鲸。掉魂骨（永久属性）和魂环 |
-| 成长 | 等级上限 50，每 10 级瓶颈要吸收魂环（第四、五环要千年）；9 种武魂 × 5 个魂环，每环二选一，共 90 个魂技，Q / C / X / Z / V 释放 |
+| 成长 | 等级上限 50，每 10 级瓶颈要吸收魂环（第四、五环要千年）；9 种武魂 × 5 个魂环，每环二选一，共 90 个魂技。只用一个键：轻按 Q 放当前魂技，按住 Q 弹出魂技轮盘用鼠标选 |
 | 暗器 | 袖箭（手枪）、诸葛神弩（冲锋）、孔雀翎（步枪）、暴雨梨花针（霰弹）、追魂穿心弩（狙击，带瞄准镜）。每把有自己的后坐图案、随机散布、第一发精准、移动/跳跃/蹲下影响、开镜、镜头冲击 |
-| 界面 | 思源黑体（Noto Sans SC）+ Barlow Condensed 数字，扁平深色面板 |
+| 界面 | 思源黑体（Noto Sans SC）+ Barlow Condensed 数字；game-icons.net 的剪影图标（魂技、道具、金魂币、任务）；斜切血条、半透明底板、魂技轮盘 |
 | 联机 | 创建房间得到 4 位房间码，朋友输入即可加入；房主算魂兽和 Boss，每人的等级、魂环、暗器存自己电脑上 |
 
-素材：天空、植物和石头模型来自 [Poly Haven](https://polyhaven.com)，地面和树皮贴图、树叶草叶图集来自 [ambientCG](https://ambientcg.com)，魂兽和 Boss 模型来自 [Quaternius](https://quaternius.com)，都是 CC0（免费商用、不用署名）。字体是思源黑体和 Barlow Condensed（SIL OFL）。下载和处理脚本在 `tools/fetch_assets.py`、`tools/prepare_assets.py`、`tools/fetch_models.py`、`tools/subset_fonts.py`。
+素材：天空、植物和石头模型来自 [Poly Haven](https://polyhaven.com)，地面和树皮贴图、树叶草叶图集来自 [ambientCG](https://ambientcg.com)，魂兽和 Boss 模型来自 [Quaternius](https://quaternius.com)，都是 CC0（免费商用、不用署名）。字体是思源黑体和 Barlow Condensed（SIL OFL）。界面图标来自 [game-icons.net](https://game-icons.net)（作者 Lorc、Delapouite、Zeromancer，CC BY 3.0），下载脚本 `tools/fetch_icons.py`。下载和处理脚本在 `tools/fetch_assets.py`、`tools/prepare_assets.py`、`tools/fetch_models.py`、`tools/subset_fonts.py`。
 
 ## 部署联机服务器（Render 免费版）
 

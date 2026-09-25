@@ -3,7 +3,7 @@ extends CanvasLayer
 ## 游戏内界面。
 ##   左上：金魂币、任务追踪          上中：Boss 血条、提示        右上：击杀信息
 ##   左下：体力 / 护盾 / 魂力 / 修为、道具
-##   下中：魂技栏（Q C X）、引魂索提示、交互提示
+##   下中：当前魂技（轻按 Q 放，按住 Q 弹出魂技轮盘）、引魂索提示、交互提示
 ##   右下：暗器、弹药、暗器栏
 ##   准星、命中标记、击杀奖励、任务目标标记、狙击镜、受伤红屏、倒地倒计时
 ##   面板：暂停、暗器铺、武魂（K）、魂技二选一、魂师榜（Tab）
@@ -38,9 +38,24 @@ var _hp_text: Label
 var _soul: ProgressBar
 var _xp: ProgressBar
 var _level: Label
-var _items: Label
+var _item_g: Label
+var _item_h: Label
+var _item_x: Label
 var _skills_n := -1
-var _skill_boxes: Array = []
+var _sk_style: StyleBoxFlat
+var _sk_icon: TextureRect
+var _sk_mask: ColorRect
+var _sk_cd: Label
+var _sk_name: Label
+var _sk_sub: Label
+var _sk_pips: Array = []
+var _sk_shown := ""
+var _wheel: Control
+var _wheel_items: Control
+var _wheel_name: Label
+var _wheel_info: Label
+var _wheel_vec := Vector2.ZERO
+var _wheel_sel := 0
 var _boss_box: VBoxContainer
 var _boss_name: Label
 var _boss_bar: ProgressBar
@@ -183,18 +198,25 @@ void fragment() {
 	return m
 
 
-func _bar(color: Color, w := 420.0, h := 14.0) -> ProgressBar:
+func _bar(color: Color, w := 420.0, h := 14.0, slant := false) -> ProgressBar:
 	var b := ProgressBar.new()
 	b.custom_minimum_size = Vector2(w, h)
 	b.show_percentage = false
 	b.max_value = 1.0
 	b.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var bg := StyleBoxFlat.new()
-	bg.bg_color = Color(0, 0, 0, 0.5)
-	bg.set_corner_radius_all(int(h / 2))
+	bg.bg_color = Color(0, 0, 0, 0.45)
 	var fg := StyleBoxFlat.new()
 	fg.bg_color = color
-	fg.set_corner_radius_all(int(h / 2))
+	if slant:
+		# 斜切的条（现代射击游戏常见）
+		bg.skew = Vector2(0.35, 0)
+		fg.skew = Vector2(0.35, 0)
+		bg.border_color = Color(1, 1, 1, 0.12)
+		bg.set_border_width_all(1)
+	else:
+		bg.set_corner_radius_all(int(h / 2))
+		fg.set_corner_radius_all(int(h / 2))
 	b.add_theme_stylebox_override("background", bg)
 	b.add_theme_stylebox_override("fill", fg)
 	return b
@@ -206,51 +228,118 @@ func _build_top_left() -> void:
 	tl.add_theme_constant_override("separation", 2)
 	tl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_root.add_child(tl)
-	_money = UiKit.num("金魂币 0", 34, UiKit.GOLD, 6)
-	tl.add_child(_money)
-	_room = UiKit.label("", 16, UiKit.MIST, 6)
+	var mrow := HBoxContainer.new()
+	mrow.add_theme_constant_override("separation", 8)
+	tl.add_child(mrow)
+	mrow.add_child(UiKit.icon("coin", 28, UiKit.GOLD))
+	_money = UiKit.num("0", 32, UiKit.GOLD, 5)
+	mrow.add_child(_money)
+	_room = UiKit.label("", 14, UiKit.MIST, 5)
 	tl.add_child(_room)
-	_fps = UiKit.label("", 15, Color(0.8, 1, 0.8), 5)
+	_fps = UiKit.label("", 14, Color(0.8, 1, 0.8), 5)
 	tl.add_child(_fps)
 	var gap := Control.new()
-	gap.custom_minimum_size.y = 8
+	gap.custom_minimum_size.y = 6
 	tl.add_child(gap)
-	_quest_title = UiKit.label("", 16, UiKit.JADE, 6)
-	tl.add_child(_quest_title)
-	_quest_text = UiKit.label("", 20, Color.WHITE, 7)
+	# 任务：左边一条金线，半透明底
+	var qp := PanelContainer.new()
+	var qs := StyleBoxFlat.new()
+	qs.bg_color = Color(0.02, 0.03, 0.05, 0.45)
+	qs.border_color = UiKit.GOLD
+	qs.border_width_left = 3
+	qs.content_margin_left = 14
+	qs.content_margin_right = 14
+	qs.content_margin_top = 8
+	qs.content_margin_bottom = 10
+	qp.add_theme_stylebox_override("panel", qs)
+	qp.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	tl.add_child(qp)
+	var qv := VBoxContainer.new()
+	qv.add_theme_constant_override("separation", 2)
+	qp.add_child(qv)
+	var qh := HBoxContainer.new()
+	qh.add_theme_constant_override("separation", 6)
+	qv.add_child(qh)
+	qh.add_child(UiKit.icon("quest", 16, UiKit.MIST))
+	_quest_title = UiKit.label("", 14, UiKit.MIST, 4)
+	qh.add_child(_quest_title)
+	_quest_text = UiKit.bold("", 19, Color.WHITE, 5)
 	_quest_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_quest_text.custom_minimum_size.x = 440
-	tl.add_child(_quest_text)
-	_quest_prog = UiKit.label("", 17, UiKit.GOLD, 6)
-	tl.add_child(_quest_prog)
+	_quest_text.custom_minimum_size.x = 400
+	qv.add_child(_quest_text)
+	_quest_prog = UiKit.num("", 18, UiKit.GOLD, 4)
+	qv.add_child(_quest_prog)
 
 
 func _build_bottom_left() -> void:
+	# 左下一块半透明底板，和第一人称的手分开
+	var holder := VBoxContainer.new()
+	UiKit.place(holder, Vector4(0, 1, 0, 1), Vector4(20, -220, 470, -18))
+	holder.alignment = BoxContainer.ALIGNMENT_END
+	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_root.add_child(holder)
+	var bp := PanelContainer.new()
+	var bs := StyleBoxFlat.new()
+	bs.bg_color = Color(0.02, 0.03, 0.05, 0.55)
+	bs.set_corner_radius_all(4)
+	bs.content_margin_left = 14
+	bs.content_margin_right = 18
+	bs.content_margin_top = 10
+	bs.content_margin_bottom = 12
+	bp.add_theme_stylebox_override("panel", bs)
+	bp.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	holder.add_child(bp)
 	var bl := VBoxContainer.new()
-	UiKit.place(bl, Vector4(0, 1, 0, 1), Vector4(28, -190, 520, -24))
-	bl.alignment = BoxContainer.ALIGNMENT_END
-	bl.add_theme_constant_override("separation", 4)
+	bl.add_theme_constant_override("separation", 6)
 	bl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_root.add_child(bl)
-	_level = UiKit.label("", 20, UiKit.MOON, 7)
+	bp.add_child(bl)
+	# 道具：键帽 + 图标 + 数量
+	var ir := HBoxContainer.new()
+	ir.add_theme_constant_override("separation", 8)
+	bl.add_child(ir)
+	ir.add_child(UiKit.keycap("G"))
+	ir.add_child(UiKit.icon("grenade", 22, Color(1.0, 0.75, 0.45)))
+	_item_g = UiKit.num("0", 20, UiKit.MOON, 4)
+	ir.add_child(_item_g)
+	var sp := Control.new()
+	sp.custom_minimum_size.x = 10
+	ir.add_child(sp)
+	ir.add_child(UiKit.keycap("H"))
+	ir.add_child(UiKit.icon("pill", 22, Color(1.0, 0.5, 0.5)))
+	_item_h = UiKit.num("0", 20, UiKit.MOON, 4)
+	ir.add_child(_item_h)
+	_item_x = UiKit.label("", 14, UiKit.GOLD, 4)
+	ir.add_child(_item_x)
+	var gap := Control.new()
+	gap.custom_minimum_size.y = 4
+	bl.add_child(gap)
+	_level = UiKit.bold("", 16, UiKit.MIST, 4)
 	bl.add_child(_level)
+	var hrow := HBoxContainer.new()
+	hrow.add_theme_constant_override("separation", 10)
+	bl.add_child(hrow)
+	hrow.add_child(UiKit.icon("heart", 22, Color(1.0, 0.4, 0.35)))
 	var hpbox := Control.new()
-	hpbox.custom_minimum_size = Vector2(420, 20)
-	bl.add_child(hpbox)
-	_hp = _bar(Color(0.86, 0.26, 0.22), 420, 20)
+	hpbox.custom_minimum_size = Vector2(360, 20)
+	hrow.add_child(hpbox)
+	_hp = _bar(Color(0.93, 0.3, 0.26), 360, 20, true)
 	hpbox.add_child(_hp)
-	_shield = _bar(Color(0.8, 0.92, 1.0, 0.85), 420, 20)
+	_shield = _bar(Color(0.8, 0.92, 1.0, 0.85), 360, 20, true)
 	(_shield.get_theme_stylebox("background") as StyleBoxFlat).bg_color = Color(0, 0, 0, 0)
+	(_shield.get_theme_stylebox("background") as StyleBoxFlat).set_border_width_all(0)
 	hpbox.add_child(_shield)
-	_hp_text = UiKit.label("", 14, Color.WHITE, 5)
-	_hp_text.position = Vector2(10, 0)
+	_hp_text = UiKit.num("", 18, Color.WHITE, 4)
+	_hp_text.position = Vector2(14, -2)
 	hpbox.add_child(_hp_text)
-	_soul = _bar(Color(0.35, 0.6, 1.0), 420, 12)
-	bl.add_child(_soul)
-	_xp = _bar(UiKit.GOLD, 420, 6)
+	var srow := HBoxContainer.new()
+	srow.add_theme_constant_override("separation", 10)
+	bl.add_child(srow)
+	srow.add_child(UiKit.icon("soul", 22, Color(0.45, 0.7, 1.0)))
+	_soul = _bar(Color(0.38, 0.62, 1.0), 360, 10, true)
+	_soul.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	srow.add_child(_soul)
+	_xp = _bar(UiKit.GOLD, 392, 3)
 	bl.add_child(_xp)
-	_items = UiKit.label("", 16, UiKit.MOON, 6)
-	bl.add_child(_items)
 
 
 func _build_bottom_right() -> void:
@@ -298,31 +387,189 @@ func _build_bottom_center() -> void:
 	_prompt = UiKit.label("", 22, UiKit.MOON, 8)
 	_prompt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	bc.add_child(_prompt)
-	var skills := HBoxContainer.new()
-	skills.alignment = BoxContainer.ALIGNMENT_CENTER
-	skills.add_theme_constant_override("separation", 10)
-	bc.add_child(skills)
-	for i in Data.SKILL_KEYS.size():
-		var box := PanelContainer.new()
-		box.custom_minimum_size = Vector2(136, 58)
-		var st := StyleBoxFlat.new()
-		st.bg_color = Color(0.03, 0.04, 0.06, 0.72)
-		st.set_border_width_all(0)
-		st.border_width_bottom = 3
-		st.border_color = Color(1, 1, 1, 0.15)
-		st.set_corner_radius_all(4)
-		st.content_margin_left = 8
-		st.content_margin_right = 8
-		box.add_theme_stylebox_override("panel", st)
-		var v := VBoxContainer.new()
-		v.add_theme_constant_override("separation", 0)
-		box.add_child(v)
-		var top := UiKit.label("", 14, UiKit.MIST, 4)
-		v.add_child(top)
-		var nm := UiKit.label("", 18, Color.WHITE, 5)
-		v.add_child(nm)
-		skills.add_child(box)
-		_skill_boxes.append({"box": box, "style": st, "top": top, "name": nm})
+	var row := HBoxContainer.new()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	bc.add_child(row)
+	var panel := PanelContainer.new()
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_sk_style = StyleBoxFlat.new()
+	_sk_style.bg_color = Color(0.02, 0.03, 0.05, 0.55)
+	_sk_style.border_width_bottom = 2
+	_sk_style.border_color = Color(1, 1, 1, 0.2)
+	_sk_style.set_corner_radius_all(4)
+	_sk_style.content_margin_left = 8
+	_sk_style.content_margin_right = 14
+	_sk_style.content_margin_top = 6
+	_sk_style.content_margin_bottom = 6
+	panel.add_theme_stylebox_override("panel", _sk_style)
+	row.add_child(panel)
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 10)
+	panel.add_child(h)
+	var ib := Control.new()
+	ib.custom_minimum_size = Vector2(48, 48)
+	ib.clip_contents = true
+	h.add_child(ib)
+	_sk_icon = UiKit.icon("lock", 48, UiKit.MIST)
+	ib.add_child(_sk_icon)
+	UiKit.fill(_sk_icon)
+	_sk_mask = ColorRect.new()
+	_sk_mask.color = Color(0, 0, 0, 0.6)
+	_sk_mask.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ib.add_child(_sk_mask)
+	_sk_cd = UiKit.num("", 22, Color.WHITE, 4)
+	_sk_cd.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_sk_cd.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	ib.add_child(_sk_cd)
+	UiKit.fill(_sk_cd)
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 2)
+	v.alignment = BoxContainer.ALIGNMENT_CENTER
+	h.add_child(v)
+	var top := HBoxContainer.new()
+	top.add_theme_constant_override("separation", 8)
+	v.add_child(top)
+	top.add_child(UiKit.keycap("Q"))
+	_sk_name = UiKit.bold("", 18, Color.WHITE, 4)
+	top.add_child(_sk_name)
+	_sk_sub = UiKit.label("", 13, UiKit.MIST, 4)
+	v.add_child(_sk_sub)
+	var pips := HBoxContainer.new()
+	pips.add_theme_constant_override("separation", 4)
+	v.add_child(pips)
+	for i in Data.SKILL_SLOTS:
+		var d := ColorRect.new()
+		d.custom_minimum_size = Vector2(14, 3)
+		d.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		pips.add_child(d)
+		_sk_pips.append(d)
+	_build_wheel()
+
+
+# ------------------------------------------------------------------ 魂技轮盘（按住 Q）
+
+const WHEEL_IN := 78.0
+const WHEEL_OUT := 200.0
+
+
+func _build_wheel() -> void:
+	_wheel = Control.new()
+	_wheel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_wheel.visible = false
+	_root.add_child(_wheel)
+	UiKit.fill(_wheel)
+	_wheel.draw.connect(_draw_wheel)
+	_wheel_items = Control.new()
+	_wheel_items.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_wheel.add_child(_wheel_items)
+	UiKit.fill(_wheel_items)
+	var mid := VBoxContainer.new()
+	mid.alignment = BoxContainer.ALIGNMENT_CENTER
+	mid.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_wheel.add_child(mid)
+	UiKit.place(mid, Vector4(0.5, 0.5, 0.5, 0.5), Vector4(-70, -40, 70, 40))
+	_wheel_name = UiKit.bold("", 18, Color.WHITE, 4)
+	_wheel_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_wheel_name.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	mid.add_child(_wheel_name)
+	_wheel_info = UiKit.label("", 13, UiKit.MIST, 4)
+	_wheel_info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	mid.add_child(_wheel_info)
+
+
+func wheel_open() -> bool:
+	return _wheel != null and _wheel.visible
+
+
+func open_wheel(cur: int) -> void:
+	var n := Profile.rings.size()
+	if n < 1:
+		return
+	_wheel_vec = Vector2.ZERO
+	_wheel_sel = clampi(cur, 0, n - 1)
+	for c in _wheel_items.get_children():
+		c.queue_free()
+	var c0 := _wheel.size * 0.5
+	for i in n:
+		var sid: String = world.skills.slot_skill(i)
+		var dir := Vector2.from_angle(-PI * 0.5 + TAU * i / n)
+		var box := VBoxContainer.new()
+		box.alignment = BoxContainer.ALIGNMENT_CENTER
+		box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		box.size = Vector2(120, 80)
+		box.position = c0 + dir * (WHEEL_IN + WHEEL_OUT) * 0.5 - box.size * 0.5
+		var ic := UiKit.icon(UiKit.skill_icon(sid), 40, Data.age_color(int(Profile.rings[i]["age"])))
+		ic.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		box.add_child(ic)
+		var nm := UiKit.label(str(Data.SKILLS[sid]["name"]), 14, Color.WHITE, 4)
+		nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		box.add_child(nm)
+		var cdl := UiKit.num("", 16, UiKit.MIST, 4)
+		cdl.name = "Cd"
+		cdl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		box.add_child(cdl)
+		_wheel_items.add_child(box)
+	_wheel.visible = true
+	_update_wheel_text()
+	_wheel.queue_redraw()
+	Sfx.play("ui_click", -10.0)
+
+
+## 按住 Q 时鼠标的移动用来选扇区
+func wheel_mouse(d: Vector2) -> void:
+	var n := Profile.rings.size()
+	if n < 1:
+		return
+	_wheel_vec = (_wheel_vec + d).limit_length(160.0)
+	if _wheel_vec.length() < 30.0:
+		return
+	var rel := fposmod(_wheel_vec.angle() + PI * 0.5, TAU)
+	var sel := int(round(rel / (TAU / n))) % n
+	if sel != _wheel_sel:
+		_wheel_sel = sel
+		Sfx.play("ui_click", -14.0)
+		_update_wheel_text()
+		_wheel.queue_redraw()
+
+
+## 关掉轮盘，返回选中的魂技槽
+func close_wheel() -> int:
+	_wheel.visible = false
+	return _wheel_sel
+
+
+func _update_wheel_text() -> void:
+	var sid: String = world.skills.slot_skill(_wheel_sel)
+	if sid == "":
+		return
+	var s: Dictionary = Data.SKILLS[sid]
+	_wheel_name.text = str(s["name"])
+	var cd: float = world.skills.cooldowns[_wheel_sel]
+	_wheel_info.text = ("冷却 %.1f 秒" % cd) if cd > 0.0 else ("魂力 %d" % int(s["cost"]))
+
+
+func _draw_wheel() -> void:
+	var n := Profile.rings.size()
+	if n < 1:
+		return
+	var c := _wheel.size * 0.5
+	var seg := TAU / n
+	_wheel.draw_circle(c, WHEEL_OUT + 14.0, Color(0, 0, 0, 0.25))
+	for i in n:
+		var a0 := -PI * 0.5 + seg * i - seg * 0.5 + 0.025
+		var a1 := a0 + seg - 0.05
+		var pts := PackedVector2Array()
+		for k in 25:
+			pts.append(c + Vector2.from_angle(lerpf(a0, a1, k / 24.0)) * WHEEL_OUT)
+		for k in 25:
+			pts.append(c + Vector2.from_angle(lerpf(a1, a0, k / 24.0)) * WHEEL_IN)
+		var on := i == _wheel_sel
+		var ready: bool = world.skills.cooldowns[i] <= 0.0
+		var col := Color(1.0, 0.78, 0.3, 0.32) if on else Color(0.03, 0.04, 0.06, 0.72 if ready else 0.5)
+		_wheel.draw_colored_polygon(pts, col)
+		pts.append(pts[0])
+		_wheel.draw_polyline(pts, Color(1.0, 0.8, 0.35, 0.95) if on else Color(1, 1, 1, 0.12), 2.0 if on else 1.0, true)
+	_wheel.draw_circle(c, WHEEL_IN - 8.0, Color(0.02, 0.03, 0.05, 0.8))
 
 
 func _build_top_center() -> void:
@@ -454,7 +701,7 @@ func choose_skill(age: int, species: String) -> void:
 	var t := UiKit.title("第%s魂环 · %s魂环（%s）" % [Data.RING_NAMES[slot], Data.age_name(age), Data.BEASTS.get(species, {"name": "魂兽"})["name"]], 44, Data.age_color(age))
 	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(t)
-	var sub := UiKit.label("选一个魂技（选了就不能换，按 %s 释放）" % Data.SKILL_KEYS[slot], 20, UiKit.MIST)
+	var sub := UiKit.label("选一个魂技（选了就不能换）· 轻按 Q 释放当前魂技，按住 Q 用轮盘切换", 20, UiKit.MIST)
 	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(sub)
 	var row := HBoxContainer.new()
@@ -637,20 +884,10 @@ func update_quest() -> void:
 
 func _refresh_skills() -> void:
 	_skills_n = Profile.rings.size()
-	for i in Data.SKILL_KEYS.size():
-		var sb: Dictionary = _skill_boxes[i]
-		var sid: String = world.skills.slot_skill(i)
-		var st: StyleBoxFlat = sb["style"]
-		if sid == "":
-			sb["top"].text = "%s · 第%s魂环" % [Data.SKILL_KEYS[i], Data.RING_NAMES[i]]
-			sb["name"].text = "%d 级解锁" % ((i + 1) * 10)
-			sb["name"].add_theme_color_override("font_color", UiKit.MIST)
-			st.border_color = Color(1, 1, 1, 0.15)
-		else:
-			var age := int(Profile.rings[i]["age"])
-			sb["name"].text = str(Data.SKILLS[sid]["name"])
-			sb["name"].add_theme_color_override("font_color", Color.WHITE)
-			st.border_color = Data.age_color(age)
+	_sk_shown = ""
+	for i in _sk_pips.size():
+		var d: ColorRect = _sk_pips[i]
+		d.color = Data.age_color(int(Profile.rings[i]["age"])) if i < _skills_n else Color(1, 1, 1, 0.15)
 
 
 # ------------------------------------------------------------------ 每帧
@@ -658,7 +895,7 @@ func _refresh_skills() -> void:
 func _process(dt: float) -> void:
 	var p: Player = world.player
 	_money_shown = move_toward(_money_shown, Profile.money, maxf(absf(Profile.money - _money_shown) * dt * 6.0, dt * 20.0))
-	_money.text = "金魂币  %d" % roundi(_money_shown)
+	_money.text = "%d" % roundi(_money_shown)
 	_room.text = ("房间 %s · %d 人" % [Net.room_code, Net.peers.size() + 1]) if Net.is_online() else "单人模式"
 	_fps.text = ("%d FPS" % Engine.get_frames_per_second()) if Settings.show_fps else ""
 
@@ -666,29 +903,20 @@ func _process(dt: float) -> void:
 	var mhp := Profile.max_hp()
 	_hp.value = p.hp / mhp
 	_shield.value = clampf(p.shield / mhp, 0.0, 1.0)
-	_hp_text.text = "%d / %d%s" % [ceili(p.hp), int(mhp), ("  +%d 护盾" % ceili(p.shield)) if p.shield > 0.0 else ""]
+	_hp_text.text = "%d%s" % [ceili(p.hp), ("  +%d" % ceili(p.shield)) if p.shield > 0.0 else ""]
 	_soul.value = p.soul / Profile.max_soul()
 	var need := Data.xp_to_next(Profile.level)
 	_xp.value = float(Profile.xp) / float(need)
-	var cap := "  【瓶颈：吸收第%d魂环】" % (Profile.rings.size() + 1) if Profile.at_bottleneck() else ""
-	_level.text = "%s · %s   修为 %d/%d%s" % [Settings.display_name(), Profile.title(), Profile.xp, need, cap]
+	var cap := "   瓶颈 · 吸收第%s魂环" % Data.RING_NAMES[mini(Profile.rings.size(), 4)] if Profile.at_bottleneck() else ""
+	_level.text = "Lv.%d  %s%s" % [Profile.level, Data.titles(Profile.level), cap]
+	_level.add_theme_color_override("font_color", UiKit.GOLD if cap != "" else UiKit.MIST)
 	var gold := Profile.item_count("gold_bites")
-	_items.text = "G 佛怒唐莲 ×%d    H 回血丹 ×%d%s" % [Profile.item_count("grenade"), Profile.item_count("pill"), ("    引兽香 %d 次" % gold) if gold > 0 else ""]
+	_item_g.text = "%d" % Profile.item_count("grenade")
+	_item_h.text = "%d" % Profile.item_count("pill")
+	_item_x.text = ("   引兽香 %d" % gold) if gold > 0 else ""
 
-	# 魂技冷却
-	for i in Data.SKILL_KEYS.size():
-		var sb: Dictionary = _skill_boxes[i]
-		var sid: String = world.skills.slot_skill(i)
-		if sid == "":
-			continue
-		var cd: float = world.skills.cooldowns[i]
-		var cost := int(Data.SKILLS[sid]["cost"])
-		if cd > 0.0:
-			sb["top"].text = "%s · 冷却 %.1f" % [Data.SKILL_KEYS[i], cd]
-			sb["box"].modulate = Color(0.55, 0.55, 0.55)
-		else:
-			sb["top"].text = "%s · 魂力 %d" % [Data.SKILL_KEYS[i], cost]
-			sb["box"].modulate = Color.WHITE if p.soul >= cost else Color(0.6, 0.7, 1.0)
+	# 当前魂技
+	_update_skill_slot(p)
 	if Profile.rings.size() != _skills_n:
 		_refresh_skills()
 
@@ -738,6 +966,53 @@ func _process(dt: float) -> void:
 		_scores.visible = show_scores
 		if show_scores:
 			_fill_scores()
+
+
+func _update_skill_slot(p: Player) -> void:
+	var cur: int = world.skills.current
+	var sid: String = world.skills.slot_skill(cur)
+	if sid == "":
+		if _sk_shown != "-":
+			_sk_shown = "-"
+			_sk_icon.texture = load(UiKit.ICONS + "lock.svg")
+			_sk_icon.modulate = UiKit.MIST
+			_sk_name.text = "魂技"
+			_sk_sub.text = "10 级吸收第一魂环后解锁"
+			_sk_style.border_color = Color(1, 1, 1, 0.2)
+			_sk_mask.size = Vector2.ZERO
+			_sk_cd.text = ""
+		return
+	var s: Dictionary = Data.SKILLS[sid]
+	var age := int(Profile.rings[cur]["age"])
+	if _sk_shown != sid:
+		_sk_shown = sid
+		_sk_icon.texture = load(UiKit.ICONS + UiKit.skill_icon(sid) + ".svg")
+		_sk_name.text = str(s["name"])
+		_sk_style.border_color = Data.age_color(age)
+	var cd: float = world.skills.cooldowns[cur]
+	var cost := int(s["cost"])
+	var full := maxf(float(s.get("cd", 1.0)), 0.1)
+	if cd > 0.0:
+		var k := clampf(cd / full, 0.0, 1.0)
+		_sk_mask.position = Vector2(0, 48.0 * (1.0 - k))
+		_sk_mask.size = Vector2(48, 48.0 * k)
+		_sk_cd.text = "%d" % ceili(cd)
+		_sk_icon.modulate = Color(0.6, 0.6, 0.6)
+	else:
+		_sk_mask.size = Vector2.ZERO
+		_sk_cd.text = ""
+		_sk_icon.modulate = Color.WHITE if p.soul >= cost else Color(0.45, 0.6, 1.0)
+	var more := "  ·  按住 Q 切换" if Profile.rings.size() > 1 else ""
+	_sk_sub.text = "魂力 %d%s" % [cost, more]
+	for i in _sk_pips.size():
+		var d: ColorRect = _sk_pips[i]
+		d.custom_minimum_size.y = 5.0 if i == cur else 3.0
+	if _wheel.visible:
+		_wheel.queue_redraw()
+		var boxes := _wheel_items.get_children()
+		for i in boxes.size():
+			var c: float = world.skills.cooldowns[i] if i < 5 else 0.0
+			(boxes[i].get_node("Cd") as Label).text = ("%.1f" % c) if c > 0.0 else ""
 
 
 func _update_lure_ui(p: Player) -> void:

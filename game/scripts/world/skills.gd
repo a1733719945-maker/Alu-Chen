@@ -1,6 +1,6 @@
 class_name SkillSystem
 extends Node
-## 魂技：按 Q / C / X / Z / V 放第一到第五魂环的魂技。
+## 魂技：五个魂环各一个魂技。轻按 Q 放"当前魂技"，按住 Q 弹出轮盘切换（见 Player._skill_input）。
 ##
 ## 放技能的人：扣魂力、算目标、处理自己身上的效果（增益、冲刺、跳跃），把"对魂兽的效果"发给房主。
 ## 房主：对魂兽 / Boss 生效（炸飞、定身、易伤、牵引、光束……），再广播特效。
@@ -8,6 +8,7 @@ extends Node
 
 var world: Node
 var cooldowns := [0.0, 0.0, 0.0, 0.0, 0.0]
+var current := 0                # 当前魂技是第几个魂环的
 var _leap := {}                  # 凤翼天翔 / 天使之翼 落地时触发
 var _projectiles: Array = []     # 本地模拟的飞弹 {sid, pos, vel, power, caster, life, mi}
 var _rains: Array = []           # 房主排队的连击 {sid, center, power, caster, waves, t}
@@ -39,7 +40,7 @@ func cast(slot: int) -> void:
 	var p: Player = world.player
 	var sid := slot_skill(slot)
 	if sid == "":
-		world.hud.toast("第%d魂环还没有。到 %d 级瓶颈后吸收魂环就能获得魂技" % [slot + 1, (slot + 1) * 10], Color(0.9, 0.9, 0.9))
+		world.hud.toast("还没有魂技。到 10 级瓶颈后吸收魂环就能获得", Color(0.9, 0.9, 0.9))
 		return
 	var s: Dictionary = Data.SKILLS[sid]
 	if cooldowns[slot] > 0.0:

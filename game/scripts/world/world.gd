@@ -720,7 +720,8 @@ func finish_absorb(age: int, species: String, sid: String) -> void:
 	var ups := Profile.add_xp(0)
 	player.soul = Profile.max_soul()
 	player.hp = Profile.max_hp()
-	hud.toast("吸收了%s魂环！获得魂技【%s】（按 %s 释放）" % [Data.age_name(age), Data.SKILLS[sid]["name"], Data.SKILL_KEYS[Profile.rings.size() - 1]], Data.age_color(age), 6.0)
+	skills.current = Profile.rings.size() - 1
+	hud.toast("吸收了%s魂环！获得魂技【%s】（轻按 Q 释放，按住 Q 切换）" % [Data.age_name(age), Data.SKILLS[sid]["name"]], Data.age_color(age), 6.0)
 	Sfx.play("level_up", -2.0)
 	_broadcast_prog()
 	if ups > 0:

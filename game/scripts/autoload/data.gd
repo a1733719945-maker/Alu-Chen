@@ -396,7 +396,7 @@ const SKILL_TREE := {
 	"ht": [["ht_slam", "ht_throw"], ["ht_break", "ht_nine"], ["ht_storm", "ht_true"], ["ht_quake", "ht_break2"], ["ht_nine2", "ht_fall"]],
 	"ls": [["ls_light", "ls_shield"], ["ls_wing", "ls_judge"], ["ls_sword", "ls_domain"], ["ls_holy", "ls_bless"], ["ls_god", "ls_true"]],
 }
-const SKILL_KEYS := ["Q", "C", "X", "Z", "V"]
+const SKILL_SLOTS := 5         # 五个魂环 = 五个魂技，都用 Q 放（按住 Q 轮盘切换）
 const RING_NAMES := ["一", "二", "三", "四", "五", "六", "七", "八", "九"]
 
 # ================================================================ 魂骨（Boss 掉落，被动加成）
