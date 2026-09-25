@@ -20,6 +20,7 @@ var vsync := false
 var max_fps := 0                   # 0 = 不限
 var server_url := DEFAULT_SERVER
 var show_fps := false
+var quality := 2                   # 画质：0 低 / 1 中 / 2 高（草和植被密度下次进地图生效）
 
 
 func _ready() -> void:
@@ -38,12 +39,21 @@ func _register_inputs() -> void:
 		"move_right": [KEY_D, KEY_RIGHT],
 		"jump": [KEY_SPACE],
 		"sprint": [KEY_SHIFT],
-		"crouch": [KEY_CTRL, KEY_C],
+		"crouch": [KEY_CTRL],
 		"lure": [KEY_E],
 		"interact": [KEY_F],
 		"reload": [KEY_R],
+		"skill_1": [KEY_Q],
+		"skill_2": [KEY_C],
+		"skill_3": [KEY_X],
+		"grenade": [KEY_G],
+		"pill": [KEY_H],
+		"wuhun_panel": [KEY_K],
 		"weapon_1": [KEY_1],
 		"weapon_2": [KEY_2],
+		"weapon_3": [KEY_3],
+		"weapon_4": [KEY_4],
+		"weapon_5": [KEY_5],
 		"scoreboard": [KEY_TAB],
 		"pause": [KEY_ESCAPE],
 		"fullscreen": [KEY_F11],
@@ -88,6 +98,7 @@ func load_settings() -> void:
 	vsync = bool(cfg.get_value("video", "vsync", vsync))
 	max_fps = int(cfg.get_value("video", "max_fps", max_fps))
 	show_fps = bool(cfg.get_value("video", "show_fps", show_fps))
+	quality = clampi(int(cfg.get_value("video", "quality", quality)), 0, 2)
 	master_volume = float(cfg.get_value("audio", "master", master_volume))
 	sfx_volume = float(cfg.get_value("audio", "sfx", sfx_volume))
 	server_url = str(cfg.get_value("net", "server", server_url))
@@ -105,6 +116,7 @@ func save_settings() -> void:
 	cfg.set_value("video", "vsync", vsync)
 	cfg.set_value("video", "max_fps", max_fps)
 	cfg.set_value("video", "show_fps", show_fps)
+	cfg.set_value("video", "quality", quality)
 	cfg.set_value("audio", "master", master_volume)
 	cfg.set_value("audio", "sfx", sfx_volume)
 	cfg.set_value("net", "server", server_url)
@@ -118,6 +130,11 @@ func apply() -> void:
 			DisplayServer.window_set_mode(mode)
 		DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED if vsync else DisplayServer.VSYNC_DISABLED)
 	Engine.max_fps = max_fps
+	var vp := get_viewport()
+	if vp:
+		vp.msaa_3d = [Viewport.MSAA_DISABLED, Viewport.MSAA_2X, Viewport.MSAA_4X][quality]
+		vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA if quality == 0 else Viewport.SCREEN_SPACE_AA_DISABLED
+		RenderingServer.directional_shadow_atlas_set_size([2048, 4096, 4096][quality], true)
 	var master := AudioServer.get_bus_index("Master")
 	AudioServer.set_bus_volume_db(master, linear_to_db(maxf(master_volume, 0.0001)))
 	changed.emit()

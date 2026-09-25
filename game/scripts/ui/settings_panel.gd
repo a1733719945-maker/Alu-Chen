@@ -19,6 +19,7 @@ func _ready() -> void:
 	_slider(v, "视野 FOV", 70.0, 120.0, 1.0, Settings.fov, func(x): Settings.fov = x)
 	_slider(v, "总音量", 0.0, 1.0, 0.01, Settings.master_volume, func(x): Settings.master_volume = x)
 	_slider(v, "音效音量", 0.0, 1.0, 0.01, Settings.sfx_volume, func(x): Settings.sfx_volume = x)
+	_option(v, "画质", ["低（老电脑）", "中", "高"], Settings.quality, func(i): Settings.quality = i)
 	_check(v, "鼠标 Y 轴反转", Settings.invert_y, func(b): Settings.invert_y = b)
 	_check(v, "全屏（F11）", Settings.fullscreen, func(b): Settings.fullscreen = b)
 	_check(v, "垂直同步（开了更稳，但会多一点延迟）", Settings.vsync, func(b): Settings.vsync = b)
@@ -66,6 +67,26 @@ func _slider(parent: Control, text: String, lo: float, hi: float, step: float, v
 
 func _fmt(x: float, step: float) -> String:
 	return str(roundi(x)) if step >= 1.0 else ("%.2f" % x)
+
+
+func _option(parent: Control, text: String, items: Array, value: int, setter: Callable) -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	var l := UiKit.label(text, 18)
+	l.custom_minimum_size.x = 170
+	row.add_child(l)
+	var o := OptionButton.new()
+	for it in items:
+		o.add_item(str(it))
+	o.selected = value
+	o.add_theme_font_size_override("font_size", 18)
+	o.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	o.item_selected.connect(func(i):
+		setter.call(i)
+		Settings.apply()
+		Settings.save_settings())
+	row.add_child(o)
+	parent.add_child(row)
 
 
 func _check(parent: Control, text: String, value: bool, setter: Callable) -> void:

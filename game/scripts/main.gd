@@ -1,14 +1,21 @@
 extends Node
 ## 入口：主菜单 ↔ 游戏。
+##
+## 单人 / 房主：直接用自己存档里的章节建地图。
+## 客人：连上后先打招呼，等房主回 "init"（里面有当前章节），再建地图。
+## 地图还没建好时收到的联机消息先存起来，建好后按顺序交给地图。
 
 var menu: MainMenu
 var world: World
+var _waiting_init := false
+var _queue: Array = []
 
 
 func _ready() -> void:
 	Net.connected.connect(_on_connected)
 	Net.failed.connect(_on_failed)
 	Net.disconnected.connect(_on_disconnected)
+	Net.message.connect(_on_message)
 	Net.status.connect(func(t): if menu: menu.set_status(t))
 	var args := _args()
 	if args.has("autotest"):
@@ -68,20 +75,65 @@ func start_join(code: String) -> void:
 
 
 func _on_connected(_code: String) -> void:
+	if Net.is_host():
+		_start_world(Profile.chapter, false)
+		if Net.is_online():
+			world.hud.toast("已进入房间 %s。按 Esc 可以看到房间码，发给朋友就能加入" % Net.room_code, Color(1, 0.9, 0.6), 7.0)
+	else:
+		_waiting_init = true
+		_queue.clear()
+		if menu:
+			menu.set_status("已连上，正在同步房主的进度…")
+		Net.send(0, "hello", [Settings.display_name(), Settings.wuhun, true, Profile.level, _ring_summary()])
+
+
+func _ring_summary() -> Array:
+	var out := []
+	for r in Profile.rings:
+		out.append(int(r["age"]))
+	return out
+
+
+func _start_world(chapter: int, announce: bool) -> void:
 	if menu:
 		menu.queue_free()
 		menu = null
 	if world:
 		world.queue_free()
-	world = World.new()
+		world = null
+	if not Data.CHAPTERS.has(chapter):
+		chapter = 1
+	world = World.new(chapter)
 	world.name = "World"
 	add_child(world)
 	world.leave_requested.connect(leave)
-	if Net.is_online():
-		world.hud.toast("已进入房间 %s。按 Esc 可以看到房间码，发给朋友就能加入" % Net.room_code, Color(1, 0.9, 0.6), 7.0)
+	world.travel_requested.connect(_travel)
+	if announce and Net.is_online():
+		Net.send(0, "hello", world.hello_payload(true))
+
+
+func _travel(chapter: int) -> void:
+	# 坐船换章节：所有人一起换地图，换完再互相打招呼
+	_start_world(chapter, true)
+
+
+func _on_message(from: int, type: String, data: Variant) -> void:
+	if _waiting_init:
+		_queue.append([from, type, data])
+		if type == "init":
+			_waiting_init = false
+			_start_world(int(data[0]), false)
+			var q := _queue.duplicate()
+			_queue.clear()
+			for m in q:
+				world.on_message(m[0], m[1], m[2])
+		return
+	if world:
+		world.on_message(from, type, data)
 
 
 func _on_failed(reason: String) -> void:
+	_waiting_init = false
 	if menu:
 		menu.set_busy(false)
 		menu.set_status(reason, true)
@@ -97,6 +149,7 @@ func leave() -> void:
 
 
 func _back_to_menu(status: String, error: bool) -> void:
+	_waiting_init = false
 	if world:
 		world.queue_free()
 		world = null

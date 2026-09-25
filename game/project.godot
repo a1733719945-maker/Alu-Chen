@@ -7,7 +7,7 @@ config_version=5
 
 config/name="斗罗大陆·猎魂"
 config/description="第一人称联机猎魂：用引魂索把魂兽拽上天，用唐门暗器在空中击杀。"
-config/version="0.1.0"
+config/version="0.2.0"
 run/main_scene="res://scenes/main.tscn"
 config/features=PackedStringArray("4.7", "Forward Plus")
 config/icon="res://icon.svg"
@@ -18,6 +18,7 @@ boot_splash/show_image=false
 
 Settings="*res://scripts/autoload/settings.gd"
 Data="*res://scripts/autoload/data.gd"
+Profile="*res://scripts/autoload/profile.gd"
 Net="*res://scripts/autoload/net.gd"
 Sfx="*res://scripts/autoload/sfx.gd"
 

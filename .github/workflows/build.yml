@@ -62,7 +62,7 @@ jobs:
       - name: 导入资源
         run: ~/godot/godot --headless --path game --import
 
-      - name: 自动测试 · 单人（四种栖息地 + 千年拉扯）
+      - name: 自动测试 · 单人（整个流程：抓魂兽、暗器铺、压枪、魂环、Boss、坐船去第二章）
         run: ~/godot/godot --headless --path game -- --autotest=solo
 
       - name: 自动测试 · 联机（房主 + 客人）

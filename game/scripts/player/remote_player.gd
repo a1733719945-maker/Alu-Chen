@@ -1,32 +1,36 @@
 class_name RemotePlayer
 extends Node3D
-## 其他玩家在我这边的样子：一个小人 + 名字 + 手里的暗器 + 引魂索。
+## 其他玩家在我这边的样子：小人 + 名字等级 + 手里的暗器 + 身上的魂环 + 引魂索。
 ## 位置按对方发来的快照插值（落后 100ms，动作顺）。
 
 const INTERP_DELAY := 0.1
 
 var peer_id := 0
 var world: Node
-var _snaps: Array = []   # [time, pos, yaw, pitch, weapon, flags, lure_state, lure_pos]
+var info := {}
+var _snaps: Array = []   # [time, pos, yaw, pitch, gun_id, flags, lure_state, lure_pos, hp]
 var body: Node3D
 var head: Node3D
 var arm_r: Node3D
 var arm_l: Node3D
 var leg_l: Node3D
 var leg_r: Node3D
-var weapons: Array[Node3D] = []
+var weapons := {}
 var label: Label3D
 var lure: Lure
+var ring_root: Node3D
 var _walk_t := 0.0
 var _last_pos := Vector3.ZERO
-var weapon := 0
 var pitch := 0.0
+var _dead := false
+var _flash := [0.0, 0.0, 0.0]
 
 
-func setup(p_world: Node, id: int, display_name: String, wuhun_idx: int) -> void:
+func setup(p_world: Node, id: int, p_info: Dictionary) -> void:
 	world = p_world
 	peer_id = id
 	name = "P%d" % id
+	var wuhun_idx := int(p_info.get("wuhun", 0))
 	var robe := U.mat(Color(0.92, 0.92, 0.88), 0.9)
 	var accent := U.mat(Data.wuhun_color(wuhun_idx), 0.6)
 	var skin := U.mat(Color(0.93, 0.78, 0.66), 0.8)
@@ -36,6 +40,7 @@ func setup(p_world: Node, id: int, display_name: String, wuhun_idx: int) -> void
 	add_child(body)
 	U.part(body, U.capsule(0.27, 0.9), robe, Vector3(0, 1.08, 0))
 	U.part(body, U.cyl(0.29, 0.29, 0.1, 12), accent, Vector3(0, 0.98, 0))
+	U.part(body, U.cyl(0.3, 0.36, 0.5, 12), robe, Vector3(0, 0.62, 0))
 	head = Node3D.new()
 	head.position = Vector3(0, 1.62, 0)
 	body.add_child(head)
@@ -47,28 +52,44 @@ func setup(p_world: Node, id: int, display_name: String, wuhun_idx: int) -> void
 	leg_r = _limb(body, Vector3(0.12, 0.62, 0), robe, 0.09, 0.62)
 	arm_l = _limb(body, Vector3(-0.33, 1.38, 0), robe, 0.07, 0.56)
 	arm_r = _limb(body, Vector3(0.33, 1.38, 0), robe, 0.07, 0.56)
-	# 手里的暗器
-	var xj := Node3D.new()
-	U.part(xj, U.cyl(0.03, 0.035, 0.32, 8), U.mat(Color(0.35, 0.28, 0.2), 0.45, 0.0, 0.6), Vector3(0, -0.5, -0.1), Vector3(PI / 2, 0, 0))
-	arm_r.add_child(xj)
-	var by := Node3D.new()
-	U.part(by, U.box(Vector3(0.16, 0.14, 0.24)), U.mat(Color(0.35, 0.07, 0.06), 0.35), Vector3(0, -0.52, -0.1))
-	arm_r.add_child(by)
-	weapons = [xj, by]
+	for id2 in Data.WEAPON_ORDER:
+		var w := WeaponModels.build_small(id2)
+		w.position = Vector3(0, -0.52, -0.15)
+		w.visible = false
+		arm_r.add_child(w)
+		weapons[id2] = w
 	var coil := U.part(arm_l, U.torus(0.07, 0.09, 20, 6), U.glow(Color(0.45, 0.8, 1.0), 2.5), Vector3(0, -0.4, 0))
 	coil.rotation.x = PI / 2
-	# 魂环光圈（按武魂颜色）
-	var ring := U.part(self, U.torus(0.55, 0.6, 40, 6), U.glow(Data.wuhun_color(wuhun_idx), 1.4), Vector3(0, 0.05, 0), Vector3.ZERO, Vector3.ONE, false)
-	ring.name = "Ring"
-	label = U.label3d(display_name, 44, Color(1, 1, 1), 10)
-	label.position = Vector3(0, 2.15, 0)
+	ring_root = Node3D.new()
+	add_child(ring_root)
+	label = U.label3d("", 40, Color(1, 1, 1), 10)
+	label.position = Vector3(0, 2.25, 0)
 	label.fixed_size = true
-	label.pixel_size = 0.0012
+	label.pixel_size = 0.0011
 	add_child(label)
 	lure = Lure.new()
 	lure.world = world
 	lure.remote = true
 	add_child(lure)
+	set_info(p_info)
+
+
+func set_info(p_info: Dictionary) -> void:
+	info = p_info
+	label.text = "%s\n%d 级%s" % [str(info.get("name", "魂师")), int(info.get("level", 1)), Data.titles(int(info.get("level", 1)))]
+	for c in ring_root.get_children():
+		c.queue_free()
+	var rs: Array = info.get("rings", [])
+	# 魂环：从脚下往上一圈一圈，颜色按年份
+	for i in rs.size():
+		var col := Data.age_color(int(rs[i]))
+		var r := U.part(ring_root, U.torus(0.55, 0.62, 40, 6), U.glow(col, 2.0), Vector3(0, 0.25 + i * 0.35, 0), Vector3.ZERO, Vector3.ONE, false)
+		r.name = "R%d" % i
+
+
+func flash_ring(slot: int) -> void:
+	if slot < _flash.size():
+		_flash[slot] = 1.0
 
 
 func _limb(parent: Node3D, pos: Vector3, m: Material, r: float, length: float) -> Node3D:
@@ -83,6 +104,10 @@ func set_camera(c: Camera3D) -> void:
 	lure.set_camera(c)
 
 
+func is_dead() -> bool:
+	return _dead
+
+
 func push_snapshot(s: Array) -> void:
 	var entry := [Time.get_ticks_msec() / 1000.0]
 	entry.append_array(s)
@@ -91,42 +116,44 @@ func push_snapshot(s: Array) -> void:
 		_snaps.pop_front()
 
 
-## 当前位置（给房主判断魂兽往哪飞等用）
-func current_pos() -> Vector3:
-	return global_position
-
-
 func muzzle_global() -> Vector3:
-	return arm_r.global_transform * Vector3(0, -0.52, -0.3)
+	return arm_r.global_transform * Vector3(0, -0.52, -0.5)
 
 
 func _process(dt: float) -> void:
+	for i in _flash.size():
+		_flash[i] = maxf(_flash[i] - dt, 0.0)
+	var k := 0
+	for r in ring_root.get_children():
+		r.rotation.y += dt * (1.0 + k * 0.3)
+		r.scale = Vector3.ONE * (1.0 + (_flash[k] if k < _flash.size() else 0.0) * 0.8)
+		k += 1
 	if _snaps.is_empty():
 		return
 	var t := Time.get_ticks_msec() / 1000.0 - INTERP_DELAY
 	var s0: Array = _snaps[0]
 	var s1: Array = _snaps[-1]
-	var k := 1.0
+	var f := 1.0
 	for i in range(_snaps.size() - 1):
 		if t >= _snaps[i][0] and t <= _snaps[i + 1][0]:
 			s0 = _snaps[i]
 			s1 = _snaps[i + 1]
-			k = (t - s0[0]) / maxf(s1[0] - s0[0], 0.0001)
+			f = (t - s0[0]) / maxf(s1[0] - s0[0], 0.0001)
 			break
 	if t < _snaps[0][0]:
 		s1 = _snaps[0]
 		s0 = s1
-	var pos: Vector3 = (s0[1] as Vector3).lerp(s1[1], k)
-	var yaw := lerp_angle(float(s0[2]), float(s1[2]), k)
-	pitch = lerpf(float(s0[3]), float(s1[3]), k)
+	var pos: Vector3 = (s0[1] as Vector3).lerp(s1[1], f)
+	var yaw := lerp_angle(float(s0[2]), float(s1[2]), f)
+	pitch = lerpf(float(s0[3]), float(s1[3]), f)
 	global_position = pos
 	body.rotation.y = yaw
 	head.rotation.x = pitch * 0.6
-	weapon = int(s1[4])
+	var gid := str(s1[4])
+	for id2 in weapons:
+		weapons[id2].visible = id2 == gid
 	var flags := int(s1[5])
-	for i in weapons.size():
-		weapons[i].visible = i == weapon
-	# 走路摆腿
+	_dead = (flags & 32) != 0
 	var hv := (pos - _last_pos) / maxf(dt, 0.0001)
 	hv.y = 0
 	_last_pos = pos
@@ -138,12 +165,12 @@ func _process(dt: float) -> void:
 	leg_l.rotation.x = swing
 	leg_r.rotation.x = -swing
 	arm_l.rotation.x = -swing * 0.6
-	# 右手举着暗器，跟着视角上下
 	arm_r.rotation.x = PI / 2 * 0.85 + pitch
-	if flags & 8:
-		body.position.y = -0.35
+	body.position.y = -0.35 if flags & 8 else 0.0
+	if _dead:
+		body.rotation.x = -PI / 2
+		body.position.y = 0.3
 	else:
-		body.position.y = 0.0
-	get_node("Ring").rotation.y += dt * 1.2
+		body.rotation.x = 0.0
 	lure.hand = arm_l.global_transform * Vector3(0, -0.5, 0)
 	lure.apply_remote(int(s1[6]), s1[7], dt)

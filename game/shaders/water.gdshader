@@ -13,6 +13,10 @@ uniform sampler2D screen_texture : hint_screen_texture, filter_linear_mipmap;
 // 岛的高度图（每个像素 1 米），用来算每一处的水深；比读深度图稳定，不挑显卡
 uniform sampler2D height_tex : filter_linear, repeat_disable;
 uniform float terrain_half = 160.0;
+// 细碎的波纹法线（两层反向流动），近看水面有真实的碎光
+uniform sampler2D ripple_tex : hint_normal, filter_linear_mipmap, repeat_enable;
+uniform float ripple_strength = 0.55;
+uniform float murk = 0.0;               // 沼泽：浑浊不透明
 
 varying vec3 world_pos;
 
@@ -69,9 +73,15 @@ void fragment() {
 	col = mix(col, foam_color, foam * 0.85);
 
 	float fres = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 4.0);
+	vec2 r1 = texture(ripple_tex, world_pos.xz * 0.06 + vec2(TIME * 0.018, TIME * 0.011)).rg;
+	vec2 r2 = texture(ripple_tex, world_pos.xz * 0.11 - vec2(TIME * 0.013, -TIME * 0.02)).rg;
+	vec3 rn = normalize(vec3((r1 + r2 - 1.0) * 2.0, 1.0));
+	NORMAL_MAP = rn * 0.5 + 0.5;
+	NORMAL_MAP_DEPTH = ripple_strength;
+	col = mix(col, deep_color * 0.8, murk * 0.6);
 	ALBEDO = col;
-	ROUGHNESS = 0.06;
+	ROUGHNESS = 0.04 + murk * 0.12;
 	METALLIC = 0.0;
 	SPECULAR = 0.6;
-	ALPHA = clamp(0.82 + fres * 0.18 + foam * 0.2, 0.0, 1.0);
+	ALPHA = clamp(0.82 + murk * 0.15 + fres * 0.18 + foam * 0.2, 0.0, 1.0);
 }

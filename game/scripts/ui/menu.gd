@@ -16,6 +16,10 @@ var _wuhun_pic: TextureRect
 var _main: HBoxContainer
 var _settings: SettingsPanel
 var _buttons: Array[Button] = []
+var _skills_hint: Label
+var _save_info: Label
+var _reset_btn: Button
+var _reset_armed := false
 
 
 func _ready() -> void:
@@ -74,7 +78,7 @@ func _ready() -> void:
 	_name.custom_minimum_size = Vector2(420, 44)
 	_name.text_changed.connect(func(t): Settings.player_name = t.strip_edges(); Settings.save_settings())
 	lv.add_child(_name)
-	lv.add_child(UiKit.label("武魂（这一版只决定你的魂环颜色，魂技下个版本加入）", 16, UiKit.MIST))
+	lv.add_child(UiKit.label("武魂（决定你能学哪些魂技，游戏里按 K 查看）", 16, UiKit.MIST))
 	var wrow := HBoxContainer.new()
 	wrow.add_theme_constant_override("separation", 14)
 	lv.add_child(wrow)
@@ -96,6 +100,10 @@ func _ready() -> void:
 		_wuhun_btns.append(b)
 	_wuhun_name = UiKit.label("", 20, UiKit.GOLD)
 	lv.add_child(_wuhun_name)
+	_skills_hint = UiKit.label("", 15, UiKit.MOON)
+	_skills_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_skills_hint.custom_minimum_size = Vector2(420, 0)
+	lv.add_child(_skills_hint)
 
 	# 右：开始
 	var right := PanelContainer.new()
@@ -131,6 +139,14 @@ func _ready() -> void:
 	var b_quit := UiKit.button("退出", 20)
 	b_quit.pressed.connect(func(): quit.emit())
 	rv.add_child(b_quit)
+	_save_info = UiKit.label("", 16, UiKit.MIST)
+	_save_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_save_info.custom_minimum_size = Vector2(380, 0)
+	rv.add_child(_save_info)
+	_reset_btn = UiKit.button("重新开始（清空存档）", 15)
+	_reset_btn.pressed.connect(_on_reset)
+	rv.add_child(_reset_btn)
+	_refresh_save()
 	_buttons = [b_solo, b_host, b_join]
 
 	_status = UiKit.label("", 20, UiKit.GOLD)
@@ -139,10 +155,10 @@ func _ready() -> void:
 	_status.custom_minimum_size = Vector2(900, 0)
 	col.add_child(_status)
 
-	var help := UiKit.label("WASD 移动 · 空格 跳 · Shift 冲刺 · Ctrl 蹲 · 左键 射击 · 右键 瞄准 · R 换弹 · 1/2 切换暗器 · E 引魂索 · Tab 魂师榜 · Esc 暂停", 16, UiKit.MIST)
+	var help := UiKit.label("WASD 移动 · 空格 跳 · Ctrl 蹲 · 左键 射击 · 右键 瞄准 · R 换弹 · 1–5 暗器 · E 引魂索 · F 互动 · Q/C/X 魂技 · G 佛怒唐莲 · H 回血丹 · K 武魂 · Esc 暂停", 16, UiKit.MIST)
 	help.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	col.add_child(help)
-	var ver := UiKit.label("版本 %s · 第一版（手感测试）" % ProjectSettings.get_setting("application/config/version", "0"), 14, Color(0.5, 0.6, 0.57))
+	var ver := UiKit.label("版本 %s · 第二版" % ProjectSettings.get_setting("application/config/version", "0"), 14, Color(0.5, 0.6, 0.57))
 	ver.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	col.add_child(ver)
 
@@ -164,6 +180,38 @@ func _pick_wuhun(i: int, silent := false) -> void:
 	for k in _wuhun_btns.size():
 		_wuhun_btns[k].modulate = Color(1, 1, 1) if k == i else Color(0.75, 0.8, 0.78)
 		_wuhun_btns[k].add_theme_color_override("font_color", UiKit.GOLD if k == i else UiKit.MOON)
+	var tree: Array = Data.SKILL_TREE[w["id"]]
+	var lines := []
+	for r in tree.size():
+		var names := []
+		for sid in tree[r]:
+			names.append("【%s】" % Data.SKILLS[sid]["name"])
+		lines.append("第%s魂环：%s" % [["一", "二", "三"][r], " 或 ".join(names)])
+	if not Profile.rings.is_empty():
+		lines.append("（已经选好的魂技不会因为换武魂而改变）")
+	_skills_hint.text = "\n".join(lines)
+
+
+func _refresh_save() -> void:
+	if Profile.level <= 1 and Profile.money == 0 and Profile.rings.is_empty() and Profile.chapter == 1:
+		_save_info.text = "新存档：从第一章 · 湖心岛开始"
+		_reset_btn.visible = false
+		return
+	_reset_btn.visible = true
+	var ch: String = Data.CHAPTERS[Profile.chapter]["name"] if Data.CHAPTERS.has(Profile.chapter) else ""
+	_save_info.text = "存档：%s · %s · %d 个魂环 · 金魂币 %d" % [ch, Profile.title(), Profile.rings.size(), Profile.money]
+
+
+func _on_reset() -> void:
+	if not _reset_armed:
+		_reset_armed = true
+		_reset_btn.text = "真的要清空吗？再点一次确认"
+		return
+	_reset_armed = false
+	_reset_btn.text = "重新开始（清空存档）"
+	Profile.reset()
+	_refresh_save()
+	_pick_wuhun(Settings.wuhun, true)
 
 
 func set_status(text: String, error := false) -> void:

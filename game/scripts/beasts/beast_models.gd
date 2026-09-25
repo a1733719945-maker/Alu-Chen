@@ -28,6 +28,14 @@ static func build(species: String, age: int) -> Node3D:
 				_bird(root)
 			"moth":
 				_moth(root)
+			"wolf":
+				_wolf(root)
+			"rhino":
+				_rhino(root)
+			"ape":
+				_ape(root)
+			"snake":
+				_snake(root)
 	var s: float = Data.AGES[age]["scale"]
 	root.scale = Vector3.ONE * s
 	return root
@@ -53,6 +61,29 @@ static func shapes(species: String, age: int) -> Array:
 			wings.size = Vector3(0.8, 0.08, 0.26) * s
 			out.append({"shape": wings, "xform": Transform3D(Basis(), Vector3(0, 0.04, 0.02) * s), "head": false})
 			out.append({"shape": _sphere_shape(0.15 * s), "xform": Transform3D(Basis(), Vector3(0, 0.13, -0.18) * s), "head": true})
+		"wolf":
+			var body := CapsuleShape3D.new()
+			body.radius = 0.28 * s
+			body.height = 1.2 * s
+			out.append({"shape": body, "xform": Transform3D(Basis.from_euler(Vector3(PI / 2, 0, 0)), Vector3(0, 0, 0.05) * s), "head": false})
+			out.append({"shape": _sphere_shape(0.22 * s), "xform": Transform3D(Basis(), Vector3(0, 0.22, -0.62) * s), "head": true})
+		"rhino":
+			var rb := BoxShape3D.new()
+			rb.size = Vector3(0.9, 0.85, 1.6) * s
+			out.append({"shape": rb, "xform": Transform3D(Basis(), Vector3(0, 0.05, 0.1) * s), "head": false})
+			out.append({"shape": _sphere_shape(0.33 * s), "xform": Transform3D(Basis(), Vector3(0, 0.05, -0.95) * s), "head": true})
+		"ape":
+			var ab := CapsuleShape3D.new()
+			ab.radius = 0.38 * s
+			ab.height = 1.3 * s
+			out.append({"shape": ab, "xform": Transform3D(Basis(), Vector3(0, 0.1, 0) * s), "head": false})
+			out.append({"shape": _sphere_shape(0.26 * s), "xform": Transform3D(Basis(), Vector3(0, 0.85, -0.12) * s), "head": true})
+		"snake":
+			var sc := CapsuleShape3D.new()
+			sc.radius = 0.2 * s
+			sc.height = 1.7 * s
+			out.append({"shape": sc, "xform": Transform3D(Basis.from_euler(Vector3(PI / 2, 0, 0)), Vector3(0, 0, 0.15) * s), "head": false})
+			out.append({"shape": _sphere_shape(0.24 * s), "xform": Transform3D(Basis(), Vector3(0, 0.1, -0.85) * s), "head": true})
 		"moth":
 			var wb := BoxShape3D.new()
 			wb.size = Vector3(0.95, 0.1, 0.5) * s
@@ -72,7 +103,14 @@ static func aura(age: int, species: String) -> Node3D:
 	var n := Node3D.new()
 	n.name = "Aura"
 	var s: float = Data.AGES[age]["scale"]
-	var r := 0.55 if species != "vine" else 0.85
+	var r := 0.55
+	match species:
+		"vine", "snake", "wolf":
+			r = 0.85
+		"rhino":
+			r = 1.1
+		"ape":
+			r = 0.8
 	var c: Color = Data.AGES[age]["color"]
 	var energy := 1.6 if age == 0 else (2.6 if age == 1 else 3.6)
 	var ring := U.part(n, U.torus(r * s - 0.03, r * s + 0.03, 48, 6), U.glow(c, energy), Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
@@ -212,6 +250,137 @@ static func _moth(root: Node3D) -> void:
 		U.part(w, U.sphere(0.035, 6, 4), edge, Vector3(0.36 * side, 0.005, -0.08))
 
 
+# ------------------------------------------------------------------ 疾风魔狼
+
+static func _leg(parent: Node3D, name: String, pos: Vector3, mat: Material, r: float, length: float) -> Node3D:
+	var pivot := Node3D.new()
+	pivot.name = name
+	pivot.position = pos
+	parent.add_child(pivot)
+	U.part(pivot, U.capsule(r, length), mat, Vector3(0, -length * 0.45, 0))
+	return pivot
+
+
+static func _wolf(root: Node3D) -> void:
+	var fur := U.mat(Color(0.32, 0.36, 0.44), 0.9)
+	var belly := U.mat(Color(0.62, 0.64, 0.68), 0.9)
+	var dark := U.mat(Color(0.12, 0.13, 0.16), 0.8)
+	var eye := U.glow(Color(0.4, 0.95, 1.0), 3.5)
+	var wind := U.glow(Color(0.55, 0.9, 1.0), 1.4, true)
+	U.part(root, U.capsule(0.26, 1.05), fur, Vector3(0, 0, 0.05), Vector3(PI / 2, 0, 0), Vector3(1.0, 1.0, 0.95))
+	U.part(root, U.capsule(0.2, 0.7), belly, Vector3(0, -0.08, 0.05), Vector3(PI / 2, 0, 0), Vector3(0.9, 1.0, 0.8))
+	var head := Node3D.new()
+	head.name = "Head"
+	head.position = Vector3(0, 0.22, -0.6)
+	root.add_child(head)
+	U.part(head, U.sphere(0.2, 12, 8), fur, Vector3.ZERO, Vector3.ZERO, Vector3(0.9, 0.9, 1.1))
+	U.part(head, U.cyl(0.07, 0.1, 0.26, 8), dark, Vector3(0, -0.05, -0.2), Vector3(PI / 2, 0, 0))
+	U.part(head, U.sphere(0.035, 6, 4), eye, Vector3(0.09, 0.06, -0.12))
+	U.part(head, U.sphere(0.035, 6, 4), eye, Vector3(-0.09, 0.06, -0.12))
+	for side in [-1.0, 1.0]:
+		U.part(head, U.cyl(0.0, 0.06, 0.16, 4), fur, Vector3(0.09 * side, 0.2, 0.04), Vector3(0, 0, -0.15 * side))
+	for k in 4:
+		var side := -1.0 if k % 2 == 0 else 1.0
+		var zz := -0.35 if k < 2 else 0.4
+		_leg(root, "Leg%d" % k, Vector3(0.14 * side, -0.12, zz), fur, 0.07, 0.5)
+	var tail := Node3D.new()
+	tail.name = "Tail"
+	tail.position = Vector3(0, 0.08, 0.62)
+	root.add_child(tail)
+	U.part(tail, U.capsule(0.07, 0.55), fur, Vector3(0, 0.05, 0.25), Vector3(1.1, 0, 0))
+	# 疾风：身上一圈风纹
+	U.part(root, U.torus(0.34, 0.37, 24, 4), wind, Vector3(0, 0, -0.1), Vector3(PI / 2, 0, 0), Vector3.ONE, false)
+
+
+# ------------------------------------------------------------------ 铁甲犀
+
+static func _rhino(root: Node3D) -> void:
+	var hide := U.mat(Color(0.42, 0.4, 0.38), 0.95)
+	var plate := U.mat(Color(0.35, 0.37, 0.4), 0.35, 0.0, 0.8)
+	var horn := U.mat(Color(0.85, 0.8, 0.7), 0.5)
+	var eye := U.glow(Color(1.0, 0.45, 0.2), 3.0)
+	U.part(root, U.sphere(0.6, 14, 10), hide, Vector3(0, 0.05, 0.1), Vector3.ZERO, Vector3(0.8, 0.72, 1.35))
+	# 铁甲：背上几块金属板
+	for k in 4:
+		U.part(root, U.box(Vector3(0.85, 0.12, 0.34)), plate, Vector3(0, 0.45 - absf(k - 1.5) * 0.04, -0.4 + k * 0.32), Vector3(0.1 * (k - 1.5), 0, 0))
+	var head := Node3D.new()
+	head.name = "Head"
+	head.position = Vector3(0, 0.02, -0.9)
+	root.add_child(head)
+	U.part(head, U.sphere(0.34, 12, 8), hide, Vector3.ZERO, Vector3.ZERO, Vector3(0.9, 0.85, 1.2))
+	U.part(head, U.cyl(0.0, 0.1, 0.42, 8), horn, Vector3(0, 0.25, -0.28), Vector3(-0.5, 0, 0))
+	U.part(head, U.cyl(0.0, 0.06, 0.2, 6), horn, Vector3(0, 0.25, -0.02), Vector3(-0.3, 0, 0))
+	U.part(head, U.box(Vector3(0.62, 0.1, 0.3)), plate, Vector3(0, 0.26, 0.12))
+	U.part(head, U.sphere(0.04, 6, 4), eye, Vector3(0.2, 0.1, -0.15))
+	U.part(head, U.sphere(0.04, 6, 4), eye, Vector3(-0.2, 0.1, -0.15))
+	for k in 4:
+		var side := -1.0 if k % 2 == 0 else 1.0
+		var zz := -0.45 if k < 2 else 0.6
+		_leg(root, "Leg%d" % k, Vector3(0.32 * side, -0.3, zz), hide, 0.14, 0.55)
+
+
+# ------------------------------------------------------------------ 金刚猿
+
+static func _ape(root: Node3D) -> void:
+	var fur := U.mat(Color(0.25, 0.17, 0.12), 0.95)
+	var face := U.mat(Color(0.55, 0.42, 0.34), 0.8)
+	var gold := U.glow(Color(1.0, 0.75, 0.3), 1.8)
+	var eye := U.glow(Color(1.0, 0.85, 0.25), 3.0)
+	U.part(root, U.sphere(0.45, 14, 10), fur, Vector3(0, 0.15, 0), Vector3.ZERO, Vector3(1.1, 1.2, 0.85))
+	U.part(root, U.sphere(0.3, 12, 8), face, Vector3(0, 0.1, -0.26), Vector3.ZERO, Vector3(1.0, 1.1, 0.5))
+	var head := Node3D.new()
+	head.name = "Head"
+	head.position = Vector3(0, 0.85, -0.12)
+	root.add_child(head)
+	U.part(head, U.sphere(0.26, 12, 8), fur)
+	U.part(head, U.sphere(0.18, 10, 6), face, Vector3(0, -0.03, -0.14), Vector3.ZERO, Vector3(1.0, 0.9, 0.7))
+	U.part(head, U.sphere(0.035, 6, 4), eye, Vector3(0.08, 0.04, -0.24))
+	U.part(head, U.sphere(0.035, 6, 4), eye, Vector3(-0.08, 0.04, -0.24))
+	# 金刚：手臂上的金纹
+	for side in [-1.0, 1.0]:
+		var arm := _leg(root, "Arm" + ("L" if side < 0 else "R"), Vector3(0.5 * side, 0.5, -0.05), fur, 0.14, 0.9)
+		U.part(arm, U.torus(0.13, 0.16, 16, 4), gold, Vector3(0, -0.35, 0), Vector3.ZERO, Vector3.ONE, false)
+		U.part(arm, U.sphere(0.16, 10, 6), face, Vector3(0, -0.85, 0))
+	for k in 2:
+		var side := -1.0 if k == 0 else 1.0
+		_leg(root, "Leg%d" % k, Vector3(0.22 * side, -0.35, 0.05), fur, 0.14, 0.5)
+
+
+# ------------------------------------------------------------------ 曼陀罗蛇
+
+static func _snake(root: Node3D) -> void:
+	var skin := U.mat(Color(0.3, 0.12, 0.35), 0.5)
+	var belly := U.mat(Color(0.75, 0.6, 0.35), 0.6)
+	var mark := U.glow(Color(1.0, 0.35, 0.7), 2.0)
+	var eye := U.glow(Color(0.9, 1.0, 0.3), 3.5)
+	var body := Node3D.new()
+	body.name = "Segments"
+	root.add_child(body)
+	var n := 12
+	for i in n:
+		var t := float(i) / (n - 1)
+		var seg := Node3D.new()
+		seg.name = "S%d" % i
+		seg.position = Vector3(0, 0, -0.65 + t * 1.7)
+		body.add_child(seg)
+		var r := lerpf(0.19, 0.06, t)
+		U.part(seg, U.sphere(r, 10, 6), skin)
+		U.part(seg, U.sphere(r * 0.8, 8, 4), belly, Vector3(0, -r * 0.35, 0), Vector3.ZERO, Vector3(1.0, 0.6, 1.0))
+		if i % 2 == 0:
+			U.part(seg, U.sphere(r * 0.35, 6, 4), mark, Vector3(0, r * 0.8, 0))
+	var head := Node3D.new()
+	head.name = "Head"
+	head.position = Vector3(0, 0.1, -0.85)
+	root.add_child(head)
+	U.part(head, U.sphere(0.24, 12, 8), skin, Vector3.ZERO, Vector3.ZERO, Vector3(1.1, 0.7, 1.4))
+	U.part(head, U.sphere(0.04, 6, 4), eye, Vector3(0.13, 0.08, -0.15))
+	U.part(head, U.sphere(0.04, 6, 4), eye, Vector3(-0.13, 0.08, -0.15))
+	# 曼陀罗花冠
+	for k in 5:
+		var a := TAU * k / 5.0
+		U.part(head, U.cyl(0.0, 0.06, 0.18, 4), mark, Vector3(cos(a) * 0.14, 0.18, 0.08 + sin(a) * 0.1), Vector3(-0.6, a, 0))
+
+
 # ------------------------------------------------------------------ 动画（不管是房主算的还是客人看到的，都用这个）
 
 static func animate(model: Node3D, t: float, airborne: bool, speed := 0.0) -> void:
@@ -235,7 +404,23 @@ static func animate(model: Node3D, t: float, airborne: bool, speed := 0.0) -> vo
 				wl.rotation.z = -flap
 			if wr:
 				wr.rotation.z = flap
-		"vine":
+		"wolf", "rhino", "ape":
+			var sp := clampf(speed / 6.0, 0.0, 1.5)
+			var f := 11.0 if species == "wolf" else (7.0 if species == "rhino" else 8.0)
+			for k in 4:
+				var leg := model.get_node_or_null("Leg%d" % k)
+				if leg:
+					var ph := 0.0 if k in [0, 3] else PI
+					leg.rotation.x = sin(t * f + ph) * 0.7 * sp if not airborne else (0.6 if k < 2 else -0.6)
+			if species == "ape":
+				for n in ["ArmL", "ArmR"]:
+					var arm := model.get_node_or_null(n)
+					if arm:
+						arm.rotation.x = sin(t * 6.0 + (0.0 if n == "ArmL" else PI)) * 0.5 * sp + (-1.2 if airborne else 0.0)
+			var tail := model.get_node_or_null("Tail")
+			if tail:
+				tail.rotation.y = sin(t * 9.0) * 0.4
+		"vine", "snake":
 			var segs := model.get_node_or_null("Segments")
 			if segs:
 				var amp := 0.06 + minf(speed, 4.0) * 0.03

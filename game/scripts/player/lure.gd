@@ -173,14 +173,14 @@ func _land(p: Vector3, water: bool) -> void:
 	state = S.WAITING
 	habitat = world.island.habitat_at(Vector3(p.x, Island.WATER_Y if water else p.y, p.z))
 	if water:
-		habitat = "water"
+		habitat = world.island.water_habitat
 		world.fx.splash(p)
 		Sfx.play_at("splash_small", p, -2.0)
 	else:
 		world.fx.dirt_puff(p)
 		Sfx.play_at("thud", p, -6.0)
 	if habitat == "":
-		hint.emit("这里没有魂兽。抛到水里、兔子洞口、草原或花丛（按 E 收回）", Color(0.9, 0.9, 0.9))
+		hint.emit("这里没有魂兽。看路牌，抛到水里或魂兽的窝附近（按 E 收回）", Color(0.9, 0.9, 0.9))
 	else:
 		_schedule_bite()
 
@@ -191,7 +191,15 @@ func _schedule_bite() -> void:
 	if misses >= L["hurry_after"]:
 		bite_timer = 0.4
 	species = Data.HABITATS[habitat]["beast"]
-	age = Data.roll_age(rng) if force_age < 0 else force_age
+	if force_age >= 0:
+		age = force_age
+	elif Profile.item_count("gold_bites") > 0:
+		# 引兽香：必定百年以上
+		age = Data.roll_age(rng, 1)
+		Profile.items["gold_bites"] = Profile.item_count("gold_bites") - 1
+		Profile.mark_dirty()
+	else:
+		age = Data.roll_age(rng)
 
 
 func _bite() -> void:
