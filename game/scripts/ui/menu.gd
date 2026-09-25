@@ -155,7 +155,7 @@ func _ready() -> void:
 	_status.custom_minimum_size = Vector2(900, 0)
 	col.add_child(_status)
 
-	var help := UiKit.label("WASD 移动 · 空格 跳 · Ctrl 蹲 · 左键 射击 · 右键 瞄准 · R 换弹 · 1–5 暗器 · E 引魂索 · F 互动 · Q 魂技（按住切换） · G 佛怒唐莲 · H 回血丹 · K 武魂 · Esc 暂停", 16, UiKit.MIST)
+	var help := UiKit.label("WASD 移动 · 空格 跳 · 轻点 Ctrl 翻滚 · 左键 射击 · 右键 瞄准 · 1–5 物品栏 · E 引魂索 · Q 攻击魂技 · F 交互/辅助魂技 · 双击 Shift 位移魂技 · T 丢东西 · B 鱼饵 · M 地图 · K 武魂", 16, UiKit.MIST)
 	help.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	col.add_child(help)
 	var ver := UiKit.label("版本 %s · 第四版" % ProjectSettings.get_setting("application/config/version", "0"), 14, Color(0.5, 0.6, 0.57))
@@ -180,15 +180,9 @@ func _pick_wuhun(i: int, silent := false) -> void:
 	for k in _wuhun_btns.size():
 		_wuhun_btns[k].modulate = Color(1, 1, 1) if k == i else Color(0.75, 0.8, 0.78)
 		_wuhun_btns[k].add_theme_color_override("font_color", UiKit.GOLD if k == i else UiKit.MOON)
-	var tree: Array = Data.SKILL_TREE[w["id"]]
-	var lines := []
-	for r in tree.size():
-		var names := []
-		for sid in tree[r]:
-			names.append("【%s】" % Data.SKILLS[sid]["name"])
-		lines.append("第%s魂环：%s" % [Data.RING_NAMES[r], " 或 ".join(names)])
+	var lines := ["魂技不固定：吸收哪种魂兽的魂环，就领悟哪种魂技，吸收了才知道。", "同一种魂兽总给同一个魂技；魂兽年份越高，魂技越强。", "Q 攻击魂技 · F 辅助魂技 · 双击 Shift 位移魂技，自动放能放的。"]
 	if not Profile.rings.is_empty():
-		lines.append("（已经选好的魂技不会因为换武魂而改变）")
+		lines.append("（已经有的魂技不会因为换武魂而改变）")
 	_skills_hint.text = "\n".join(lines)
 
 
