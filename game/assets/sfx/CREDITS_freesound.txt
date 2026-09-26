@@ -4,7 +4,6 @@ mag_in.wav  <-  "Pushing 50 Cal BMG Round into Magazine" by qubodup  https://fre
 bolt_cycle.wav  <-  "EnfieldRifle.wav" by SuperPhat  https://freesound.org/s/410442/  (CC0)
 dry.wav  <-  "A rifle being dry fired once" by serøutōnin--deprivəd  https://freesound.org/s/725402/  (CC0)
 hit.wav  <-  "Headshot.wav" by Pablobd  https://freesound.org/s/511194/  (CC0)
-punch.wav  <-  "Lettuce Hit.wav" by saturdaysoundguy  https://freesound.org/s/388038/  (CC0)
 boom.wav  <-  "explosion2.wav" by IdkMrGarcia  https://freesound.org/s/446624/  (CC0)
 splash_big.wav  <-  "Big Water Splash" by qubodup  https://freesound.org/s/442773/  (CC0)
 splash_small.wav  <-  "water splash 2" by swordofkings128  https://freesound.org/s/398039/  (CC0)
@@ -25,3 +24,4 @@ skill_launch.wav  <-  "Brick on soil.wav" by deleted_user_2104797  https://frees
 skill_heal.wav  <-  "Heal - Rpg" by colorsCrimsonTears  https://freesound.org/s/562292/  (CC0)
 level_up.wav  <-  "Level Up / Mission Complete" by Beetlemuse  https://freesound.org/s/528958/  (CC0)
 kill_burst.wav  <-  "Sparkling Star 05.wav" by LilMati  https://freesound.org/s/462096/  (CC0)
+punch.wav  <-  "body_hit.wav" by insanity54  https://freesound.org/s/276600/  (CC0)
