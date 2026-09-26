@@ -398,6 +398,55 @@ func gull_steal(iid: int) -> void:
 	world.hud.feed("海鸥叼走了 %s" % Data.item_name(str(it["kind"]), str(it["key"])), Color(0.8, 0.85, 0.9))
 
 
+## 叼人的海鸥：俯冲下来抓住，飞到二十多米高，在倒下的地方上空一直转圈，直到被打下来或者那个人回码头复活
+func _update_carry(gl: Dictionary) -> void:
+	var g: Node3D = gl["node"]
+	var target: Node3D = gl["target"]
+	if not is_instance_valid(target):
+		if is_instance_valid(g):
+			g.queue_free()
+		_gulls.erase(gl)
+		return
+	var t: float = gl["t"]
+	var p: Vector3
+	if t < GULL_DOWN:
+		gl["pos"] = target.global_position
+		var k := t / GULL_DOWN
+		k = 1.0 - (1.0 - k) * (1.0 - k)
+		p = (gl["from"] as Vector3).lerp((gl["pos"] as Vector3) + Vector3(0, 1.4, 0), k)
+	else:
+		var anchor: Vector3 = gl["pos"]
+		var s := t - GULL_DOWN
+		var a := s * 0.45
+		var ring := anchor + Vector3(cos(a) * 9.0, 22.0 + sin(s * 0.8) * 1.5, sin(a) * 9.0)
+		var k2 := minf(s / 3.0, 1.0)
+		p = (anchor + Vector3(0, 1.4, 0)).lerp(ring, k2 * k2 * (3.0 - 2.0 * k2))
+		if not gl["cried"]:
+			gl["cried"] = true
+			Sfx.play_at("gull_cry", p, 0.0, 0.1, 1.15)
+			world.fx.poof(anchor)
+		if gl["local"]:
+			(target as Player).carry_to(p + Vector3(0, -2.0, 0))
+		else:
+			p = target.global_position + Vector3(0, 2.0, 0)
+	if is_instance_valid(g):
+		var vel: Vector3 = p - g.global_position
+		g.global_position = p
+		if Vector3(vel.x, 0, vel.z).length() > 0.01:
+			g.look_at(p + Vector3(vel.x, 0, vel.z), Vector3.UP)
+
+
+## 那个人回码头复活了：叼着他的海鸥飞走
+func end_carry(gid: int) -> void:
+	for gl in _gulls.duplicate():
+		if int(gl["gid"]) == gid and not gl["dead"]:
+			var g: Node3D = gl["node"]
+			if is_instance_valid(g):
+				world.fx.poof(g.global_position)
+				g.queue_free()
+			_gulls.erase(gl)
+
+
 ## 海鸥叼走倒地的人。local = true 时是叼自己（位置由这边动），否则只跟着别人的位置显示
 ## gid：物品的海鸥用物品 id，叼人的用 -玩家 id（大家算出来一样，打下来时对得上）
 func gull_carry(target: Node3D, local: bool, gid: int) -> void:
@@ -437,6 +486,9 @@ func _update_gulls(dt: float) -> void:
 	for gl in _gulls.duplicate():
 		gl["t"] += dt
 		var g: Node3D = gl["node"]
+		if not gl["dead"] and gl["target"] != null:
+			_update_carry(gl)
+			continue
 		if gl["dead"]:
 			# 被打下来了：翻着跟头掉下去
 			gl["vy"] = float(gl["vy"]) - 14.0 * dt

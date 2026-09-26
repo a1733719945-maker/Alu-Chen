@@ -14,7 +14,7 @@
 | 反馈 | 现在的做法 |
 |---|---|
 | 不喜欢中式古风 / 毛笔字体 | 思源黑体（Noto Sans SC，裁剪过）+ Barlow Condensed 数字 |
-| UI 太山寨 | game-icons.net 剪影图标、半透明底板、斜切血条、少文字；菜单 / 暗器铺 / 武魂面板还可以继续现代化 |
+| UI 太山寨；要参考厉害的游戏 | 第七版整体重做（见版本历史 11）：参考 Apex / 命运2 的 HUD、怪物猎人的狩猎目标、Valorant 的菜单、使命召唤的改枪属性条。**全屏面板用毛玻璃背景，不要灰盒子；不要粗黑描边；少写长句** |
 | 技能键太多；Q 轮盘"一坨屎"；自动选技能没有操作感 | **Q / E / F 三个魂技槽**，K 面板里自己选装哪个；不要轮盘 |
 | 魂兽在天上掉不下来 | 空中分段重力、连击上推力递减有上限、尸体摔到地上再消失（`beast.gd` 顶部常量） |
 | 要像 CoD / CS 的枪感 | 每把暗器有后坐图案、随机散布、第一发精准、开镜、镜头冲击（`gun.gd`、`data.gd` 的 WEAPONS） |
@@ -118,11 +118,55 @@
    - 自定义 Boss 模型：`assets/models/bosses/<kind>.glb`（`BeastModels.custom_boss_path / instance_custom`，按包围盒自动缩放）
    - 修：换地图后鼠标没锁（旧 World._exit_tree 把鼠标放出来了），4 号位烤肉名字，击杀音效变轻，拳头音效重新下载
 
+9. 第五版补丁 3（用户：第三章就犯困、后面的魂技只是数值变化特效简陋、倒地拉人太傻）：
+   - 倒地：`World._on_player_died` 直接被海鸥叼上天（`Loot._update_carry` 在上空转圈，`end_carry`），打下海鸥 → `gull_dropped_me` → `_fall_t` 落地 `revive_here`；空格 / 超时 `_respawn_at_dock`。不再有"按住 F 救人"
+   - 新魂技类型（`Data.SKILLS` 里改了千年以上的一批，id 不变存档兼容）：summon / orbit / chain / blackhole / domain / empower，神技加 `"shen": true`。
+     房主逻辑 `SkillSystem._new_skill_host / _update_summons / _update_orbits / _chain / _update_domains / _update_delayed / host_empower`；
+     特效 `Fx.spirit_body / summon_visual / summon_attack / orbit_visual / chain_fx / blackhole_fx / domain_fx / meteor_strike / shen_manifest / shield_bubble / empower_hit`；
+     武魂附体 `Player.empower`，`World.local_fire` 命中时处理；特效颜色 `Data.WUHUN[].fx`（`wuhun_fx_color`）
+   - 野生魂兽 `World._host_wild`（`_host_spawn_wild`）；魂兽巢穴 `world/nests.gd`（`Nests`，StaticBody meta "nest"，消息 nesthit / nesthp / nestdown / nestup / nestsync）
+   - 引魂索飞索：`Lure` 钉在地上（`_on_ground`）再按 G → `Player.grapple_to`
+   - 背景音乐 `Sfx.play_music`（assets/music，freesound CC0，CREDITS.txt），`World._update_music` 按 Boss / 奇遇 / 战斗 / 探索切换；设置里音乐音量
+   - 自动测试新增阶段：skills2（新魂技）、events（奇遇 + 海鸥群）、down（倒地救人）、nests（巢穴）、bossshot（看 Boss 模型）
+   - Boss 模型：用户用 Tripo / Meshy 生成的 GLB 放在 `assets/models/bosses`，太大的用 `tools/shrink_glb.gd`（Godot 自带减面 + 贴图缩到 1K）压到 3 MB 左右
+
+10. 第六版（2026-09-27）：用户说零星加乐趣没用，要整体变好玩，但**明确不要肉鸽**（他们上一个游戏就是 2D 肉鸽，做到一半被打断撤掉了）。
+   方向：原著"组队猎魂环"，学《怪物猎人》——每座岛的核心是 3 只魂兽王：
+   - 精英升级成魂兽王：`Data.ELITE_*`（血 ×14、体型 ×2、伤害 ×2.2、奖励 ×12、6 分钟重生、每图 3 只），`Beast.display_name` 显示"百年风铃鸟王"
+   - 魂兽王 AI（`Beast._elite`）：`_king_tick` 大招（slam 震地 / pounce 扑杀 / roar 咆哮，`World.king_move` 用 boss_telegraph / boss_shockwave），
+     半血 `_phase2` 暴怒叫小弟（`World.king_phase2`），1/4 血 `_retreat` 逃回巢穴回血（`_king_retreat_tick`，只逃一次）
+   - 引魂索钩魂兽（`Lure._fly` 射线含魂兽层 → `World.host_hook`）：小魂兽拽上天；魂兽王捆魂 `Beast.add_rope / bind`（单人 1 根、联机 2 根，3.5 秒内），消息 hook / hookfx / kingrope / kingbind / kingmv / kingev
+   - 奖励：`_host_maybe_drop_ring` 魂兽王每个需要的人一个魂环；`_on_kill` 发王魂 `Profile.materials`
+   - 魂导附魔 `Data.ENCHANTS / ENCHANT_ORDER`，`Profile.enchant / do_enchant`，暗器铺"附魔"页，`World.local_fire` 命中按几率触发（复用 `SkillSystem.host_empower`）
+   - HUD：左上魂兽王列表（`World.king_list`，距离方向 / 重生倒计时），顶上血条（`World.focus_king`），打王时放 Boss 音乐
+   - 自动测试阶段 kings
+
+11. 第七版（2026-09-27）：用户要"整体 UI 参考厉害的游戏优化"。全部界面重做，逻辑没动：
+   - 样式库 `ui_kit.gd`：颜色（GOLD 主操作 / JADE 信息 / RED 危险 / MOON MIST DIM 三档灰白）、`kicker`（眉题）、`header`、`section`（小标题 + 细线）、`chip`、`stat_bar`、`tabs`（下划线分页）、`menu_item`（左对齐大字菜单）、`card_button`（整张可点的卡）、`key_hint`、`ring_dot`、`panel_head`；
+     `blur_material / backdrop`：读屏幕 mipmap 做毛玻璃（全屏面板的底）；`make_theme()` 在 `main._ready` 合进引擎默认主题（输入框、滑条、勾选框、下拉、滚动条、提示）
+   - HUD `hud.gd`：左上目标（括号里的话拆成小字）+ 狩猎目标卡（方向箭头、距离、血条、暴怒 / 捆住 / 逃回巢穴）+ 悬赏；上中罗盘（`_draw_compass`，地点 `_compass_marks`）+ 魂类 Boss 血条（掉血先白后缩）+ 提示条；
+     右上小地图、金魂币、成就卡、击杀信息；左下等级六边形徽章、体力（护盾叠加）、魂力、修为、饱食、状态标签；下中交互提示（"按 F xxx" 拆成键帽）、魂技方块（冷却扇形、好了闪一下）；右下弹药大数字 + 物品栏格子
+   - 魂兽头顶的名字和血条改成 HUD 画（`Hud._draw_plates`，只画近的、挨过打的、魂兽王），`Beast._hp_label` 只用来取位置、隐藏了
+   - 倒地：画面变灰（读屏幕）+ 倒计时条 + [空格]；受伤方向改成红色弧；Boss 出场字幕、章节横幅改成两边细线
+   - 面板：暂停（左边大字菜单、右边按键表）、暗器铺（暗器两列卡片 + 属性条，升级格子）、武魂（立绘渐隐、魂环圆环、魂骨六格）、成就（三列卡片，完成的排前）、魂技二选一（两张大卡）、渡船（目的地卡）、设置（分段）、主菜单（左菜单 + 右武魂立绘和九宫格头像 + 存档卡）、大地图（标题栏 + 图例）
+   - 自动测试 `uishots`：一次截全部界面（`--autotest=shots --plan=menu,uishots,done --out=目录`，本机有显卡，不要 --headless）
+
+12. 第八版（2026-09-27）：用户说特效劣质，全部特效重做（`fx/fx.gd` 函数名和参数都没变，外面不用改）：
+   - 贴图 `assets/fx/*.png` 全是程序生成的：`tools/make_fx_textures.gd`（`godot --headless --path game --script ../tools/make_fx_textures.gd`，约 11 秒）。
+     glow / flare（星芒）/ spark（火花条）/ smoke（2×2 烟团）/ ring（冲击环）/ halo（魂环）/ warn（预警圈）/ scorch（焦痕）/ crack（裂纹）/ noise / swirl（漩涡）/ slash（月牙斩）/ magic（法阵）。
+     **发光贴图 RGB = 透明度**（贴花的发光只看 RGB，白 RGB 会整块方片发光）；`.import` 里开了 mipmap
+   - `fx/fx_lib.gd`（`FxLib`）：贴图 / 粒子材质 `pmat` / 平面 `quad_mat` / 朝镜头 `bill_mat` 缓存，着色器 SPARK（按速度拉长）、FIRE（鼓包翻滚的火球）、PILLAR（光柱 / 光壁 / 冲击墙）、BEAM（光束 / 闪电）、SPIRIT（魂灵）、SHIELD（六边形护盾）；
+     `soul_ring`（魂兽脚下和掉落的魂环）、`no_decals`（魂兽、Boss、队友、手里暗器放第 2 渲染层，地面贴花只投第 1 层）
+   - 一个特效叠几层：闪光 `_flash` → 主体 → 火花 `_sparks` / 光点 `_glows` / 火团 `_fire` / 烟 `_smoke` / 碎屑 `_bits` → 地面 `_ground`（陆地用 Decal 贴花，水面用平面）→ 灯 `_light` → 震镜头 `_shake`
+   - 环境泛光改成 SCREEN，多开第 4 层（`world_builder._environment`）；Boss 冲击墙、扇形预警改成着色器（`world._on_shockwave / _on_cone / _cone_shader`）
+   - **坑**：项目开了 MSAA，3D 里读屏幕（热浪扭曲）和读深度（软粒子 proximity_fade）都会出错（画面变暗、烟整团淡没），所以都关了（`_distort` 空函数、`pmat` 不开 soft）
+   - 自动测试 `fxshots`：正前方一个接一个放 30 种特效截图（`--autotest=shots --plan=fxshots,done --out=目录 [--only=explosion,beam]`）。**要开窗口，会抢焦点，用户在玩游戏时别跑，先问**
+   - 没来得及看效果的：烟（关了软粒子以后）、光束（改成连贯光带以后）、爆炸后的烟和焦痕。下次先跑 `--only=explosion_smoke,poof,beam,chain` 看
+
 ## 还没做 / 可以继续
 
 - Boss 写实模型：免费 CC0 里没有合适的，要用户提供素材；现在靠着色器 + 光环 + 死亡神光
 - 数值是按公式估的（见 data.gd 注释），没有真人从 1 级玩到 100 级；等用户反馈再调 `CH_HP / CH_MONEY / KILLS_PER_LEVEL`
-- 菜单、设置面板还是旧样式
 ## 技术概要
 
 - Godot **4.7.2**，GDScript，Forward+，Jolt 物理。项目在 `game/`。
@@ -130,7 +174,7 @@
 - 存档 `profile.gd`（等级、魂环、暗器、道具、魂骨、章节进度）；设置和按键 `settings.gd`。
 - 地图：`island.gd`（MAPS：island / forest / deepforest / snow / sea 的地形、栖息地、水域深度）+ `world_builder.gd`（ENV 每个地图的天空光照雾，树草石头等）。
 - 一局游戏的逻辑和联机同步：`world.gd`（房主算魂兽、Boss、任务，广播给客人）。魂兽 `beasts/beast.gd`（房主是刚体，客人是插值代理），模型和动画 `beast_models.gd`，Boss `boss.gd`（ai = water / land / air）。
-- 界面：`ui/hud.gd`（HUD、魂技轮盘、魂技二选一）、`ui_kit.gd`（配色、字体、图标、键帽）、`menu.gd`、`shop_panel.gd`、`wuhun_panel.gd`、`settings_panel.gd`。
+- 界面：`ui/ui_kit.gd`（样式库和全局主题，新界面先用这里的零件）、`hud.gd`（HUD、魂技二选一、暂停、成就、渡船）、`menu.gd`、`shop_panel.gd`、`wuhun_panel.gd`、`settings_panel.gd`、`map_view.gd`。
 - 中继服务器：`server/server.js`（Node + ws），`render.yaml` 一键部署。
 
 ## 测试和截图
@@ -147,7 +191,7 @@ xvfb-run -a -s "-screen 0 1280x720x24" godot --path . --rendering-driver vulkan 
 # 联机：先起服务器，再开房主和客人（见 README）
 ```
 
-- autotest 阶段：`phys`、`hunt:<栖息地,...>`、`shop`、`recoil`、`sniper`、`ring`、`boss`、`boat`、`tour`、`hudshot`、`done`；模式 `solo / shots / host / client / zoo / measure / vm`。
+- autotest 阶段：`phys`、`hunt:<栖息地,...>`、`shop`、`recoil`、`sniper`、`ring`、`boss`、`boat`、`tour`、`hudshot`、`uishots`（全部界面截图）、`kings`、`done`；模式 `solo / shots / host / client / zoo / measure / vm`。
 - 改了中文文字（新字）后要重跑 `tools/subset_fonts.py <原始 otf 目录>`，不然新字会显示成方框。原始字体在 notofonts/noto-cjk 的 raw.githubusercontent.com 上。
 
 ## 素材和工具
@@ -158,7 +202,7 @@ xvfb-run -a -s "-screen 0 1280x720x24" godot --path . --rendering-driver vulkan 
 
 ## 还可以做的（用户没明确要求，按优先级）
 
-1. 菜单、暗器铺、武魂面板、设置面板还是旧的平面样式，可以像 HUD 一样图标化、现代化。
+1. 界面第七版已重做；还可以做：魂技 / 道具的专属图标（现在按类型共用 game-icons 剪影）、手柄支持、界面动画（面板滑入）。
 2. 第五章海神岛的画面还没截图检查过；第三章星斗大森林的光照偏白天。
 3. 右下暗器名"袖箭 · 手枪 · 半自动"文字偏长，可以简化成图标 + 名字。
 4. 游戏时长（约 4 小时以上）是按经验曲线估算的，没有真人跑过；等用户和朋友玩完问反馈再调数值。

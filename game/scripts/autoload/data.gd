@@ -28,15 +28,15 @@ func _init() -> void:
 
 # ================================================================ 武魂
 const WUHUN := [
-	{"id": "lyc", "name": "蓝银草", "kind": "植物系 · 控制", "color": Color("6aa8ec"), "img": "res://assets/img/wuhun/w01.jpg"},
-	{"id": "ld", "name": "镰刀", "kind": "器武魂 · 强攻", "color": Color("c9d3d0"), "img": "res://assets/img/wuhun/w02.jpg"},
-	{"id": "xc", "name": "香肠", "kind": "食物系 · 辅助", "color": Color("e59a6b"), "img": "res://assets/img/wuhun/w03.jpg"},
-	{"id": "bh", "name": "白虎", "kind": "兽武魂 · 强攻", "color": Color("f1f1e6"), "img": "res://assets/img/wuhun/w04.jpg"},
-	{"id": "ym", "name": "幽冥灵猫", "kind": "兽武魂 · 敏攻", "color": Color("9c7be0"), "img": "res://assets/img/wuhun/w05.jpg"},
-	{"id": "hf", "name": "火凤凰", "kind": "兽武魂 · 强攻", "color": Color("f0773f"), "img": "res://assets/img/wuhun/w06.jpg"},
-	{"id": "qb", "name": "七宝琉璃塔", "kind": "器武魂 · 辅助", "color": Color("8fe3d0"), "img": "res://assets/img/wuhun/w07.jpg"},
-	{"id": "ht", "name": "昊天锤", "kind": "器武魂 · 强攻", "color": Color("c0c6cc"), "img": "res://assets/img/wuhun/w08.jpg"},
-	{"id": "ls", "name": "六翼天使", "kind": "兽武魂 · 强攻", "color": Color("ffe08a"), "img": "res://assets/img/wuhun/w09.jpg"},
+	{"id": "lyc", "fx": Color(0.25, 0.75, 1.0), "name": "蓝银草", "kind": "植物系 · 控制", "color": Color("6aa8ec"), "img": "res://assets/img/wuhun/w01.jpg"},
+	{"id": "ld", "fx": Color(0.95, 0.15, 0.3), "name": "镰刀", "kind": "器武魂 · 强攻", "color": Color("c9d3d0"), "img": "res://assets/img/wuhun/w02.jpg"},
+	{"id": "xc", "fx": Color(1.0, 0.5, 0.2), "name": "香肠", "kind": "食物系 · 辅助", "color": Color("e59a6b"), "img": "res://assets/img/wuhun/w03.jpg"},
+	{"id": "bh", "fx": Color(1.0, 0.72, 0.2), "name": "白虎", "kind": "兽武魂 · 强攻", "color": Color("f1f1e6"), "img": "res://assets/img/wuhun/w04.jpg"},
+	{"id": "ym", "fx": Color(0.62, 0.3, 1.0), "name": "幽冥灵猫", "kind": "兽武魂 · 敏攻", "color": Color("9c7be0"), "img": "res://assets/img/wuhun/w05.jpg"},
+	{"id": "hf", "fx": Color(1.0, 0.38, 0.1), "name": "火凤凰", "kind": "兽武魂 · 强攻", "color": Color("f0773f"), "img": "res://assets/img/wuhun/w06.jpg"},
+	{"id": "qb", "fx": Color(0.3, 1.0, 0.8), "name": "七宝琉璃塔", "kind": "器武魂 · 辅助", "color": Color("8fe3d0"), "img": "res://assets/img/wuhun/w07.jpg"},
+	{"id": "ht", "fx": Color(0.45, 0.5, 1.0), "name": "昊天锤", "kind": "器武魂 · 强攻", "color": Color("c0c6cc"), "img": "res://assets/img/wuhun/w08.jpg"},
+	{"id": "ls", "fx": Color(1.0, 0.92, 0.55), "name": "六翼天使", "kind": "兽武魂 · 强攻", "color": Color("ffe08a"), "img": "res://assets/img/wuhun/w09.jpg"},
 ]
 
 # ================================================================ 年份（魂环颜色）
@@ -180,12 +180,28 @@ const TEMPERS := {
 # ================================================================ 精英魂兽（小 Boss）
 # 每张地图在陆地栖息地附近固定几个点刷，不用引魂索拽；走近 20 米或者打它就会过来打人，
 # 跑出 45 米就回老家回血。打死以后 2 分钟在原地重生，必掉魂骨。
-const ELITE_HP := 4.0
-const ELITE_SIZE := 1.55
-const ELITE_DMG := 2.0
-const ELITE_REWARD := 6.0
-const ELITE_RESPAWN := 120.0
-const ELITE_MAX := 5
+# 魂兽王（原来的精英）：每张图 3 只，守在自己的地盘，打它们拿魂环、魂骨和王魂（附魔材料）
+const ELITE_HP := 14.0
+const ELITE_SIZE := 2.0
+const ELITE_DMG := 2.2
+const ELITE_REWARD := 12.0
+const ELITE_RESPAWN := 360.0
+const ELITE_MAX := 3
+const KING_BIND_TIME := 5.0      # 捆魂：按住几秒
+const KING_BIND_CD := 18.0
+
+# ================================================================ 魂导附魔：用魂兽王掉的"王魂"给暗器附魔，命中有几率触发
+# mats：哪些魂兽王的王魂能用（任意组合凑够 n 个）；kind 是命中效果（SkillSystem.host_empower）
+const ENCHANTS := {
+	"bind": {"name": "缠魂", "kind": "root", "chance": 0.2, "frac": 0.4, "n": 2, "price": 800, "mats": ["rabbit", "moth", "spiderling", "frog"], "color": Color(0.4, 0.9, 0.5), "desc": "命中 20% 几率缠住魂兽 1 秒"},
+	"thunder": {"name": "雷鸣", "kind": "chain", "chance": 0.25, "frac": 0.6, "n": 2, "price": 800, "mats": ["bird", "bat", "gull"], "color": Color(0.5, 0.8, 1.0), "desc": "命中 25% 几率放出闪电，弹到旁边 2 只魂兽"},
+	"bleed": {"name": "裂伤", "kind": "bleed", "chance": 0.35, "frac": 0.5, "n": 2, "price": 1500, "mats": ["wolf", "raptor", "husky"], "color": Color(0.95, 0.2, 0.25), "desc": "命中 35% 几率让魂兽流血，自己回一点血"},
+	"blast": {"name": "爆裂", "kind": "explode", "chance": 0.2, "frac": 0.7, "n": 2, "price": 2500, "mats": ["rhino", "ape", "crab"], "color": Color(1.0, 0.55, 0.2), "desc": "命中 20% 几率炸开（3.5 米）"},
+	"quake": {"name": "震魂", "kind": "quake", "chance": 0.15, "frac": 0.9, "n": 3, "price": 6000, "mats": ["rhino", "ape", "icehorn", "snowape"], "color": Color(0.8, 0.7, 0.5), "desc": "命中 15% 几率震出冲击波（4.5 米），把魂兽掀飞"},
+	"flame": {"name": "焚魂", "kind": "burn", "chance": 0.3, "frac": 0.5, "n": 2, "price": 5000, "mats": ["stag", "icedeer", "raptor"], "color": Color(1.0, 0.4, 0.1), "desc": "命中 30% 几率点燃魂兽和它旁边的魂兽"},
+	"frost": {"name": "霜寒", "kind": "root", "chance": 0.3, "frac": 0.5, "n": 3, "price": 9000, "mats": ["husky", "icedeer", "icehorn", "snowape"], "color": Color(0.6, 0.9, 1.0), "desc": "命中 30% 几率冻住魂兽 1 秒"},
+}
+const ENCHANT_ORDER := ["bind", "thunder", "bleed", "blast", "flame", "quake", "frost"]
 const AGGRESSIVE := ["wolf", "rhino", "ape", "snake", "raptor", "spiderling", "husky", "icehorn", "snowape", "crab", "shark", "stag", "icedeer", "bat"]
 
 
@@ -594,6 +610,8 @@ const ACHIEVEMENTS := [
 	{"id": "codex_1", "name": "图鉴大师", "desc": "集齐一张图的猎魂录", "stat": "codex_maps", "n": 1, "reward": 5000},
 	{"id": "revive_5", "name": "救死扶伤", "desc": "把倒地的队友拉起来 5 次", "stat": "revives", "n": 5, "reward": 1500},
 	{"id": "gull_10", "name": "海鸥克星", "desc": "打下 10 只海鸥", "stat": "gulls", "n": 10, "reward": 1500},
+	{"id": "nest_1", "name": "捣毁巢穴", "desc": "打爆一个魂兽巢穴", "stat": "nests", "n": 1, "reward": 1000},
+	{"id": "nest_20", "name": "巢穴克星", "desc": "打爆 20 个魂兽巢穴", "stat": "nests", "n": 20, "reward": 20000},
 	{"id": "sell_50", "name": "唐门商人", "desc": "往收购箱卖 50 件东西", "stat": "sold", "n": 50, "reward": 2000},
 	{"id": "arsenal", "name": "唐门全套", "desc": "五把暗器同时拿在手里", "special": "arsenal", "reward": 20000},
 	{"id": "skins_5", "name": "爱美的魂师", "desc": "拥有 5 款暗器皮肤", "special": "skins5", "reward": 5000},
@@ -700,14 +718,14 @@ const SKILLS := {
 	"lyc_mark": {"name": "蓝银飞索", "type": "grapple", "target": "dir", "range": 40.0, "cost": 15, "cd": 5.0, "desc": "蓝银草缠住准星处，把自己拉过去（能上树、上崖、跨过水面）"},
 	"lyc_pull": {"name": "蓝银牵引", "type": "pull", "target": "aim", "radius": 12.0, "dur": 3.0, "force": 18.0, "cost": 30, "cd": 12.0, "desc": "把 12 米内的魂兽拉到一起"},
 	"lyc_cage": {"name": "蓝银囚笼", "type": "root", "target": "aim", "radius": 10.0, "dur": 5.0, "damage": 25.0, "cost": 50, "cd": 20.0, "desc": "大范围定身 5 秒"},
-	"lyc_dance": {"name": "蓝银乱舞", "type": "rain", "target": "aim", "radius": 6.0, "damage": 30.0, "impulse": 7.0, "waves": 3, "cost": 50, "cd": 18.0, "desc": "连续三波突刺，把魂兽一直挑在空中"},
+	"lyc_dance": {"name": "蓝银藤灵", "type": "summon", "target": "aim", "kind": "vine", "dur": 12.0, "damage": 35.0, "rate": 0.8, "range": 14.0, "root": 0.8, "cost": 45, "cd": 20.0, "desc": "召唤一株蓝银藤灵守在准星处 12 秒，不停抽打附近的魂兽并把它们缠住"},
 	# 镰刀
 	"ld_whirl": {"name": "旋风斩", "type": "launch", "target": "self", "radius": 5.5, "damage": 45.0, "impulse": 8.0, "cost": 25, "cd": 7.0, "desc": "以自己为中心横扫，把身边魂兽砍飞"},
 	"ld_scythe": {"name": "死神之镰", "type": "beam", "target": "dir", "range": 40.0, "damage": 90.0, "pierce": 5, "cost": 25, "cd": 7.0, "desc": "一道贯穿 40 米的镰刀光"},
 	"ld_reap": {"name": "镰影步", "type": "blink", "target": "dir", "dist": 14.0, "stat": "dmg", "amount": 0.3, "dur": 4.0, "cost": 20, "cd": 6.0, "desc": "瞬移到准星方向 14 米外，之后 4 秒伤害 +30%"},
 	"ld_fly": {"name": "飞镰", "type": "projectile", "target": "dir", "speed": 35.0, "radius": 4.0, "damage": 70.0, "impulse": 6.0, "cost": 30, "cd": 10.0, "desc": "掷出旋转飞镰，命中爆开"},
-	"ld_doom": {"name": "死神降临", "type": "launch", "target": "self", "radius": 11.0, "damage": 120.0, "impulse": 11.0, "cost": 55, "cd": 22.0, "desc": "大范围收割"},
-	"ld_shadow": {"name": "镰影", "type": "dash", "target": "dir", "dist": 12.0, "damage": 60.0, "radius": 3.0, "cost": 30, "cd": 8.0, "desc": "化成镰影冲刺，路过的魂兽受伤"},
+	"ld_doom": {"name": "死神降临", "type": "blackhole", "target": "aim", "radius": 12.0, "pull_t": 2.0, "force": 20.0, "damage": 160.0, "impulse": 12.0, "cost": 55, "cd": 22.0, "desc": "准星处打开死亡漩涡，把魂兽拖进去再绞碎"},
+	"ld_shadow": {"name": "镰刃风暴", "type": "orbit", "target": "self", "kind": "scythe", "n": 3, "radius": 3.5, "dur": 6.0, "damage": 45.0, "cost": 30, "cd": 12.0, "desc": "三把镰刀绕身旋转 6 秒，贴身的魂兽被切"},
 	# 香肠
 	"xc_heal": {"name": "香肠回复", "type": "heal", "target": "self", "radius": 15.0, "amount": 45.0, "cost": 25, "cd": 10.0, "desc": "15 米内所有队友回复 45 体力"},
 	"xc_boost": {"name": "香肠增幅", "type": "buff", "target": "self", "radius": 15.0, "stat": "dmg", "amount": 0.2, "dur": 12.0, "team": true, "cost": 30, "cd": 18.0, "desc": "全队伤害 +20%，持续 12 秒"},
@@ -725,9 +743,9 @@ const SKILLS := {
 	# 幽冥灵猫
 	"ym_dash": {"name": "幽冥突刺", "type": "dash", "target": "dir", "dist": 10.0, "damage": 40.0, "radius": 2.5, "cost": 20, "cd": 5.0, "desc": "瞬间突进 10 米"},
 	"ym_claw": {"name": "幽冥影爪", "type": "beam", "target": "dir", "range": 14.0, "damage": 110.0, "pierce": 2, "cost": 25, "cd": 7.0, "desc": "近距离高伤害爪击"},
-	"ym_clone": {"name": "鬼影分身", "type": "buff", "target": "self", "stat": "crit", "amount": 1.0, "dur": 6.0, "cost": 30, "cd": 16.0, "desc": "6 秒内每一发都算爆头"},
+	"ym_clone": {"name": "鬼影分身", "type": "summon", "target": "self", "kind": "cat", "dur": 8.0, "damage": 60.0, "rate": 0.5, "range": 12.0, "cost": 30, "cd": 16.0, "desc": "放出一只幽冥猫影 8 秒，飞快地抓 12 米内的魂兽"},
 	"ym_slash": {"name": "幽冥斩", "type": "launch", "target": "aim", "radius": 4.5, "damage": 55.0, "impulse": 9.0, "cost": 30, "cd": 9.0, "desc": "在准星处斩出一道影刃，把魂兽挑飞"},
-	"ym_hundred": {"name": "幽冥百爪", "type": "rain", "target": "aim", "radius": 6.0, "damage": 30.0, "impulse": 4.0, "waves": 6, "cost": 50, "cd": 18.0, "desc": "六连爪影"},
+	"ym_hundred": {"name": "幽冥爪环", "type": "orbit", "target": "self", "kind": "claw", "n": 5, "radius": 3.0, "dur": 8.0, "damage": 40.0, "cost": 50, "cd": 18.0, "desc": "五道爪影绕身 8 秒，贴身的魂兽被撕碎"},
 	"ym_ghost": {"name": "幽冥灵魂", "type": "invis", "target": "self", "stat": "speed", "amount": 0.5, "dur": 6.0, "cost": 30, "cd": 16.0, "desc": "隐身 6 秒：魂兽和 Boss 看不见你，移速 +50%"},
 	# 火凤凰
 	"hf_fire": {"name": "凤凰火线", "type": "projectile", "target": "dir", "speed": 40.0, "radius": 4.5, "damage": 65.0, "impulse": 5.0, "burn": 8.0, "cost": 25, "cd": 6.0, "desc": "火球命中爆开，灼烧魂兽"},
@@ -756,72 +774,72 @@ const SKILLS := {
 	"ls_wing": {"name": "天使之翼", "type": "fly", "target": "self", "dur": 7.0, "cost": 25, "cd": 14.0, "desc": "展开六翼飞 7 秒（空格上升、Ctrl 下降），落地砸飞周围魂兽", "radius": 5.0, "damage": 50.0, "impulse": 7.0},
 	"ls_judge": {"name": "审判", "type": "launch", "target": "aim", "radius": 7.0, "damage": 70.0, "impulse": 9.0, "cost": 35, "cd": 11.0, "desc": "准星处降下审判之光"},
 	"ls_sword": {"name": "天使圣剑", "type": "beam", "target": "dir", "range": 70.0, "damage": 200.0, "pierce": 8, "cost": 55, "cd": 20.0, "desc": "一剑贯穿"},
-	"ls_domain": {"name": "神圣领域", "type": "buff", "target": "self", "radius": 18.0, "stat": "all", "amount": 0.3, "dur": 12.0, "team": true, "cost": 55, "cd": 28.0, "desc": "全队伤害、移速 +30%，每秒回 5 体力"},
+	"ls_domain": {"name": "神圣领域", "type": "domain", "target": "self", "radius": 18.0, "dur": 12.0, "dps": 50.0, "ally_stat": "all", "ally_amount": 0.3, "cost": 55, "cd": 28.0, "desc": "18 米神圣领域 12 秒：队友全属性 +30%，魂兽持续被圣光灼烧"},
 	# ---- 第四、第五魂环 ----
-	"lyc_wall": {"name": "蓝银囚牢", "type": "root", "target": "aim", "radius": 14.0, "dur": 6.0, "damage": 60.0, "cost": 60, "cd": 22.0, "desc": "14 米内所有魂兽定身 6 秒"},
-	"lyc_storm": {"name": "蓝银风暴", "type": "rain", "target": "aim", "radius": 9.0, "damage": 60.0, "impulse": 9.0, "waves": 5, "cost": 60, "cd": 20.0, "desc": "五波蓝银突刺，魂兽一直落不了地"},
-	"lyc_king": {"name": "蓝银皇降临", "type": "launch", "target": "aim", "radius": 14.0, "damage": 240.0, "impulse": 13.0, "cost": 75, "cd": 30.0, "desc": "蓝银皇虚影破土而出，大范围挑飞"},
+	"lyc_wall": {"name": "蓝银领域", "type": "domain", "target": "self", "radius": 12.0, "dur": 8.0, "dps": 40.0, "root_every": 2.0, "ally_stat": "dr", "ally_amount": 0.25, "cost": 60, "cd": 24.0, "desc": "脚下展开 12 米蓝银领域 8 秒：魂兽持续掉血、每 2 秒被缠住一次；队友在里面受伤 -25%"},
+	"lyc_storm": {"name": "蓝银缠丝", "type": "chain", "target": "aim", "damage": 90.0, "jumps": 6, "range": 12.0, "root": 1.5, "cost": 55, "cd": 16.0, "desc": "一根蓝银丝从准星处连到最多 7 只魂兽，每只都被缠住"},
+	"lyc_king": {"name": "蓝银皇 · 万藤归一", "type": "blackhole", "target": "aim", "radius": 13.0, "pull_t": 2.2, "force": 22.0, "damage": 300.0, "impulse": 14.0, "cost": 75, "cd": 30.0, "desc": "准星处万藤聚合，把 13 米内的魂兽全部拖到一起，2 秒后炸开"},
 	"lyc_life": {"name": "蓝银生命", "type": "heal", "target": "self", "radius": 25.0, "amount": 120.0, "cost": 70, "cd": 32.0, "desc": "全队回复 120 体力"},
 	"ld_moon": {"name": "血月之镰", "type": "beam", "target": "dir", "range": 60.0, "damage": 260.0, "pierce": 8, "cost": 60, "cd": 18.0, "desc": "一道血色镰光"},
-	"ld_harvest": {"name": "灵魂收割", "type": "mark", "target": "self", "radius": 18.0, "dur": 12.0, "mult": 1.6, "cost": 60, "cd": 24.0, "desc": "18 米内魂兽受到伤害 +60%"},
-	"ld_god": {"name": "死神领域", "type": "rain", "target": "aim", "radius": 10.0, "damage": 90.0, "impulse": 8.0, "waves": 6, "cost": 75, "cd": 30.0, "desc": "六轮死神镰影"},
-	"ld_fury": {"name": "狂镰", "type": "buff", "target": "self", "stat": "dmg", "amount": 0.7, "dur": 10.0, "cost": 70, "cd": 30.0, "desc": "10 秒内伤害 +70%"},
-	"xc_feast": {"name": "香肠盛宴", "type": "heal", "target": "self", "radius": 25.0, "amount": 150.0, "cost": 60, "cd": 26.0, "desc": "全队回复 150 体力"},
-	"xc_power": {"name": "力量香肠", "type": "buff", "target": "self", "radius": 25.0, "stat": "dmg", "amount": 0.45, "dur": 14.0, "team": true, "cost": 60, "cd": 26.0, "desc": "全队伤害 +45%"},
-	"xc_giant": {"name": "巨型香肠", "type": "shield", "target": "self", "radius": 25.0, "amount": 150.0, "dur": 12.0, "team": true, "cost": 75, "cd": 34.0, "desc": "全队 150 点护盾"},
-	"xc_nuke": {"name": "香肠天降", "type": "rain", "target": "aim", "radius": 10.0, "damage": 110.0, "impulse": 12.0, "waves": 4, "cost": 75, "cd": 30.0, "desc": "天上掉下四轮爆炸香肠"},
-	"bh_tiger": {"name": "白虎裂光", "type": "beam", "target": "dir", "range": 60.0, "damage": 280.0, "pierce": 8, "cost": 60, "cd": 18.0, "desc": "巨大的裂光波"},
+	"ld_harvest": {"name": "灵魂收割场", "type": "domain", "target": "aim", "radius": 12.0, "dur": 8.0, "dps": 70.0, "mult": 1.4, "cost": 60, "cd": 24.0, "desc": "准星处 12 米收割场 8 秒：魂兽持续掉血，受到伤害 +40%"},
+	"ld_god": {"name": "死神镰影", "type": "summon", "target": "self", "kind": "scythe", "dur": 12.0, "damage": 90.0, "rate": 0.6, "range": 16.0, "cost": 75, "cd": 30.0, "desc": "一把巨镰浮在身边 12 秒，自动劈砍 16 米内的魂兽"},
+	"ld_fury": {"name": "嗜血狂镰", "type": "empower", "target": "self", "kind": "bleed", "dur": 12.0, "frac": 0.6, "cost": 70, "cd": 30.0, "desc": "12 秒内暗器命中让魂兽流血（额外 60% 伤害），打中还给自己回血"},
+	"xc_feast": {"name": "香肠补给站", "type": "summon", "target": "self", "kind": "sausage", "dur": 14.0, "damage": 30.0, "rate": 1.0, "range": 12.0, "heal": 18.0, "cost": 60, "cd": 26.0, "desc": "放下一根会发光的大香肠 14 秒：每秒给 10 米内队友回血，还会砸附近的魂兽"},
+	"xc_power": {"name": "香肠结界", "type": "domain", "target": "self", "radius": 14.0, "dur": 10.0, "dps": 30.0, "ally_stat": "dmg", "ally_amount": 0.4, "cost": 60, "cd": 26.0, "desc": "14 米结界 10 秒：队友伤害 +40%，魂兽持续掉血"},
+	"xc_giant": {"name": "香肠护卫环", "type": "orbit", "target": "self", "kind": "sausage", "n": 4, "radius": 3.2, "dur": 12.0, "damage": 60.0, "cost": 75, "cd": 30.0, "desc": "四根香肠绕身转 12 秒，撞飞贴身的魂兽"},
+	"xc_nuke": {"name": "香肠黑洞", "type": "blackhole", "target": "aim", "radius": 14.0, "pull_t": 2.4, "force": 24.0, "damage": 280.0, "impulse": 14.0, "cost": 75, "cd": 30.0, "desc": "巨型香肠变成黑洞，吸住 14 米内的魂兽然后爆炸"},
+	"bh_tiger": {"name": "白虎魂灵", "type": "summon", "target": "self", "kind": "tiger", "dur": 14.0, "damage": 140.0, "rate": 1.0, "range": 18.0, "impulse": 7.0, "cost": 60, "cd": 26.0, "desc": "召唤白虎魂灵 14 秒，扑向 18 米内的魂兽，一扑一个"},
 	"bh_body": {"name": "白虎真身", "type": "giant", "target": "self", "scale": 2.2, "dr": 0.6, "dmg": 0.5, "dur": 12.0, "cost": 60, "cd": 28.0, "desc": "化身巨虎 12 秒：体型 ×2.2，受伤 -60%，伤害 +50%"},
 	"bh_king": {"name": "白虎流星雨·极", "type": "rain", "target": "aim", "radius": 11.0, "damage": 100.0, "impulse": 9.0, "waves": 6, "cost": 75, "cd": 30.0, "desc": "六轮流星"},
-	"bh_rage": {"name": "邪眸白虎", "type": "buff", "target": "self", "stat": "all", "amount": 0.5, "dur": 12.0, "cost": 70, "cd": 32.0, "desc": "伤害、移速、换弹 +50%"},
+	"bh_rage": {"name": "邪眸白虎", "type": "empower", "target": "self", "kind": "explode", "dur": 12.0, "frac": 0.45, "cost": 70, "cd": 32.0, "desc": "12 秒内每一发暗器命中都会炸开（范围 3.5 米，额外 45% 伤害）"},
 	"ym_blink": {"name": "幽冥瞬影", "type": "blink", "target": "dir", "dist": 18.0, "damage": 160.0, "radius": 3.5, "stat": "crit", "amount": 1.0, "dur": 3.0, "cost": 50, "cd": 10.0, "desc": "瞬移 18 米，路上的魂兽受重创，之后 3 秒每发都算爆头"},
-	"ym_night": {"name": "幽冥夜", "type": "mark", "target": "self", "radius": 20.0, "dur": 12.0, "mult": 1.55, "cost": 60, "cd": 24.0, "desc": "20 米内魂兽受到伤害 +55%"},
-	"ym_true": {"name": "幽冥真身", "type": "buff", "target": "self", "stat": "crit", "amount": 1.0, "dur": 12.0, "cost": 70, "cd": 32.0, "desc": "12 秒内每一发都算爆头"},
-	"ym_storm": {"name": "幽冥爪暴", "type": "rain", "target": "aim", "radius": 9.0, "damage": 70.0, "impulse": 6.0, "waves": 8, "cost": 75, "cd": 30.0, "desc": "八连爪影"},
-	"hf_meteor": {"name": "凤凰流星", "type": "rain", "target": "aim", "radius": 10.0, "damage": 90.0, "impulse": 7.0, "waves": 5, "burn": 14.0, "cost": 60, "cd": 22.0, "desc": "五颗火流星砸下，灼烧魂兽"},
-	"hf_wall": {"name": "凤凰火墙", "type": "mark", "target": "aim", "radius": 12.0, "dur": 12.0, "mult": 1.5, "cost": 60, "cd": 24.0, "desc": "火墙里的魂兽受到伤害 +50%"},
+	"ym_night": {"name": "幽冥夜", "type": "domain", "target": "aim", "radius": 16.0, "dur": 10.0, "dps": 35.0, "mult": 1.55, "cost": 60, "cd": 24.0, "desc": "准星处降下 16 米黑夜 10 秒：魂兽持续掉血，受到伤害 +55%"},
+	"ym_true": {"name": "幽冥真身", "type": "empower", "target": "self", "kind": "chain", "dur": 12.0, "frac": 0.6, "cost": 70, "cd": 32.0, "desc": "12 秒内每一发命中都会弹到旁边两只魂兽（60% 伤害）"},
+	"ym_storm": {"name": "幽冥连爪", "type": "chain", "target": "aim", "damage": 150.0, "jumps": 10, "range": 13.0, "cost": 75, "cd": 26.0, "desc": "爪影在 11 只魂兽之间连跳"},
+	"hf_meteor": {"name": "火凤凰魂灵", "type": "summon", "target": "self", "kind": "phoenix", "dur": 14.0, "damage": 110.0, "rate": 0.9, "range": 24.0, "burn": 14.0, "cost": 60, "cd": 22.0, "desc": "召唤一只火凤凰在头顶盘旋 14 秒，朝 24 米内的魂兽吐火球"},
+	"hf_wall": {"name": "凤凰火域", "type": "domain", "target": "aim", "radius": 12.0, "dur": 10.0, "dps": 80.0, "burn": 20.0, "cost": 60, "cd": 24.0, "desc": "准星处 12 米火海 10 秒，魂兽被烧"},
 	"hf_true": {"name": "火凤凰真身", "type": "leap", "target": "self", "height": 20.0, "radius": 12.0, "damage": 260.0, "impulse": 12.0, "cost": 75, "cd": 30.0, "desc": "化身火凤凰冲天，落地烧毁一片"},
-	"hf_sun": {"name": "凤凰啸天击·极", "type": "projectile", "target": "dir", "speed": 34.0, "radius": 12.0, "damage": 320.0, "impulse": 14.0, "burn": 20.0, "cost": 75, "cd": 30.0, "desc": "超大凤凰火球"},
-	"qb_break": {"name": "琉璃破", "type": "mark", "target": "aim", "radius": 16.0, "dur": 14.0, "mult": 1.7, "cost": 60, "cd": 26.0, "desc": "准星处魂兽受到伤害 +70%"},
-	"qb_wall": {"name": "琉璃护壁", "type": "shield", "target": "self", "radius": 25.0, "amount": 110.0, "dur": 12.0, "team": true, "cost": 60, "cd": 26.0, "desc": "全队 110 点护盾"},
+	"hf_sun": {"name": "烈阳", "type": "blackhole", "target": "aim", "radius": 14.0, "pull_t": 2.2, "force": 22.0, "damage": 340.0, "impulse": 15.0, "burn": 30.0, "cost": 75, "cd": 30.0, "desc": "准星处升起一颗小太阳，把魂兽吸过去再爆燃"},
+	"qb_break": {"name": "琉璃破界", "type": "domain", "target": "aim", "radius": 16.0, "dur": 12.0, "dps": 20.0, "mult": 1.7, "cost": 60, "cd": 26.0, "desc": "准星处 16 米琉璃结界 12 秒，里面的魂兽受到伤害 +70%"},
+	"qb_wall": {"name": "琉璃宝塔", "type": "summon", "target": "self", "kind": "tower", "dur": 16.0, "damage": 100.0, "rate": 0.8, "range": 26.0, "heal": 10.0, "cost": 60, "cd": 26.0, "desc": "放下一座七宝琉璃塔 16 秒：射光打 26 米内的魂兽，每秒给身边队友回血"},
 	"qb_nine": {"name": "九宝琉璃", "type": "buff", "target": "self", "radius": 30.0, "stat": "all", "amount": 0.55, "dur": 14.0, "team": true, "cost": 80, "cd": 34.0, "desc": "全队伤害、移速、换弹 +55%"},
 	"qb_heal": {"name": "琉璃之光", "type": "heal", "target": "self", "radius": 30.0, "amount": 160.0, "cost": 70, "cd": 30.0, "desc": "全队回复 160 体力"},
 	"ht_quake": {"name": "昊天震", "type": "launch", "target": "self", "radius": 14.0, "damage": 220.0, "impulse": 14.0, "cost": 60, "cd": 20.0, "desc": "一锤砸地，把周围 14 米全震上天"},
-	"ht_break2": {"name": "昊天碎甲", "type": "mark", "target": "self", "radius": 18.0, "dur": 12.0, "mult": 1.6, "cost": 60, "cd": 24.0, "desc": "身边魂兽受到伤害 +60%，无视护甲"},
-	"ht_nine2": {"name": "昊天九绝·极", "type": "buff", "target": "self", "stat": "dmg", "amount": 0.8, "dur": 10.0, "cost": 70, "cd": 30.0, "desc": "10 秒内伤害 +80%"},
+	"ht_break2": {"name": "昊天引力", "type": "blackhole", "target": "aim", "radius": 16.0, "pull_t": 2.4, "force": 26.0, "damage": 420.0, "impulse": 16.0, "cost": 60, "cd": 24.0, "desc": "昊天锤砸出引力场，把 16 米内的魂兽拖过来再一锤砸飞"},
+	"ht_nine2": {"name": "昊天九绝 · 附体", "type": "empower", "target": "self", "kind": "quake", "dur": 12.0, "frac": 0.7, "cost": 70, "cd": 30.0, "desc": "12 秒内每一发命中都震出冲击波（范围 4.5 米，额外 70% 伤害）"},
 	"ht_fall": {"name": "天锤陨落", "type": "projectile", "target": "dir", "speed": 26.0, "radius": 13.0, "damage": 340.0, "impulse": 15.0, "cost": 75, "cd": 30.0, "desc": "昊天锤化成陨石砸下"},
-	"ls_holy": {"name": "圣光审判", "type": "rain", "target": "aim", "radius": 11.0, "damage": 100.0, "impulse": 9.0, "waves": 5, "cost": 60, "cd": 22.0, "desc": "五道审判之光"},
+	"ls_holy": {"name": "圣光链", "type": "chain", "target": "aim", "damage": 150.0, "jumps": 8, "range": 14.0, "cost": 60, "cd": 20.0, "desc": "圣光在 9 只魂兽之间连锁"},
 	"ls_bless": {"name": "天使祝福", "type": "heal", "target": "self", "radius": 30.0, "amount": 160.0, "cost": 60, "cd": 26.0, "desc": "全队回复 160 体力"},
 	"ls_god": {"name": "天使神剑", "type": "beam", "target": "dir", "range": 90.0, "damage": 420.0, "pierce": 12, "cost": 80, "cd": 30.0, "desc": "一剑贯穿 90 米"},
-	"ls_true": {"name": "六翼天使真身", "type": "buff", "target": "self", "radius": 25.0, "stat": "all", "amount": 0.5, "dur": 14.0, "team": true, "cost": 80, "cd": 34.0, "desc": "全队伤害、移速 +50%"},
+	"ls_true": {"name": "炽天使", "type": "summon", "target": "self", "kind": "angel", "dur": 16.0, "damage": 160.0, "rate": 0.7, "range": 30.0, "cost": 80, "cd": 34.0, "desc": "召唤一位炽天使在身边 16 秒，用圣光射 30 米内的魂兽"},
 	# ---- 万年魂环（第六~九环）和十万年魂环（第十环，神技）----
-	"lyc_net": {"name": "蓝银天网", "type": "root", "target": "aim", "radius": 22.0, "dur": 7.0, "damage": 400.0, "cost": 85, "cd": 30.0, "desc": "22 米内的魂兽全部被蓝银天网吊住 7 秒"},
-	"lyc_thorn": {"name": "蓝银荆棘海", "type": "rain", "target": "aim", "radius": 14.0, "damage": 260.0, "impulse": 10.0, "waves": 6, "cost": 85, "cd": 28.0, "desc": "六波荆棘从地下刺出"},
-	"lyc_shen": {"name": "蓝银皇 · 神降", "type": "launch", "target": "aim", "radius": 24.0, "damage": 1800.0, "impulse": 16.0, "cost": 100, "cd": 45.0, "desc": "神技：蓝银皇真身降临，一大片全部挑飞"},
+	"lyc_net": {"name": "蓝银荆棘环", "type": "orbit", "target": "self", "kind": "thorn", "n": 6, "radius": 4.0, "dur": 10.0, "damage": 120.0, "cost": 80, "cd": 28.0, "desc": "六根蓝银荆棘绕着你转 10 秒，碰到的魂兽被扎"},
+	"lyc_thorn": {"name": "蓝银附体", "type": "empower", "target": "self", "kind": "root", "dur": 12.0, "frac": 0.5, "cost": 80, "cd": 30.0, "desc": "12 秒内暗器打中的魂兽被缠住，并多受 50% 伤害"},
+	"lyc_shen": {"name": "蓝银皇 · 神降", "shen": true, "type": "launch", "target": "aim", "radius": 24.0, "damage": 1800.0, "impulse": 16.0, "cost": 100, "cd": 45.0, "desc": "神技：蓝银皇真身降临，一大片全部挑飞"},
 	"ld_hell": {"name": "地狱之镰", "type": "beam", "target": "dir", "range": 90.0, "damage": 900.0, "pierce": 20, "cost": 85, "cd": 26.0, "desc": "一道贯穿 90 米的地狱镰光"},
-	"ld_step": {"name": "死神步", "type": "blink", "target": "dir", "dist": 26.0, "damage": 600.0, "radius": 5.0, "stat": "dmg", "amount": 0.5, "dur": 6.0, "cost": 80, "cd": 18.0, "desc": "瞬移 26 米斩过路上所有魂兽，之后 6 秒伤害 +50%"},
-	"ld_shen": {"name": "死神之神镰", "type": "rain", "target": "aim", "radius": 18.0, "damage": 700.0, "impulse": 12.0, "waves": 7, "cost": 100, "cd": 45.0, "desc": "神技：七轮死神镰影横扫一大片"},
+	"ld_step": {"name": "死神连斩", "type": "chain", "target": "aim", "damage": 400.0, "jumps": 8, "range": 14.0, "cost": 80, "cd": 18.0, "desc": "镰光从准星处连斩 9 只魂兽"},
+	"ld_shen": {"name": "死神之神镰", "shen": true, "type": "rain", "target": "aim", "radius": 18.0, "damage": 700.0, "impulse": 12.0, "waves": 7, "cost": 100, "cd": 45.0, "desc": "神技：七轮死神镰影横扫一大片"},
 	"xc_feast2": {"name": "香肠神宴", "type": "heal", "target": "self", "radius": 40.0, "amount": 400.0, "cost": 85, "cd": 30.0, "desc": "40 米内全队回复 400 体力"},
 	"xc_rain2": {"name": "香肠雨 · 极", "type": "rain", "target": "aim", "radius": 14.0, "damage": 300.0, "impulse": 13.0, "waves": 6, "cost": 85, "cd": 28.0, "desc": "六轮爆炸香肠从天而降"},
-	"xc_shen": {"name": "香肠之神", "type": "buff", "target": "self", "radius": 40.0, "stat": "all", "amount": 0.8, "dur": 16.0, "team": true, "cost": 100, "cd": 45.0, "desc": "神技：全队伤害、移速、换弹 +80%，持续 16 秒"},
+	"xc_shen": {"name": "香肠之神", "shen": true, "type": "buff", "target": "self", "radius": 40.0, "stat": "all", "amount": 0.8, "dur": 16.0, "team": true, "cost": 100, "cd": 45.0, "desc": "神技：全队伤害、移速、换弹 +80%，持续 16 秒"},
 	"bh_king2": {"name": "白虎灭世", "type": "beam", "target": "dir", "range": 90.0, "damage": 1100.0, "pierce": 15, "cost": 85, "cd": 26.0, "desc": "灭世光波贯穿 90 米"},
-	"bh_giant2": {"name": "白虎法身", "type": "giant", "target": "self", "scale": 2.8, "dr": 0.7, "dmg": 0.8, "dur": 14.0, "cost": 85, "cd": 32.0, "desc": "化身巨虎法身：体型 ×2.8，受伤 -70%，伤害 +80%"},
-	"bh_shen": {"name": "白虎之神", "type": "launch", "target": "self", "radius": 22.0, "damage": 2000.0, "impulse": 16.0, "cost": 100, "cd": 45.0, "desc": "神技：白虎神一声怒吼，22 米全部震飞"},
+	"bh_giant2": {"name": "白虎领域", "type": "domain", "target": "self", "radius": 16.0, "dur": 10.0, "dps": 150.0, "mult": 1.3, "ally_stat": "dr", "ally_amount": 0.35, "cost": 85, "cd": 32.0, "desc": "16 米白虎领域 10 秒：魂兽持续掉血、受伤 +30%，队友受伤 -35%"},
+	"bh_shen": {"name": "白虎之神", "shen": true, "type": "launch", "target": "self", "radius": 22.0, "damage": 2000.0, "impulse": 16.0, "cost": 100, "cd": 45.0, "desc": "神技：白虎神一声怒吼，22 米全部震飞"},
 	"ym_shadow2": {"name": "幽冥万影", "type": "rain", "target": "aim", "radius": 14.0, "damage": 320.0, "impulse": 7.0, "waves": 9, "cost": 85, "cd": 28.0, "desc": "九轮幽冥爪影"},
 	"ym_blink2": {"name": "幽冥神行", "type": "blink", "target": "dir", "dist": 30.0, "damage": 900.0, "radius": 5.0, "stat": "crit", "amount": 1.0, "dur": 5.0, "cost": 80, "cd": 16.0, "desc": "瞬移 30 米重创路上的魂兽，之后 5 秒每发都是爆头"},
-	"ym_shen": {"name": "幽冥之神", "type": "buff", "target": "self", "stat": "all", "amount": 0.9, "stat2": "crit", "amount2": 1.0, "dur": 12.0, "cost": 100, "cd": 45.0, "desc": "神技：12 秒内伤害、移速 +90%，每一发都是爆头"},
-	"hf_sky": {"name": "焚天", "type": "rain", "target": "aim", "radius": 16.0, "damage": 420.0, "impulse": 9.0, "waves": 6, "burn": 40.0, "cost": 85, "cd": 28.0, "desc": "六颗天火砸下，烧成一片火海"},
-	"hf_wing2": {"name": "凤凰神翼", "type": "fly", "target": "self", "dur": 10.0, "radius": 14.0, "damage": 800.0, "impulse": 12.0, "cost": 85, "cd": 28.0, "desc": "展开神翼飞 10 秒，落地炸飞 14 米"},
-	"hf_shen": {"name": "火凤凰之神", "type": "projectile", "target": "dir", "speed": 30.0, "radius": 20.0, "damage": 2400.0, "impulse": 18.0, "burn": 60.0, "cost": 100, "cd": 45.0, "desc": "神技：化身火凤凰撞出去，炸出 20 米火海"},
-	"qb_nine2": {"name": "九宝神光", "type": "buff", "target": "self", "radius": 40.0, "stat": "all", "amount": 0.7, "dur": 16.0, "team": true, "cost": 85, "cd": 32.0, "desc": "全队伤害、移速、换弹 +70%"},
-	"qb_break2": {"name": "琉璃碎天", "type": "mark", "target": "aim", "radius": 30.0, "dur": 16.0, "mult": 2.2, "cost": 85, "cd": 30.0, "desc": "30 米内魂兽受到伤害 ×2.2"},
-	"qb_shen": {"name": "九宝琉璃神", "type": "heal", "target": "self", "radius": 50.0, "amount": 999.0, "cost": 100, "cd": 45.0, "desc": "神技：50 米内全队回满体力"},
-	"ht_true2": {"name": "昊天真身 · 极", "type": "giant", "target": "self", "scale": 2.6, "dr": 0.65, "dmg": 0.9, "dur": 14.0, "cost": 85, "cd": 32.0, "desc": "体型 ×2.6，受伤 -65%，伤害 +90%"},
-	"ht_storm2": {"name": "乱披风锤法 · 极", "type": "rain", "target": "aim", "radius": 15.0, "damage": 480.0, "impulse": 14.0, "waves": 6, "cost": 85, "cd": 28.0, "desc": "六连重锤，魂兽根本落不了地"},
-	"ht_shen": {"name": "昊天神锤", "type": "projectile", "target": "dir", "speed": 26.0, "radius": 22.0, "damage": 2600.0, "impulse": 18.0, "cost": 100, "cd": 45.0, "desc": "神技：昊天锤化成神锤砸下，22 米寸草不生"},
+	"ym_shen": {"name": "幽冥之神", "shen": true, "type": "buff", "target": "self", "stat": "all", "amount": 0.9, "stat2": "crit", "amount2": 1.0, "dur": 12.0, "cost": 100, "cd": 45.0, "desc": "神技：12 秒内伤害、移速 +90%，每一发都是爆头"},
+	"hf_sky": {"name": "凤凰火环", "type": "orbit", "target": "self", "kind": "fire", "n": 6, "radius": 5.0, "dur": 12.0, "damage": 180.0, "burn": 30.0, "cost": 85, "cd": 28.0, "desc": "六团凤凰火绕身 12 秒，烧穿靠近的魂兽"},
+	"hf_wing2": {"name": "涅槃之焰", "type": "empower", "target": "self", "kind": "burn", "dur": 14.0, "frac": 0.6, "cost": 85, "cd": 28.0, "desc": "14 秒内暗器命中点燃魂兽，还会溅射火焰"},
+	"hf_shen": {"name": "火凤凰之神", "shen": true, "type": "projectile", "target": "dir", "speed": 30.0, "radius": 20.0, "damage": 2400.0, "impulse": 18.0, "burn": 60.0, "cost": 100, "cd": 45.0, "desc": "神技：化身火凤凰撞出去，炸出 20 米火海"},
+	"qb_nine2": {"name": "九宝光环", "type": "orbit", "target": "self", "kind": "gem", "n": 9, "radius": 4.0, "dur": 14.0, "damage": 150.0, "cost": 85, "cd": 32.0, "desc": "九颗宝珠绕身 14 秒"},
+	"qb_break2": {"name": "琉璃折光", "type": "chain", "target": "aim", "damage": 250.0, "jumps": 12, "range": 15.0, "mult": 1.6, "cost": 85, "cd": 30.0, "desc": "一道光在 13 只魂兽之间折射，被照到的受到伤害 +60%"},
+	"qb_shen": {"name": "九宝琉璃神", "shen": true, "type": "heal", "target": "self", "radius": 50.0, "amount": 999.0, "cost": 100, "cd": 45.0, "desc": "神技：50 米内全队回满体力"},
+	"ht_true2": {"name": "昊天锤灵", "type": "summon", "target": "self", "kind": "hammer", "dur": 14.0, "damage": 400.0, "rate": 1.4, "range": 20.0, "radius": 5.0, "impulse": 12.0, "cost": 85, "cd": 32.0, "desc": "一柄巨锤浮在身边 14 秒，自己砸向 20 米内的魂兽（范围伤害）"},
+	"ht_storm2": {"name": "锤影环", "type": "orbit", "target": "self", "kind": "hammer", "n": 4, "radius": 5.0, "dur": 12.0, "damage": 300.0, "cost": 85, "cd": 28.0, "desc": "四把锤影绕身 12 秒"},
+	"ht_shen": {"name": "昊天神锤", "shen": true, "type": "projectile", "target": "dir", "speed": 26.0, "radius": 22.0, "damage": 2600.0, "impulse": 18.0, "cost": 100, "cd": 45.0, "desc": "神技：昊天锤化成神锤砸下，22 米寸草不生"},
 	"ls_judge2": {"name": "天使审判 · 极", "type": "rain", "target": "aim", "radius": 16.0, "damage": 450.0, "impulse": 10.0, "waves": 6, "cost": 85, "cd": 28.0, "desc": "六道审判圣光"},
-	"ls_wing2": {"name": "六翼神飞", "type": "fly", "target": "self", "dur": 12.0, "radius": 14.0, "damage": 900.0, "impulse": 12.0, "cost": 85, "cd": 28.0, "desc": "六翼展开飞 12 秒，落地圣光炸飞 14 米"},
-	"ls_shen": {"name": "天使之神", "type": "beam", "target": "dir", "range": 150.0, "damage": 3000.0, "pierce": 30, "cost": 100, "cd": 45.0, "desc": "神技：天使神剑一剑贯穿 150 米"},
+	"ls_wing2": {"name": "六翼光刃", "type": "orbit", "target": "self", "kind": "feather", "n": 6, "radius": 4.5, "dur": 12.0, "damage": 250.0, "cost": 85, "cd": 28.0, "desc": "六片光羽绕身 12 秒"},
+	"ls_shen": {"name": "天使之神", "shen": true, "type": "beam", "target": "dir", "range": 150.0, "damage": 3000.0, "pierce": 30, "cost": 100, "cd": 45.0, "desc": "神技：天使神剑一剑贯穿 150 米"},
 }
 
 # 每个武魂的魂技树：第 1/2/3/4/5 魂环各两个选项
@@ -1022,7 +1040,7 @@ const CHAPTERS := {
 		"name": "第一章 · 湖心岛", "map": "island", "boss": "mandala", "next": 2, "levels": [1, 20], "boss_level": 15,
 		"intro": "圣魂村外的湖心小岛。甩出引魂索把魂兽拽上天，在空中打死它们。修炼到 15 级，就能去北坡祭坛召唤湖主。",
 		"quests": [
-			{"type": "level", "n": 15, "text": "修炼到 15 级（打魂兽、悬赏、精英、兽潮都给修为）", "reward": 0},
+			{"type": "level", "n": 15, "text": "修炼到 15 级（猎魂兽王最快：必掉魂环、魂骨、王魂）", "reward": 0},
 			{"type": "altar", "n": 1, "text": "去北边山坡的祭坛（按 F），召唤湖主 · 千年曼陀罗蛇", "reward": 0, "target": "altar"},
 			{"type": "boss", "n": 1, "text": "击败湖主 · 千年曼陀罗蛇", "reward": 0},
 			{"type": "boat", "n": 1, "text": "所有人到码头尽头的船边按 F，一起去落日森林", "reward": 0, "target": "boat"},
@@ -1125,6 +1143,12 @@ func beast_max_hp(species: String, age: int) -> float:
 	# 自动测试是功能测试（能不能拽、能不能打死），用的是 1 级的暗器，不乘章节血量
 	var ch_k := 1.0 if autotest else float(CH_HP.get(int(SPECIES_CH.get(species, 1)), 1.0)) * Profile.rebirth_hard()
 	return BEASTS[species]["hp"] * AGES[clampi(age, 0, AGES.size() - 1)]["hp"] * ch_k
+
+
+## 魂技特效用的颜色（比界面上的武魂颜色更饱和，白虎、天使这种浅色的也看得清）
+func wuhun_fx_color(idx: int) -> Color:
+	var w: Dictionary = WUHUN[clampi(idx, 0, WUHUN.size() - 1)]
+	return w.get("fx", w["color"])
 
 
 func wuhun_color(idx: int) -> Color:

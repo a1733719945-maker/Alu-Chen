@@ -13,6 +13,8 @@ var _sailing := false        # 正在播开船动画：这期间收到的联机�
 
 
 func _ready() -> void:
+	# 输入框、滑条、勾选框、下拉框、滚动条的统一样式（合进引擎默认主题，CanvasLayer 下面的界面也能用上）
+	ThemeDB.get_default_theme().merge_with(UiKit.make_theme())
 	Net.connected.connect(_on_connected)
 	Net.failed.connect(_on_failed)
 	Net.disconnected.connect(_on_disconnected)

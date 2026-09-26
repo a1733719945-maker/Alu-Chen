@@ -44,6 +44,7 @@ func setup(p_world: Node, id: int, p_info: Dictionary) -> void:
 	var dark := U.mat(Color(0.2, 0.18, 0.18), 0.8)
 	body = Node3D.new()
 	add_child(body)
+	FxLib.no_decals(body)
 	U.part(body, U.capsule(0.27, 0.9), robe, Vector3(0, 1.08, 0))
 	U.part(body, U.cyl(0.29, 0.29, 0.1, 12), accent, Vector3(0, 0.98, 0))
 	U.part(body, U.cyl(0.3, 0.36, 0.5, 12), robe, Vector3(0, 0.62, 0))

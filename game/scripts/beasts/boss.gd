@@ -159,6 +159,7 @@ func _build() -> void:
 	_custom = custom != ""
 	model = BeastModels.instance_custom(custom, cfg) if _custom else BeastModels.instance_model(cfg)
 	head.add_child(model)
+	FxLib.no_decals(model)
 	var d := BeastModels._dims(str(cfg["model"]))
 	var k := BeastModels._model_scale(cfg)
 	size = Vector3(float(d["w"]), float(d["h"]), float(d["l"])) * k

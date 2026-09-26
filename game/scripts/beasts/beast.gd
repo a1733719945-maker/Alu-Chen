@@ -84,6 +84,17 @@ var _sk_cd := 3.0                # 独门本事的冷却（Data.BEAST_SKILLS）
 var _sk_wind := 0.0              # 前摇剩余时间
 var _sk_at := Vector3.ZERO       # 前摇开始时瞄准的位置
 var enrage_t := 0.0              # 被狼嚎鼓舞：更快更狠
+# 魂兽王（temper = "elite"）
+var _phase2 := false             # 半血以下暴怒
+var _king_cd := 4.0              # 王的大招（震地、扑杀、咆哮）
+var _king_wind := 0.0
+var _king_move := ""
+var _king_at := Vector3.ZERO
+var _retreat := false            # 四分之一血以下逃回巢穴
+var _rested := false
+var _rest_t := 0.0
+var ropes := {}                  # 房主：谁的引魂索拽着它 peer -> 时间
+var bind_cd := 0.0
 
 # 魂技效果（房主算）
 var root_t := 0.0
@@ -147,6 +158,7 @@ func setup(p_world: Node, p_id: int, p_species: String, p_age: int, p_owner: int
 	model = BeastModels.build(species, age)
 	model.scale *= size_k
 	add_child(model)
+	FxLib.no_decals(model)
 	aura = BeastModels.aura(age, species)
 	aura.top_level = true
 	aura.scale = Vector3.ONE * size_k
@@ -156,6 +168,8 @@ func setup(p_world: Node, p_id: int, p_species: String, p_age: int, p_owner: int
 	_hp_label.no_depth_test = true
 	_hp_label.fixed_size = true
 	_hp_label.pixel_size = 0.0009
+	# 名字和血条由 HUD 画（Hud._draw_plates），这里只用它的位置
+	_hp_label.visible = false
 	add_child(_hp_label)
 	_status = Node3D.new()
 	_status.top_level = true
@@ -236,7 +250,32 @@ func is_land_beast() -> bool:
 
 
 func display_name() -> String:
-	return str(Data.BEASTS[species]["name"]) + ("王" if temper == "elite" else "")
+	if temper == "elite":
+		return "%s%s王" % [Data.age_name(age), Data.BEASTS[species]["name"]]
+	return str(Data.BEASTS[species]["name"])
+
+
+## 捆魂：引魂索拽住它。返回 3.5 秒内一共几根索拽着
+func add_rope(peer: int) -> int:
+	var now := _now()
+	ropes[peer] = now
+	var n := 0
+	for k in ropes:
+		if now - float(ropes[k]) < 3.5:
+			n += 1
+	return n
+
+
+## 捆住：原地按住几秒、受到伤害 +50%
+func bind(dur: float) -> void:
+	root_t = dur
+	root_pos = global_position
+	mark_t = maxf(mark_t, dur)
+	mark_mult = maxf(mark_mult if mark_t > 0.0 else 1.0, 1.5)
+	bind_cd = Data.KING_BIND_CD
+	ropes.clear()
+	_king_wind = 0.0
+	_sk_wind = 0.0
 
 
 ## 性格的样子：凶暴的眼睛发红光，魂骨兽全身金光、往上飘金色光点
@@ -253,8 +292,10 @@ func _build_temper_fx() -> void:
 	light.light_energy = 1.4 if temper == "fierce" else 2.6
 	if temper == "elite":
 		# 精英：头顶一圈橙色的冠 + 身下第二道光环
-		var crown := U.part(_temper_fx, U.torus(bs.x * 0.22 + 0.1, bs.x * 0.22 + 0.16, 32, 5), U.glow(Color(1.0, 0.55, 0.15), 5.0), Vector3(0, bs.y * 0.62, -bs.z * 0.2), Vector3.ZERO, Vector3.ONE, false)
+		var crown := FxLib.soul_ring(Color(1.0, 0.55, 0.15), Color(1.0, 0.55, 0.15), bs.x * 0.22 + 0.13, 3.5)
+		crown.position = Vector3(0, bs.y * 0.62, -bs.z * 0.2)
 		crown.name = "Crown"
+		_temper_fx.add_child(crown)
 	light.omni_range = maxf(bs.length() * 1.2, 3.0)
 	light.position = Vector3(0, bs.y * 0.3, -bs.z * 0.3)
 	_temper_fx.add_child(light)
@@ -262,8 +303,10 @@ func _build_temper_fx() -> void:
 		var p := CPUParticles3D.new()
 		p.amount = 24
 		p.lifetime = 1.2
-		p.mesh = U.sphere(0.05, 6, 3)
-		p.material_override = U.glow(Color(1.0, 0.85, 0.35), 5.0, true)
+		p.mesh = QuadMesh.new()
+		(p.mesh as QuadMesh).size = Vector2(0.16, 0.16)
+		p.material_override = FxLib.pmat("glow", true, 3.0, 1, 0.0)
+		p.color = Color(1.0, 0.85, 0.35)
 		p.direction = Vector3.UP
 		p.spread = 20.0
 		p.initial_velocity_min = 0.6
@@ -835,6 +878,20 @@ func _roam_tick(delta: float, m: String, touching: bool) -> void:
 ## 精英：在老家附近守着；有人走近 20 米或者打了它就追着打；人跑出 45 米就回老家慢慢回血
 func _elite(delta: float, m: String, touching: bool) -> void:
 	_aggro_t = maxf(_aggro_t - delta, 0.0)
+	bind_cd = maxf(bind_cd - delta, 0.0)
+	# 半血暴怒：更快更狠，叫小弟
+	if not _phase2 and hp < max_hp * 0.5:
+		_phase2 = true
+		enrage_t = 9999.0
+		world.king_phase2(self)
+	# 四分之一血：逃回巢穴养伤（只逃一次）——追上去补刀
+	if not _rested and not _retreat and hp < max_hp * 0.25:
+		_retreat = true
+		_rest_t = 0.0
+		world.king_retreat(self)
+	if _retreat:
+		_king_retreat_tick(delta, m, touching)
+		return
 	var home := spawn_pos
 	var tp: Dictionary = world.nearest_player(global_position)
 	var fight := false
@@ -844,6 +901,8 @@ func _elite(delta: float, m: String, touching: bool) -> void:
 		var leashed := Vector2(tpos.x - home.x, tpos.z - home.z).length() > 45.0
 		fight = (near or _aggro_t > 0.0) and not leashed
 	if fight:
+		if _king_tick(delta, tp["pos"], touching):
+			return
 		_fierce(delta, m, touching)
 		return
 	var to := home - global_position
@@ -863,6 +922,69 @@ func _elite(delta: float, m: String, touching: bool) -> void:
 			angular_velocity = Vector3.ZERO
 	if to.length() < 4.0:
 		hp = minf(hp + max_hp * 0.04 * delta, max_hp)
+
+
+## 魂兽王的大招：震地（脚下红圈）、扑杀（砸到你站的地方）、咆哮（冲击环 + 叫小弟，暴怒后才有）
+func _king_tick(delta: float, tpos: Vector3, touching: bool) -> bool:
+	if _king_wind > 0.0:
+		_king_wind -= delta
+		var to := tpos - global_position
+		_face(Vector3(to.x, 0, to.z).normalized(), 0.3)
+		if touching:
+			linear_velocity = Vector3(0, minf(linear_velocity.y, 0.5), 0)
+			angular_velocity = Vector3.ZERO
+		elif motion() in ["fly", "flutter"]:
+			gravity_scale = 0.0
+			linear_velocity = linear_velocity.lerp(Vector3.ZERO, 1.0 - exp(-5.0 * delta))
+		if _king_wind <= 0.0:
+			BeastModels.play_attack(model)
+			if _king_move == "pounce":
+				var d := _king_at - global_position
+				linear_velocity = Vector3(d.x, 0, d.z) * 1.7 + Vector3.UP * 6.0
+		return true
+	_king_cd -= delta
+	var flat := Vector2(tpos.x - global_position.x, tpos.z - global_position.z).length()
+	if _king_cd <= 0.0 and flat < 26.0 and _sk_wind <= 0.0:
+		_king_cd = randf_range(5.0, 8.0) * (0.65 if _phase2 else 1.0)
+		var r := randf()
+		if _phase2 and r < 0.3:
+			_king_move = "roar"
+			_king_wind = 1.1
+		elif r < 0.65 and flat > 6.0:
+			_king_move = "pounce"
+			_king_wind = 0.8
+		else:
+			_king_move = "slam"
+			_king_wind = 1.0
+		_king_at = tpos
+		world.king_move(self, _king_move, tpos, _king_wind)
+		return true
+	return false
+
+
+func _king_retreat_tick(delta: float, m: String, touching: bool) -> void:
+	var to := spawn_pos - global_position
+	var flat := Vector3(to.x, 0, to.z)
+	if flat.length() > 4.0:
+		var dir := flat.normalized()
+		if m in ["fly", "flutter"]:
+			gravity_scale = 0.0
+			linear_velocity = linear_velocity.lerp((to + Vector3.UP * 3.0).limit_length(9.0), 1.0 - exp(-2.5 * delta))
+		elif touching:
+			linear_velocity = Vector3(dir.x * 7.5, minf(linear_velocity.y, 0.5), dir.z * 7.5)
+			angular_velocity = Vector3.ZERO
+		_face(dir, 0.3)
+		return
+	# 到家了：趴着养伤。有人打它或者回到一半血就起来接着打
+	_rest_t += delta
+	if touching:
+		linear_velocity = Vector3(0, minf(linear_velocity.y, 0.5), 0)
+		angular_velocity = Vector3.ZERO
+	hp = minf(hp + max_hp * 0.02 * delta, max_hp)
+	if hp >= max_hp * 0.55 or (_rest_t > 1.5 and _since_hit < 0.3):
+		_retreat = false
+		_rested = true
+		_aggro_t = 12.0
 
 
 ## 凶暴的魂兽在水里：水里的魂兽（鱼、鲨、鬼藤）贴着水面飞快游过来，
@@ -1025,19 +1147,7 @@ func _process(delta: float) -> void:
 	ring.position.y = sin(_anim_t * 3.0) * 0.06
 	var s: float = Data.AGES[age]["scale"]
 	_hp_label.global_position = global_position + Vector3(0, BeastModels.label_height(species) * s * size_k, 0)
-	var tag := ""
-	var tn: String = Data.TEMPERS[temper]["name"]
-	if tn != "":
-		tag += " [%s]" % tn
-	if not affixes.is_empty():
-		tag += " %s%s" % [Data.affix_names(affixes), "！" if _frenzy_on else ""]
-	if flags & FLAG_MARK:
-		tag += " 易伤"
-	if flags & FLAG_ROOT:
-		tag += " 缠绕"
-	if flags & FLAG_BURN:
-		tag += " 灼烧"
-	_hp_label.text = "%s · %s  %d%s" % [Data.age_name(age), display_name(), ceili(maxf(hp, 0.0)), tag]
+
 	_update_status_fx()
 
 

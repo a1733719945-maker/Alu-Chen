@@ -52,6 +52,14 @@ func _ready() -> void:
 	_build_models()
 	_build_left_arm()
 	set_weapon("xiujian", true)
+	# 手里的东西不接收地上的贴花（站在法阵里暗器不会被染色）；之后换上的配件、道具也一样
+	FxLib.no_decals(self)
+	get_tree().node_added.connect(_on_node_added)
+
+
+func _on_node_added(n: Node) -> void:
+	if n is VisualInstance3D and is_ancestor_of(n):
+		(n as VisualInstance3D).layers = 2
 
 
 func _build_models() -> void:

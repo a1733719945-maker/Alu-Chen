@@ -12,6 +12,11 @@ var current := 0                # 当前魂技是第几个魂环的
 var _leap := {}                  # 凤翼天翔 / 天使之翼 落地时触发
 var _projectiles: Array = []     # 本地模拟的飞弹 {sid, pos, vel, power, caster, life, mi}
 var _rains: Array = []           # 房主排队的连击 {sid, center, power, caster, waves, t}
+var _summons: Array = []         # 房主：召唤出来的魂灵 {sid, pos, t, next, heal_t, power, caster}
+var _orbits: Array = []          # 房主：绕身的刀刃 {sid, caster, t, next, power}
+var _domains: Array = []         # 房主：领域 {sid, center, t, next, root_next, power, caster}
+var _delayed: Array = []         # 房主：黑洞到时间炸开 {sid, center, power, caster, t}
+const FOLLOW_KINDS := ["tiger", "cat", "phoenix", "scythe", "hammer", "angel"]
 
 
 func slot_skill(slot: int) -> String:
@@ -32,6 +37,10 @@ func _process(dt: float) -> void:
 	_update_projectiles(dt)
 	if Net.is_host():
 		_update_rains(dt)
+		_update_summons(dt)
+		_update_orbits(dt)
+		_update_domains(dt)
+		_update_delayed(dt)
 
 
 # ------------------------------------------------------------------ 魂技槽：Q / E / F 放的是哪个魂环的魂技（Profile.skill_slots，K 面板里换）
@@ -137,6 +146,11 @@ func cast(slot: int) -> void:
 			center = _aim_point(origin, dir, 60.0)
 		"dir":
 			center = origin
+	# 放在原地的召唤物（宝塔、香肠）摆在身前，不然镜头在它身体里面，满屏都是光
+	if str(s["type"]) == "summon" and str(s.get("target", "self")) == "self" and not str(s.get("kind", "")) in FOLLOW_KINDS:
+		var fl := Vector3(dir.x, 0, dir.z).normalized()
+		center = p.global_position + fl * 4.0 + fl.cross(Vector3.UP) * 3.5
+		center.y = world.island.height_at(center.x, center.z)
 	world.hud.skill_callout(slot, sid)
 	world.remote_ring_flash(Net.my_id, slot)
 	Net.send(0, "ringflash", [slot])
@@ -204,6 +218,15 @@ func cast(slot: int) -> void:
 		"projectile":
 			_spawn_projectile(sid, origin + dir * 0.8, dir * float(s["speed"]), power, Net.my_id, true)
 			Net.send(0, "skproj", [sid, origin + dir * 0.8, dir * float(s["speed"])])
+		"empower":
+			# 武魂附体：一段时间内暗器命中带额外效果（World.local_fire 里处理）
+			p.empower = {"sid": sid, "kind": str(s["kind"]), "frac": float(s["frac"]) * lerpf(1.0, power, 0.5), "t": float(s["dur"])}
+			p.add_buff("dmg", 0.1, float(s["dur"]))
+		"domain":
+			if s.has("ally_stat"):
+				p.add_buff(str(s["ally_stat"]), float(s["ally_amount"]), float(s["dur"]))
+				Net.send(0, "buff", [str(s["ally_stat"]), float(s["ally_amount"]), float(s["dur"]), center, float(s["radius"])])
+			Net.send_host("skill", [sid, power, center, dir, Net.my_id])
 		_:
 			Net.send_host("skill", [sid, power, center, dir, Net.my_id])
 	world.skill_fx(sid, center, dir, Net.my_id, origin)
@@ -237,10 +260,22 @@ func _update_leap() -> void:
 func _spawn_projectile(sid: String, pos: Vector3, vel: Vector3, power: float, caster: int, authoritative: bool) -> void:
 	var col: Color = world.caster_color(caster)
 	var mi := MeshInstance3D.new()
-	mi.mesh = U.sphere(0.35, 12, 8)
-	mi.material_override = U.glow(col, 5.0)
+	mi.mesh = U.sphere(0.45, 12, 8)
+	mi.material_override = U.glow(col, 6.0)
 	world.fx.add_child(mi)
 	mi.global_position = pos
+	U.part(mi, U.sphere(0.8, 12, 8), world.fx._spirit_mat(col, 2.0), Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
+	var tail := CPUParticles3D.new()
+	tail.amount = 80
+	tail.lifetime = 0.5
+	tail.mesh = world.fx._spark_mesh
+	tail.material_override = world.fx._particle_mat(true)
+	tail.gravity = Vector3.ZERO
+	tail.scale_amount_min = 2.0
+	tail.scale_amount_max = 3.5
+	tail.color = col
+	tail.local_coords = false
+	mi.add_child(tail)
 	var light := OmniLight3D.new()
 	light.light_color = col
 	light.light_energy = 2.0
@@ -273,7 +308,6 @@ func _update_projectiles(dt: float) -> void:
 		var mi: MeshInstance3D = pr["mi"]
 		if is_instance_valid(mi):
 			mi.global_position = p1
-			world.fx.trail(p0, p1, world.caster_color(pr["caster"]))
 		if done:
 			_projectiles.erase(pr)
 			if is_instance_valid(mi):
@@ -338,6 +372,255 @@ func host_apply(sid: String, power: float, center: Vector3, dir: Vector3, caster
 			_launch(center, float(s.get("radius", 5.0)), dmg, float(s.get("impulse", 7.0)), caster)
 		"leap":
 			_launch(center, float(s["radius"]), dmg, float(s.get("impulse", 8.0)), caster)
+		"summon", "orbit", "chain", "blackhole", "domain":
+			_new_skill_host(sid, s, power, center, caster)
+
+
+# ------------------------------------------------------------------ 房主：新魂技（召唤、环绕、连锁、黑洞、领域、附体）
+
+func _caster_pos(caster: int) -> Vector3:
+	for pl in world.all_players():
+		if int(pl["peer"]) == caster:
+			return pl["pos"]
+	return Vector3.INF
+
+
+## 离 pos 最近的活魂兽（range 以内），没有返回 null
+func _nearest_beast(pos: Vector3, range_m: float, skip: Dictionary = {}) -> Beast:
+	var best: Beast = null
+	var bd := range_m
+	for b: Beast in world.beasts.values():
+		if not b.alive() or skip.has(b.id):
+			continue
+		var d := b.global_position.distance_to(pos)
+		if d < bd:
+			bd = d
+			best = b
+	return best
+
+
+func _new_skill_host(sid: String, s: Dictionary, power: float, center: Vector3, caster: int) -> void:
+	match str(s["type"]):
+		"summon":
+			_summons.append({"sid": sid, "pos": center, "t": 0.0, "next": 0.6, "heal_t": 0.0, "power": power, "caster": caster})
+		"orbit":
+			_orbits.append({"sid": sid, "caster": caster, "t": 0.0, "next": 0.0, "power": power})
+		"chain":
+			_chain(sid, s, center, power, caster)
+		"blackhole":
+			var r := float(s["radius"])
+			for b in _beasts_in(center, r):
+				b.pull_t = float(s["pull_t"])
+				b.pull_center = center + Vector3.UP * 1.5
+				b.pull_force = float(s["force"])
+				b.root_t = 0.0
+			_delayed.append({"sid": sid, "center": center, "power": power, "caster": caster, "t": float(s["pull_t"])})
+		"domain":
+			_domains.append({"sid": sid, "center": center, "t": 0.0, "next": 0.0, "root_next": 0.0, "power": power, "caster": caster})
+
+
+func _update_summons(dt: float) -> void:
+	for sm in _summons.duplicate():
+		var s: Dictionary = Data.SKILLS[sm["sid"]]
+		sm["t"] += dt
+		if float(sm["t"]) > float(s["dur"]):
+			_summons.erase(sm)
+			continue
+		var pos: Vector3 = sm["pos"]
+		if str(s.get("kind", "")) in FOLLOW_KINDS:
+			var cp := _caster_pos(int(sm["caster"]))
+			if cp != Vector3.INF:
+				pos = cp
+				sm["pos"] = cp
+		var power := float(sm["power"])
+		# 回血型（香肠补给站、琉璃宝塔）：每秒给附近队友回血
+		if s.has("heal"):
+			sm["heal_t"] = float(sm["heal_t"]) - dt
+			if float(sm["heal_t"]) <= 0.0:
+				sm["heal_t"] = 1.0
+				var amt := float(s["heal"]) * power
+				Net.send(0, "heal", [amt, pos, 10.0])
+				if world.player.global_position.distance_to(pos) <= 10.0:
+					world.player.heal(amt)
+		sm["next"] = float(sm["next"]) - dt
+		if float(sm["next"]) > 0.0:
+			continue
+		sm["next"] = float(s["rate"])
+		var from := pos + Vector3(0, 2.0, 0)
+		var b := _nearest_beast(pos, float(s["range"]))
+		var dmg := float(s["damage"]) * power
+		var to := Vector3.INF
+		if b:
+			to = b.global_position
+			if float(s.get("radius", 0.0)) > 0.0:
+				_launch(to, float(s["radius"]), dmg, float(s.get("impulse", 8.0)), int(sm["caster"]), float(s.get("burn", 0.0)) * power)
+			else:
+				var imp: Vector3 = ((to - pos).normalized() * 2.0 + Vector3.UP * float(s.get("impulse", 3.0))) * b.mass
+				world.host_skill_damage(b, dmg, imp, int(sm["caster"]))
+				if s.has("root") and b.alive():
+					b.root_t = float(s["root"])
+					b.root_pos = b.global_position
+				if s.has("burn") and b.alive():
+					b.burn_t = 3.0
+					b.burn_dps = float(s["burn"]) * power
+					b.burn_by = int(sm["caster"])
+		elif world.boss and not world.boss.dead and world.boss.surface_dist(pos) < float(s["range"]):
+			to = world.boss.center()
+			world.host_boss_damage(dmg, false, int(sm["caster"]))
+		if to != Vector3.INF:
+			var msg := [sm["sid"], from, to, sm["caster"]]
+			Net.send(0, "sumhit", msg)
+			world.on_summon_hit(msg)
+
+
+func _update_orbits(dt: float) -> void:
+	for ob in _orbits.duplicate():
+		var s: Dictionary = Data.SKILLS[ob["sid"]]
+		ob["t"] += dt
+		if float(ob["t"]) > float(s["dur"]):
+			_orbits.erase(ob)
+			continue
+		ob["next"] = float(ob["next"]) - dt
+		if float(ob["next"]) > 0.0:
+			continue
+		ob["next"] = 0.35
+		var cp := _caster_pos(int(ob["caster"]))
+		if cp == Vector3.INF:
+			continue
+		var r := float(s["radius"]) + 1.2
+		var dmg := float(s["damage"]) * float(ob["power"]) * 0.35
+		for b in _beasts_in(cp, r):
+			var away: Vector3 = b.global_position - cp
+			away.y = 0.0
+			world.host_skill_damage(b, dmg, (away.normalized() * 3.0 + Vector3.UP * 2.0) * b.mass, int(ob["caster"]))
+			if s.has("burn") and b.alive():
+				b.burn_t = 3.0
+				b.burn_dps = float(s["burn"]) * float(ob["power"])
+				b.burn_by = int(ob["caster"])
+		if world.boss and not world.boss.dead and world.boss.surface_dist(cp) < r:
+			world.host_boss_damage(dmg, false, int(ob["caster"]))
+
+
+func _chain(sid: String, s: Dictionary, center: Vector3, power: float, caster: int) -> void:
+	var pts: Array = [center + Vector3.UP]
+	var hit := {}
+	var cur := center
+	var dmg := float(s["damage"]) * power
+	for j in int(s["jumps"]) + 1:
+		var b := _nearest_beast(cur, 8.0 if j == 0 else float(s["range"]), hit)
+		if b == null:
+			break
+		hit[b.id] = true
+		pts.append(b.global_position + Vector3.UP * 0.5)
+		cur = b.global_position
+		world.host_skill_damage(b, dmg, Vector3.UP * 3.0 * b.mass, caster)
+		if b.alive():
+			if s.has("root"):
+				b.root_t = float(s["root"])
+				b.root_pos = b.global_position
+			if s.has("mult"):
+				b.mark_t = 8.0
+				b.mark_mult = float(s["mult"])
+		dmg *= 0.92
+	var boss: Boss = world.boss
+	if boss and not boss.dead and boss.surface_dist(center) < 12.0:
+		world.host_boss_damage(float(s["damage"]) * power * 2.0, false, caster)
+		pts.append(boss.center())
+	if pts.size() > 1:
+		var msg := [pts, caster]
+		Net.send(0, "chainfx", msg)
+		world.on_chain_fx(msg)
+
+
+func _update_domains(dt: float) -> void:
+	for dm in _domains.duplicate():
+		var s: Dictionary = Data.SKILLS[dm["sid"]]
+		dm["t"] += dt
+		if float(dm["t"]) > float(s["dur"]):
+			_domains.erase(dm)
+			continue
+		dm["next"] = float(dm["next"]) - dt
+		dm["root_next"] = float(dm["root_next"]) - dt
+		if float(dm["next"]) > 0.0:
+			continue
+		dm["next"] = 0.5
+		var c: Vector3 = dm["center"]
+		var r := float(s["radius"])
+		var power := float(dm["power"])
+		var do_root: bool = s.has("root_every") and float(dm["root_next"]) <= 0.0
+		if do_root:
+			dm["root_next"] = float(s["root_every"])
+		for b in _beasts_in(c, r):
+			world.host_skill_damage(b, float(s["dps"]) * power * 0.5, Vector3.ZERO, int(dm["caster"]))
+			if not b.alive():
+				continue
+			if s.has("mult"):
+				b.mark_t = maxf(b.mark_t, 1.0)
+				b.mark_mult = float(s["mult"])
+			if do_root:
+				b.root_t = 1.2
+				b.root_pos = b.global_position
+			if s.has("burn"):
+				b.burn_t = 2.0
+				b.burn_dps = float(s["burn"]) * power
+				b.burn_by = int(dm["caster"])
+		var boss: Boss = world.boss
+		if boss and not boss.dead and boss.surface_dist(c) < r:
+			world.host_boss_damage(float(s["dps"]) * power * 0.5, false, int(dm["caster"]))
+			if s.has("mult"):
+				boss.mark(1.0, float(s["mult"]))
+
+
+func _update_delayed(dt: float) -> void:
+	for d in _delayed.duplicate():
+		d["t"] = float(d["t"]) - dt
+		if float(d["t"]) > 0.0:
+			continue
+		_delayed.erase(d)
+		var s: Dictionary = Data.SKILLS[d["sid"]]
+		var power := float(d["power"])
+		_launch(d["center"], float(s["radius"]), float(s["damage"]) * power, float(s.get("impulse", 12.0)), int(d["caster"]), float(s.get("burn", 0.0)) * power)
+
+
+## 武魂附体：暗器打中魂兽以后的额外效果（放技能的人报给房主）
+func host_empower(kind: String, pos: Vector3, dmg: float, caster: int, bid: int) -> void:
+	var b: Beast = world.beasts.get(bid)
+	match kind:
+		"explode":
+			_launch(pos, 3.5, dmg, 4.0, caster)
+		"quake":
+			_launch(pos, 4.5, dmg, 7.0, caster)
+		"root":
+			if b and b.alive():
+				world.host_skill_damage(b, dmg, Vector3.ZERO, caster)
+				if b.alive():
+					b.root_t = 1.0
+					b.root_pos = b.global_position
+		"bleed", "burn":
+			var targets: Array = [b] if kind == "bleed" else _beasts_in(pos, 2.8)
+			for t in targets:
+				if t and (t as Beast).alive():
+					(t as Beast).burn_t = 3.0
+					(t as Beast).burn_dps = dmg / 3.0
+					(t as Beast).burn_by = caster
+			if kind == "burn":
+				_launch(pos, 2.8, dmg * 0.5, 3.0, caster)
+		"chain":
+			var hit := {bid: true}
+			var pts: Array = [pos]
+			var cur := pos
+			for j in 2:
+				var nb := _nearest_beast(cur, 10.0, hit)
+				if nb == null:
+					break
+				hit[nb.id] = true
+				pts.append(nb.global_position + Vector3.UP * 0.5)
+				cur = nb.global_position
+				world.host_skill_damage(nb, dmg, Vector3.UP * 2.0 * nb.mass, caster)
+			if pts.size() > 1:
+				var msg := [pts, caster]
+				Net.send(0, "chainfx", msg)
+				world.on_chain_fx(msg)
 
 
 func host_projectile_hit(sid: String, power: float, at: Vector3, caster: int) -> void:
@@ -397,6 +680,8 @@ func _launch(center: Vector3, radius: float, dmg: float, up: float, caster: int,
 	var boss: Boss = world.boss
 	if boss and not boss.dead and dmg > 0.0 and boss.surface_dist(center) < radius:
 		world.host_boss_damage(dmg, false, caster)
+	if dmg > 0.0:
+		world.nests.host_area_damage(center, radius, dmg, caster)
 
 
 func _beam(origin: Vector3, dir: Vector3, length: float, dmg: float, pierce: int, caster: int, width := 1.3) -> void:

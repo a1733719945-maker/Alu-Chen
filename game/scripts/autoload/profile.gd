@@ -34,6 +34,8 @@ var god := false                    # 成神了（通关）
 var max_chapter := 1                # 去过的最远一章（渡船能回以前的岛）
 var rebirth := 0                    # 转生了几次（成神以后可以转生，换武魂从头再来，永久变强，魂兽也更凶）
 var boss_tier := {}                 # 每个 Boss 打赢了几次：再召唤就是"二重、三重"，血更厚、奖励更高
+var materials := {}                 # 王魂：魂兽 -> 个数（打魂兽王掉，给暗器附魔用）
+var enchant := {}                   # 暗器 -> 附魔 id（Data.ENCHANTS）
 var chapter := 1
 var quest := 0              # 当前章节的任务进度
 var quest_count := 0        # 当前任务的计数（击杀数等）
@@ -104,6 +106,8 @@ func load_profile() -> void:
 	god = bool(d.get("god", false))
 	rebirth = int(d.get("rebirth", 0))
 	boss_tier = d.get("boss_tier", {})
+	materials = d.get("materials", {})
+	enchant = d.get("enchant", {})
 	skin = str(d.get("skin", "default"))
 	outfit = str(d.get("outfit", "default"))
 	if not skin in skins:
@@ -137,7 +141,7 @@ func save_profile() -> void:
 	var d := {
 		"version": VERSION, "money": money, "xp": xp, "level": level, "weapons": weapons,
 		"upgrades": upgrades, "items": items, "rings": rings, "bones": bones, "equipped": equipped, "bag": bag, "food": food, "bait": bait, "bounties": bounties, "skins": skins, "skin": skin, "outfits": outfits, "outfit": outfit, "codex": codex,
-		"skill_slots": skill_slots, "attach_owned": attach_owned, "attach_on": attach_on, "stats": stats, "achieved": achieved, "god": god, "max_chapter": max_chapter, "rebirth": rebirth, "boss_tier": boss_tier,
+		"skill_slots": skill_slots, "attach_owned": attach_owned, "attach_on": attach_on, "stats": stats, "achieved": achieved, "god": god, "max_chapter": max_chapter, "rebirth": rebirth, "boss_tier": boss_tier, "materials": materials, "enchant": enchant,
 		"chapter": chapter, "quest": quest, "quest_count": quest_count, "kills": kills, "loadout": loadout,
 	}
 	var f := FileAccess.open(path, FileAccess.WRITE)
@@ -238,6 +242,8 @@ func _defaults() -> void:
 	max_chapter = 1
 	rebirth = 0
 	boss_tier = {}
+	materials = {}
+	enchant = {}
 	chapter = 1
 	quest = 0
 	quest_count = 0
@@ -351,6 +357,46 @@ func set_skill_slot(k: int, ring: int) -> void:
 			skill_slots[j] = old
 	skill_slots[k] = ring
 	mark_dirty()
+
+
+# ------------------------------------------------------------------ 王魂和附魔
+
+func add_material(species: String, n := 1) -> void:
+	materials[species] = int(materials.get(species, 0)) + n
+	mark_dirty()
+
+
+## 这个附魔能用的王魂一共有几个
+func enchant_mats(eid: String) -> int:
+	var t := 0
+	for sp in Data.ENCHANTS[eid]["mats"]:
+		t += int(materials.get(sp, 0))
+	return t
+
+
+func can_enchant(eid: String) -> bool:
+	var e: Dictionary = Data.ENCHANTS[eid]
+	return enchant_mats(eid) >= int(e["n"]) and money >= int(e["price"])
+
+
+## 给暗器附魔（换附魔也一样，旧的直接替换掉）
+func do_enchant(weapon: String, eid: String) -> bool:
+	if not can_enchant(eid):
+		return false
+	var e: Dictionary = Data.ENCHANTS[eid]
+	var need := int(e["n"])
+	for sp in e["mats"]:
+		var have := int(materials.get(sp, 0))
+		var use := mini(have, need)
+		if use > 0:
+			materials[sp] = have - use
+			need -= use
+		if need <= 0:
+			break
+	spend(int(e["price"]))
+	enchant[weapon] = eid
+	mark_dirty()
+	return true
 
 
 # ------------------------------------------------------------------ 成就计数

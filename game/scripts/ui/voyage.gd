@@ -11,6 +11,7 @@ var length := 6.0
 var title := ""
 var _player: VideoStreamPlayer
 var _label: Label
+var _box: Control
 var _t := 0.0
 var _done := false
 
@@ -31,13 +32,25 @@ func _ready() -> void:
 		UiKit.fill(_player)
 		_player.finished.connect(_finish)
 		_player.play()
-	_label = UiKit.title(title, 54, Color(1.0, 0.9, 0.7))
+	# "前往 · 第二章 · 落日森林"：第一段做眉题，后面做大标题
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 2)
+	UiKit.place(box, Vector4(0, 1, 1, 1), Vector4(0, -190, 0, -70))
+	add_child(box)
+	var cut := title.find(" · ")
+	var k := UiKit.kicker(title.substr(0, cut) if cut > 0 else "", UiKit.GOLD, 16)
+	k.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	UiKit._text_style(k, 3)
+	box.add_child(k)
+	_label = UiKit.title(title.substr(cut + 3) if cut > 0 else title, 54, Color.WHITE)
 	_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_label.add_theme_constant_override("outline_size", 12)
-	_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.7))
-	UiKit.place(_label, Vector4(0, 1, 1, 1), Vector4(0, -150, 0, -80))
-	_label.modulate.a = 0.0
-	add_child(_label)
+	UiKit._text_style(_label, 4)
+	box.add_child(_label)
+	var skip := UiKit.key_hint("空格", "跳过", 15, UiKit.MIST)
+	UiKit.place(skip, Vector4(1, 1, 1, 1), Vector4(-160, -50, -30, -24))
+	add_child(skip)
+	box.modulate.a = 0.0
+	_box = box
 	Sfx.play("splash_small", -8.0)
 	if not stream:
 		call_deferred("_finish")
@@ -47,7 +60,7 @@ func _process(dt: float) -> void:
 	if _done:
 		return
 	_t += dt
-	_label.modulate.a = clampf((_t - 0.6) / 0.6, 0.0, 1.0) * clampf((length - _t) / 0.5, 0.0, 1.0)
+	_box.modulate.a = clampf((_t - 0.6) / 0.6, 0.0, 1.0) * clampf((length - _t) / 0.5, 0.0, 1.0)
 	if int(_t * 1.6) != int((_t - dt) * 1.6):
 		Sfx.play("splash_small", -18.0, 0.2, 0.8)
 	if _t > length + 2.0:

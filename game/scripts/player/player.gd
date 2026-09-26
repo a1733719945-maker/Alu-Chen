@@ -69,6 +69,7 @@ var slow_t := 0.0
 var slow_k := 0.0
 var vuln_t := 0.0                # 受到伤害 +30%
 var silence_t := 0.0             # 放不了魂技
+var empower := {}                # 武魂附体（魂技 empower）：{sid, kind, frac, t}
 var _since_hurt := 99.0
 
 var _coyote := 0.0
@@ -263,6 +264,10 @@ func slow(k: float, dur: float) -> void:
 
 
 func _update_status(dt: float) -> void:
+	if not empower.is_empty():
+		empower["t"] = float(empower["t"]) - dt
+		if float(empower["t"]) <= 0.0 or dead:
+			empower = {}
 	root_t = maxf(root_t - dt, 0.0)
 	slow_t = maxf(slow_t - dt, 0.0)
 	vuln_t = maxf(vuln_t - dt, 0.0)

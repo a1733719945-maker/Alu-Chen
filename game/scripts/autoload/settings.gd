@@ -15,6 +15,7 @@ var fov := 95.0                    # 16:9 下的水平视野
 var invert_y := false
 var master_volume := 0.8
 var sfx_volume := 1.0
+var music_volume := 0.6
 var fullscreen := false
 var vsync := false
 var max_fps := 0                   # 0 = 不限
@@ -114,6 +115,7 @@ func load_settings() -> void:
 	quality = clampi(int(cfg.get_value("video", "quality", quality)), 0, 2)
 	master_volume = float(cfg.get_value("audio", "master", master_volume))
 	sfx_volume = float(cfg.get_value("audio", "sfx", sfx_volume))
+	music_volume = float(cfg.get_value("audio", "music", music_volume))
 	server_url = str(cfg.get_value("net", "server", server_url))
 
 
@@ -134,6 +136,7 @@ func save_settings() -> void:
 	cfg.set_value("video", "quality", quality)
 	cfg.set_value("audio", "master", master_volume)
 	cfg.set_value("audio", "sfx", sfx_volume)
+	cfg.set_value("audio", "music", music_volume)
 	cfg.set_value("net", "server", server_url)
 	cfg.save(PATH)
 

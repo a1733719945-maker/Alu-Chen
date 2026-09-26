@@ -307,15 +307,14 @@ static func _sphere_shape(r: float) -> SphereShape3D:
 
 ## 魂环：水平漂在魂兽身上，颜色表示年份
 static func aura(age: int, species: String) -> Node3D:
-	var n := Node3D.new()
-	n.name = "Aura"
 	var s: float = Data.AGES[age]["scale"]
 	var bs := body_size(species)
 	var r := clampf(maxf(bs.x, bs.z) * 0.42, 0.5, 1.6)
 	var c: Color = Data.AGES[age]["color"]
-	var energy := 1.6 if age == 0 else (2.6 if age == 1 else 3.6)
-	var ring := U.part(n, U.torus(r * s - 0.03, r * s + 0.03, 48, 6), U.glow(c, energy), Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
-	ring.name = "Ring"
+	var energy := 1.4 if age == 0 else (2.2 if age == 1 else 3.0)
+	# 魂环：一圈亮环 + 柔光的贴图（FxLib），万年是黑环外面一圈暗红光
+	var n := FxLib.soul_ring(c, Data.AGES[age]["glow"], r * s, energy)
+	n.name = "Aura"
 	if age >= 2:
 		var light := OmniLight3D.new()
 		light.light_color = c

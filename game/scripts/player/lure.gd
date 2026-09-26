@@ -66,6 +66,9 @@ func _ready() -> void:
 	_set_visible(false)
 
 
+var _on_ground := false
+
+
 func set_camera(c: Camera3D) -> void:
 	_cam = c
 
@@ -100,6 +103,10 @@ func update_local(dt: float, pressed: bool, just_pressed: bool, just_released: b
 				_fly(dt)
 		S.WAITING:
 			if just_pressed:
+				# 索头钉在地上 / 树上（不是魂兽的地方）：再按一下就把自己拉过去（飞索）
+				if habitat == "" and _on_ground and not remote and world.player.global_position.distance_to(pos) > 3.0:
+					world.player.grapple_to(pos + Vector3(0, 0.6, 0))
+					Sfx.play("skill_dash", -4.0, 0.05, 1.2)
 				_start_return()
 			elif habitat != "":
 				bite_timer -= dt
@@ -159,8 +166,25 @@ func _fly(dt: float) -> void:
 			var t := (pos.y - Island.WATER_Y) / maxf(pos.y - next.y, 0.0001)
 			_land(pos.lerp(next, clampf(t, 0.0, 1.0)), true)
 			return
-		var hit: Dictionary = world.raycast(pos, next, U.LAYER_WORLD)
+		var hit: Dictionary = world.raycast(pos, next, U.LAYER_WORLD | U.LAYER_BEAST)
 		if not hit.is_empty():
+			var col: Object = hit["collider"]
+			if col is Beast:
+				# 钩住魂兽：小魂兽拽上天，魂兽王要捆魂（World.host_hook）
+				if (col as Beast).alive() and not remote:
+					if Net.is_host():
+						world.host_hook((col as Beast).id, Net.my_id)
+					else:
+						Net.send(1, "hook", [(col as Beast).id])
+					Sfx.play("yank", -2.0, 0.05)
+					_cooldown = 0.9
+				pos = hit["position"]
+				_start_return()
+				return
+			if col is Node and ((col as Node).has_meta("nest") or (col as Node).has_meta("gull")):
+				pos = hit["position"]
+				_start_return()
+				return
 			_land(hit["position"], false)
 			return
 		pos = next
@@ -172,6 +196,7 @@ func _land(p: Vector3, water: bool) -> void:
 	pos = p + Vector3(0, 0.08, 0)
 	vel = Vector3.ZERO
 	state = S.WAITING
+	_on_ground = not water
 	habitat = world.island.habitat_at(Vector3(p.x, Island.WATER_Y if water else p.y, p.z))
 	if water:
 		if not world.island.is_water_habitat(habitat):
@@ -182,7 +207,7 @@ func _land(p: Vector3, water: bool) -> void:
 		world.fx.dirt_puff(p)
 		Sfx.play_at("thud", p, -6.0)
 	if habitat == "":
-		hint.emit("这里没有魂兽。看路牌，抛到水里或魂兽的窝附近（按 G 收回）", Color(0.9, 0.9, 0.9))
+		hint.emit("索头钉住了！再按 G 飞过去（这里没有魂兽，钓魂兽要抛到水里或魂兽的窝附近）", Color(0.9, 0.9, 0.9))
 	else:
 		_schedule_bite()
 

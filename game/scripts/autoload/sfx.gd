@@ -98,3 +98,55 @@ func play_ambient(sound: String, volume_db := -14.0) -> void:
 
 func stop_ambient() -> void:
 	_ambient.stop()
+
+
+# ------------------------------------------------------------------ 背景音乐：explore 探索 / battle 战斗 / boss / event 奇遇，切换时交叉淡入淡出
+# 音乐来自 freesound 的 CC0 素材（assets/music/CREDITS.txt）
+
+const MUSIC_DIR := "res://assets/music/"
+var _music: Array = []
+var _music_i := 0
+var music_name := ""
+
+
+func _music_db() -> float:
+	return linear_to_db(maxf(Settings.music_volume, 0.0001)) - 6.0
+
+
+func play_music(name: String) -> void:
+	if name == music_name:
+		return
+	music_name = name
+	if _music.is_empty():
+		for i in 2:
+			var p := AudioStreamPlayer.new()
+			p.bus = "Master"
+			add_child(p)
+			_music.append(p)
+	var old: AudioStreamPlayer = _music[_music_i]
+	if old.playing:
+		var to := old.create_tween()
+		to.tween_property(old, "volume_db", -50.0, 2.0)
+		to.tween_callback(old.stop)
+	if name == "":
+		return
+	var path := MUSIC_DIR + name + ".ogg"
+	if not ResourceLoader.exists(path):
+		return
+	var s: AudioStream = load(path)
+	if s is AudioStreamOggVorbis:
+		(s as AudioStreamOggVorbis).loop = true
+	_music_i = 1 - _music_i
+	var p2: AudioStreamPlayer = _music[_music_i]
+	p2.stream = s
+	p2.volume_db = -50.0
+	p2.play()
+	var tn := p2.create_tween()
+	tn.tween_property(p2, "volume_db", _music_db(), 2.0)
+
+
+func refresh_music_volume() -> void:
+	if not _music.is_empty():
+		var p: AudioStreamPlayer = _music[_music_i]
+		if p.playing:
+			p.volume_db = _music_db()

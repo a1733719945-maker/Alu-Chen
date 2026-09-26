@@ -221,6 +221,18 @@ func _process(dt: float) -> void:
 			_run_events()
 		"bossshot":
 			_run_bossshot()
+		"skills2":
+			_run_skills2()
+		"down":
+			_run_down()
+		"nests":
+			_run_nests()
+		"kings":
+			_run_kings()
+		"uishots":
+			_run_uishots()
+		"fxshots":
+			_run_fxshots()
 		"tour", "tour1", "tour2":
 			_run_tour()
 		"host":
@@ -945,6 +957,474 @@ func _run_boss() -> void:
 					_shot("boss_defeated")
 					return
 				_next_phase()
+
+
+## 魂兽王：捆魂、暴怒、逃跑、击杀掉王魂和魂环，再拿王魂附魔
+func _run_kings() -> void:
+	var w := _ready_world()
+	if not w:
+		return
+	var p := w.player
+	match _step:
+		0:
+			w._init_elites()
+			if not _check(not w.elites.is_empty(), "这张图没有魂兽王的位置"):
+				return
+			var key: String = w.elites.keys()[0]
+			w._host_spawn_elite(key)
+			var k: Beast = w.beasts.get(int(w.elites[key]["id"]))
+			if not _check(k != null and k.temper == "elite", "魂兽王没刷出来"):
+				return
+			_mem["king"] = k.id
+			_note("魂兽王：%s，血量 %d" % [k.display_name(), int(k.max_hp)])
+			p.teleport(k.global_position + Vector3(0, 0.5, 14))
+			_next(1)
+		1:
+			if _step_t < 1.5:
+				return
+			var k: Beast = w.beasts.get(int(_mem["king"]))
+			w.host_hook(k.id, Net.my_id)
+			if not _check(k.root_t > 0.0, "单人用引魂索钩魂兽王没捆住"):
+				return
+			_note("捆魂成功，按住 %.1f 秒" % k.root_t)
+			k.root_t = 0.0
+			k.take_hit(k.max_hp * 0.55, Vector3.ZERO, Vector3.ZERO, false, Net.my_id, 10.0)
+			_next(2)
+		2:
+			if _step_t < 0.5:
+				return
+			var k: Beast = w.beasts.get(int(_mem["king"]))
+			if not _check(k._phase2, "魂兽王半血没暴怒"):
+				return
+			k.root_t = 0.0
+			k.take_hit(k.hp - k.max_hp * 0.2, Vector3.ZERO, Vector3.ZERO, false, Net.my_id, 10.0)
+			_next(3)
+		3:
+			if _step_t < 0.6:
+				return
+			var k: Beast = w.beasts.get(int(_mem["king"]))
+			if not _check(k._retreat, "魂兽王残血没逃跑"):
+				return
+			_note("魂兽王暴怒、逃跑都正常")
+			_mem["mats"] = int(Profile.materials.get(k.species, 0))
+			_mem["sp"] = k.species
+			k.take_hit(k.hp + 10.0, Vector3.ZERO, Vector3.ZERO, false, Net.my_id, 10.0)
+			w._host_kill(k)
+			_next(4)
+		4:
+			if _step_t < 1.0:
+				return
+			if not _check(int(Profile.materials.get(str(_mem["sp"]), 0)) > int(_mem["mats"]), "打死魂兽王没拿到王魂"):
+				return
+			if not _check(not w.rings.is_empty(), "打死魂兽王没掉魂环"):
+				return
+			Profile.add_material("rabbit", 2)
+			Profile.add_money(1000)
+			if not _check(Profile.do_enchant("xiujian", "bind") and Profile.enchant.get("xiujian", "") == "bind", "附魔失败"):
+				return
+			_note("王魂、魂环、附魔都正常")
+			_next_phase()
+
+
+## 界面截图：HUD、暗器铺、武魂、暂停、成就、地图、魂技二选一、倒地、Boss 出场、魂师榜
+##   godot --path game --resolution 1920x1080 -- --autotest=shots --plan=menu,uishots,done --out=目录
+func _run_uishots() -> void:
+	var w := _ready_world()
+	if not w:
+		return
+	var p := w.player
+	var h: Hud = w.hud
+	match _step:
+		0:
+			if _step_t < 2.0:
+				return
+			var tree: Array = Data.SKILL_TREE[Data.wuhun_id(Settings.wuhun)]
+			for i in 3:
+				Profile.add_ring([1, 1, 2][i], str(tree[i][i % 2]), ["wolf", "rabbit", "snake"][i])
+			Profile.level = 34
+			Profile.xp = Data.xp_to_next(34) / 3
+			Profile.add_money(12840)
+			Profile.items["grenade"] = 3
+			Profile.items["pill"] = 2
+			Profile.add_weapon("zhuge")
+			Profile.add_material("wolf", 2)
+			w.skills.cooldowns[1] = 7.0
+			h._refresh_skills()
+			w._init_elites()
+			var key: String = w.elites.keys()[0]
+			w._host_spawn_elite(key)
+			var k: Beast = w.beasts.get(int(w.elites[key]["id"]))
+			_mem["king"] = k.id
+			p.teleport(k.global_position + Vector3(0, 0.5, 13))
+			_next(1)
+		1:
+			if _step_t < 1.2:
+				return
+			var k: Beast = w.beasts.get(int(_mem["king"]))
+			if k:
+				k.hp = k.max_hp * 0.62
+				k.root_t = 30.0
+				_aim(p, k.global_position + Vector3(0, 1.5, 0))
+			p.hp = Profile.max_hp() * 0.7
+			p.soul = Profile.max_soul() * 0.55
+			h.feed("你 击杀了 百年 · 魔狼", Color.WHITE)
+			h.feed("客人 击杀了 十年 · 柔骨兔", Color.WHITE)
+			h.kill_popup(186, 42, ["爆头 +50%", "空中击杀"], "wolf", 1)
+			h.toast("✔ 悬赏完成：风铃鸟 · 十年    +70 金魂币", Color(0.6, 1.0, 0.7), 5.0)
+			_next(2)
+		2:
+			if _step_t < 0.6:
+				return
+			_next(3)
+			await _shot("ui_hud")
+			h.open_shop()
+		3:
+			if _step_t < 0.5:
+				return
+			_next(4)
+			await _shot("ui_shop")
+			h._shop._tab = "enchant"
+			h._shop.refresh()
+		4:
+			if _step_t < 0.5:
+				return
+			_next(5)
+			await _shot("ui_shop_enchant")
+			h._shop._tab = "attach"
+			h._shop.refresh()
+		5:
+			if _step_t < 0.5:
+				return
+			_next(6)
+			await _shot("ui_shop_attach")
+			h.close_panels()
+			h.toggle_wuhun()
+		6:
+			if _step_t < 0.5:
+				return
+			_next(7)
+			await _shot("ui_wuhun")
+			h.close_panels()
+			w.set_paused(true)
+		7:
+			if _step_t < 0.5:
+				return
+			_next(70)
+			await _shot("ui_pause")
+			h._pause_menu.visible = false
+			h._settings.visible = true
+		70:
+			if _step_t < 0.5:
+				return
+			_next(8)
+			await _shot("ui_settings")
+			w.set_paused(false)
+			h.toggle_achievements()
+		8:
+			if _step_t < 0.5:
+				return
+			_next(9)
+			await _shot("ui_achievements")
+			h.toggle_achievements()
+			h._bigmap.visible = true
+		9:
+			if _step_t < 0.5:
+				return
+			_next(10)
+			await _shot("ui_map")
+			h._bigmap.visible = false
+			h.choose_skill(2, "snake")
+		10:
+			if _step_t < 0.5:
+				return
+			_next(11)
+			await _shot("ui_choice")
+			h._choice.queue_free()
+			h._choice = null
+			w.set_ui_open(false)
+			h.death_countdown(8.0, true)
+		11:
+			if _step_t < 0.5:
+				return
+			_next(12)
+			await _shot("ui_down")
+			h.death_countdown(-1.0)
+			h.boss_intro("千年魂兽 · 曼陀罗蛇")
+		12:
+			if _step_t < 1.4:
+				return
+			_next(13)
+			await _shot("ui_intro")
+			Input.action_press("scoreboard")
+			h.level_up(35)
+		13:
+			if _step_t < 0.5:
+				return
+			_next(14)
+			await _shot("ui_scores")
+			Input.action_release("scoreboard")
+			h.open_boat_picker([1, 2])
+		14:
+			if _step_t < 0.5:
+				return
+			_next(15)
+			await _shot("ui_boat")
+			h._close_boat_picker()
+			_next_phase()
+
+
+## 特效截图：在正前方 12 米一个接一个放特效，每个在最好看的那一刻截一张
+##   godot --path game --resolution 1920x1080 -- --autotest=shots --plan=fxshots,done --out=目录 [--only=explosion,beam]
+var _fxq: Array = []
+
+
+func _run_fxshots() -> void:
+	var w := _ready_world()
+	if not w:
+		return
+	var p := w.player
+	var fx: Fx = w.fx
+	match _step:
+		0:
+			if _step_t < 2.5:
+				return
+			w.hud.visible = false
+			var fwd := -p.cam.global_basis.z
+			fwd.y = 0.0
+			fwd = fwd.normalized()
+			var c := p.global_position + fwd * 12.0
+			c.y = maxf(w.island.height_at(c.x, c.z), Island.WATER_Y)
+			_mem["c"] = c
+			_mem["fwd"] = fwd
+			var gold := Color(1.0, 0.8, 0.35)
+			var purple := Color(0.68, 0.36, 1.0)
+			var cyan := Color(0.35, 0.8, 1.0)
+			var orange := Color(1.0, 0.5, 0.2)
+			var green := Color(0.4, 1.0, 0.5)
+			var holder := Node3D.new()
+			fx.add_child(holder)
+			holder.global_position = c
+			_mem["holder"] = holder
+			var eye := p.cam.global_position
+			var side := fwd.cross(Vector3.UP)
+			_fxq = [
+				["explosion", func(o: Vector3): fx.explosion(o + Vector3.UP, 5.0, orange), 0.12],
+				["explosion_smoke", func(o: Vector3): fx.explosion(o + Vector3.UP, 5.0, orange), 0.55],
+				["shockwave", func(o: Vector3): fx.shockwave(o, 8.0, cyan), 0.14],
+				["sigil", func(o: Vector3): fx.sigil(o, 5.0, purple), 0.3, 0.0],
+				["vines", func(o: Vector3): fx.vines(o, 4.0, green), 0.5],
+				["vortex", func(o: Vector3): fx.vortex(o, 5.0, cyan), 0.7, 0.0],
+				["beam", func(o: Vector3): fx.beam(eye + side * 1.5 - Vector3.UP * 0.4, (o + Vector3.UP * 1.5) - (eye + side * 1.5), 30.0, gold, 0.4), 0.08],
+				["chain", func(o: Vector3): fx.chain_fx([o + side * 5.0 + Vector3.UP * 2.0, o + Vector3.UP * 1.5 + fwd * 2.0, o - side * 4.0 + Vector3.UP * 2.2, o - side * 7.0 + fwd * 4.0 + Vector3.UP * 1.2], cyan), 0.04],
+				["pillar", func(o: Vector3): fx._pillar(o, gold, 1.5, 40.0, 0.8), 0.35, 4.0],
+				["level_up", func(o: Vector3): fx.level_up_burst(o, 4), 0.4],
+				["breakthrough", func(o: Vector3): fx.ring_breakthrough(o, purple, 3), 0.75, 3.0],
+				["aura", func(o: Vector3): fx.aura_burst(o, green, 4.0), 0.3],
+				["death", func(o: Vector3): fx.death_burst(o + Vector3.UP, purple, 2), 0.1],
+				["impact", func(o: Vector3): _fx_impact(fx, o, fwd, side), 0.06],
+				["telegraph", func(o: Vector3): _free_later(fx.telegraph(o, 6.0, 1.5)), 0.9, 0.0],
+				["cone", func(o: Vector3): w._on_cone([o - fwd * 4.0, fwd, 0.6, 12.0, 1.5, 0.0]), 0.9, 0.0],
+				["boss_wave", func(o: Vector3): w._on_shockwave([o, 9.0, 8.0, 0.0]), 0.6, 0.5],
+				["blackhole", func(o: Vector3): fx.blackhole_fx(o, 6.0, 2.0, purple), 1.0, 2.5],
+				["domain", func(o: Vector3): fx.domain_fx(o, 7.0, 3.0, gold), 0.9, 1.0],
+				["meteor", func(o: Vector3): fx.meteor_strike(o, 6.0, orange), 0.13, 5.0],
+				["meteor_hit", func(o: Vector3): fx.meteor_strike(o, 6.0, orange), 0.36],
+				["summon_phoenix", func(o: Vector3): fx.summon_visual("phoenix", orange, 3.0, o + Vector3.UP * 2.0), 0.9, 2.0],
+				["summon_tiger", func(o: Vector3): fx.summon_visual("tiger", cyan, 3.0, o), 0.9],
+				["orbit", func(o: Vector3): fx.orbit_visual(holder, "scythe", 5, 3.0, 3.0, cyan), 0.6],
+				["shield", func(o: Vector3): fx.shield_bubble(holder, 3.0, cyan), 0.5],
+				["soul_ring", func(o: Vector3): _free_later(fx.soul_ring(o + Vector3.UP * 0.3, purple)), 0.5, 1.0],
+				["absorb", func(o: Vector3): fx.absorb(holder, gold), 1.2, 3.0],
+				["poison", func(o: Vector3): _free_later(fx.poison_pool(o, 4.0)), 0.8, 0.0],
+				["lotus", func(o: Vector3): fx.lotus_explosion(o + Vector3.UP), 0.2],
+				["muzzle", func(o: Vector3): fx.muzzle_flash(eye + fwd * 1.3 + side * 0.25 - Vector3.UP * 0.25, fwd, orange, true), 0.02],
+				["slam", func(o: Vector3): fx.slam(o, 7.0), 0.25, 0.0],
+				["burn_bleed", func(o: Vector3): _fx_burn_bleed(fx, o, side, orange), 0.15],
+				["shen", func(o: Vector3): fx.shen_manifest(o, 2, gold), 1.6, 14.0],
+				["poof", func(o: Vector3): fx.poof(o + Vector3.UP), 0.3],
+			]
+			if args.has("only"):
+				var only := str(args["only"]).split(",")
+				_fxq = _fxq.filter(func(e): return str(e[0]) in only)
+			_next(1)
+		1:
+			if _fxq.is_empty():
+				w.hud.visible = true
+				_next_phase()
+				return
+			if _step_t < 2.2:
+				return
+			var e: Array = _fxq.pop_front()
+			var c: Vector3 = _mem["c"]
+			_aim(p, c + Vector3(0, float(e[3]) if e.size() > 3 else 1.5, 0))
+			(e[1] as Callable).call(c)
+			_mem["shot"] = e[0]
+			_mem["sd"] = e[2]
+			_next(2)
+		2:
+			if _step_t < float(_mem["sd"]):
+				return
+			_next(1)
+			await _shot("fx_" + str(_mem["shot"]))
+
+
+func _free_later(n: Node) -> void:
+	get_tree().create_timer(2.0).timeout.connect(n.queue_free)
+
+
+func _fx_impact(fx: Fx, o: Vector3, fwd: Vector3, side: Vector3) -> void:
+	for k in 4:
+		fx.impact_beast(o + Vector3(randf_range(-1, 1), 1.2 + randf(), randf_range(-1, 1)), -fwd, Color(1.0, 0.3, 0.25), k == 0)
+		fx.impact_world(o + side * (k - 1.5) * 1.5, Vector3.UP)
+
+
+func _fx_burn_bleed(fx: Fx, o: Vector3, side: Vector3, c: Color) -> void:
+	fx.empower_hit("burn", o + Vector3.UP * 1.5 + side, c)
+	fx.empower_hit("bleed", o + Vector3.UP * 1.5 - side, c)
+
+
+## 魂兽巢穴：放出来、打掉、爆掉给奖励
+func _run_nests() -> void:
+	var w := _ready_world()
+	if not w:
+		return
+	match _step:
+		0:
+			w.nests.setup(w, true)
+			if not _check(w.nests.nests.size() > 0, "这张图一个巢都放不下"):
+				return
+			_note("放了 %d 个巢" % w.nests.nests.size())
+			var n: Dictionary = w.nests.nests[0]
+			w.player.teleport((n["pos"] as Vector3) + Vector3(0, 0.5, 14))
+			_aim(w.player, (n["pos"] as Vector3) + Vector3(0, 2.0, 0))
+			_mem["money_n"] = Profile.money
+			_next(1)
+		1:
+			if _step_t < 1.0:
+				return
+			# 真的开枪打一下（检查碰撞体、命中判定）；传送后镜头位置更新了再瞄
+			var n0: Dictionary = w.nests.nests[0]
+			_aim(w.player, (n0["pos"] as Vector3) + Vector3(0, 2.0, 0))
+			Input.action_press("fire")
+			get_tree().create_timer(0.05).timeout.connect(func(): Input.action_release("fire"))
+			_next(2)
+		2:
+			if _step_t < 0.6:
+				return
+			var n: Dictionary = w.nests.nests[0]
+			if not _check(float(n["hp"]) < float(n["max"]), "开枪打巢没掉血"):
+				return
+			w.nests.host_damage(0, 99999999.0, Net.my_id)
+			_next(3)
+		3:
+			if _step_t < 1.0:
+				return
+			if not _check(not w.nests.nests[0]["alive"] and Profile.money > int(_mem["money_n"]), "巢打爆了没奖励"):
+				return
+			_note("巢打爆了，金魂币 %d → %d" % [int(_mem["money_n"]), Profile.money])
+			_next_phase()
+
+
+## 倒下：海鸥叼到天上 → 海鸥被打下来 → 掉到地上站起来；再倒一次按空格回码头
+func _run_down() -> void:
+	var w := _ready_world()
+	if not w:
+		return
+	var p := w.player
+	match _step:
+		0:
+			p.invuln_t = 0.0
+			p.take_damage(999999.0, p.global_position + Vector3.FORWARD)
+			if not _check(p.dead and p.carried, "倒下后没有被海鸥叼走"):
+				return
+			_next(1)
+		1:
+			if _step_t < 5.0:
+				return
+			var gy: float = w.island.height_at(p.global_position.x, p.global_position.z)
+			_note("被叼到离地 %.1f 米" % (p.global_position.y - gy))
+			if not _check(p.global_position.y - gy > 10.0, "海鸥没把人叼到天上"):
+				return
+			w.loot._host_gull_hit(-Net.my_id, Net.my_id)
+			_next(2)
+		2:
+			if not p.dead:
+				_note("海鸥被打下来，%.1f 秒后落地站起来了" % _step_t)
+				_next(3)
+			elif _step_t > 8.0:
+				_fail("海鸥被打下来以后人一直没落地复活（还在 %s）" % p.global_position)
+		3:
+			if _step_t < 1.0:
+				return
+			p.invuln_t = 0.0
+			p.take_damage(999999.0, p.global_position + Vector3.FORWARD)
+			w._carry_t = 2.0
+			Input.action_press("jump")
+			get_tree().create_timer(0.1).timeout.connect(func(): Input.action_release("jump"))
+			_next(4)
+		4:
+			if not p.dead:
+				if not _check(p.global_position.distance_to(w.island.spawn) < 8.0, "按空格没有回码头"):
+					return
+				_note("按空格回码头复活了")
+				_next_phase()
+			elif _step_t > 4.0:
+				_fail("按空格没有回码头复活")
+
+
+## 新魂技：召唤、连锁、黑洞、领域、环绕、附体、神技，每个放一次（周围放几只魂兽当靶子）
+const SK2_ALL := ["lyc_dance", "lyc_storm", "lyc_king", "lyc_wall", "lyc_net", "bh_rage", "hf_meteor", "qb_wall", "ls_true", "bh_shen"]
+var SK2: Array = SK2_ALL
+
+
+func _run_skills2() -> void:
+	var w := _ready_world()
+	if not w:
+		return
+	var p := w.player
+	match _step:
+		0:
+			var m := w.island.habitat("meadow")
+			var c: Vector2 = m["center"]
+			p.teleport(Vector3(c.x, w.island.height_at(c.x, c.y) + 0.5, c.y + 10.0))
+			p.look_to(0.0, deg_to_rad(-12))
+			for a in OS.get_cmdline_user_args():
+				if a.begins_with("--skills="):
+					SK2 = a.substr(9).split(",")
+			Profile.rings = []
+			for sid in SK2:
+				Profile.rings.append({"age": 3, "skill": sid, "beast": "rabbit"})
+			Profile.level = 90
+			_mem["sk_i"] = 0
+			_next(1)
+		1:
+			if _step_t < 1.0:
+				return
+			var i := int(_mem["sk_i"])
+			if i >= SK2.size():
+				_next(2)
+				return
+			for k in 5:
+				var a := randf() * TAU
+				w._host_spawn(1, p.global_position + Vector3(cos(a) * 8.0, 0.5, sin(a) * 8.0 - 6.0), "rabbit", 1, p.global_position, "fierce", "grass", false)
+			p.soul = 999.0
+			p.hp = 99999.0
+			w.skills.cooldowns[i] = 0.0
+			w.skills.cast(i)
+			_note("放了 %s" % Data.SKILLS[SK2[i]]["name"])
+			_mem["sk_i"] = i + 1
+			if _shots:
+				var nm: String = SK2[i]
+				get_tree().create_timer(1.2).timeout.connect(func(): _shot("sk_" + nm))
+			if str(Data.SKILLS[SK2[i]]["type"]) == "empower":
+				Input.action_press("fire")
+				get_tree().create_timer(0.6).timeout.connect(func(): Input.action_release("fire"))
+			_step_t = -2.5
+		2:
+			if _step_t < 3.0:
+				return
+			_note("新魂技都放过了")
+			_next_phase()
 
 
 ## 只看 Boss 长什么样（换了自定义模型以后用）：召唤出来，站在岸边看着它拍几张

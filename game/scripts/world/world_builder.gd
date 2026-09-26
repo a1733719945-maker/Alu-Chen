@@ -168,8 +168,13 @@ func _environment() -> void:
 	env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 	env.tonemap_mode = Environment.TONE_MAPPER_ACES
 	env.glow_enabled = true
-	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_SOFTLIGHT
-	env.glow_hdr_threshold = 1.0
+	# 泛光：特效的颜色都乘过 hdr（大于 1），这里把超过 1 的部分晕开，特效才像在发光。
+	# screen 比 softlight 明显；多开一层中等范围（4），光晕更柔
+	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_SCREEN
+	env.glow_hdr_threshold = 1.05
+	env.set_glow_level(3, 1.0)
+	env.set_glow_level(4, 0.6)
+	env.set_glow_level(5, 0.8)
 	env.fog_enabled = true
 	env.ssao_radius = 1.6
 	env.ssao_intensity = 1.8
