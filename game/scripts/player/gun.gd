@@ -123,8 +123,9 @@ func shoot(ads: float) -> Vector2:
 ## 当前散布（度）。speed_k：当前水平速度 / 走路速度
 func spread(ads: float, speed_k: float, airborne: bool, crouching: bool, scoped: bool) -> float:
 	var base := lerpf(float(d["hip"]), float(d["ads"]), ads)
-	if d.get("scope", false) and not scoped:
-		base = float(d["hip"])
+	if d.get("scope", false):
+		# 瞬狙：镜子一开（开到六成）就是准的，不用等完全开镜
+		base = float(d["hip"]) if ads < 0.55 else float(d["ads"])
 	var s := base + bloom + float(d["move"]) * clampf(speed_k, 0.0, 1.5) * lerpf(1.0, 0.6, ads)
 	if airborne:
 		s += float(d["air"])

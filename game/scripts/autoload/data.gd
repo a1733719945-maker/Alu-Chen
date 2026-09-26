@@ -192,7 +192,7 @@ const AGGRESSIVE := ["wolf", "rhino", "ape", "snake", "raptor", "spiderling", "h
 func roll_temper(rng: RandomNumberGenerator, species: String, age: int, bait := "grass") -> String:
 	var bd: Dictionary = BAITS.get(bait, BAITS["grass"])
 	var bone := (0.04 + age * 0.03) * float(bd["bone"])
-	var fierce := (0.5 if species in AGGRESSIVE else 0.25) + age * 0.08 + float(bd["fierce"])
+	var fierce := (0.62 if species in AGGRESSIVE else 0.4) + age * 0.08 + float(bd["fierce"])
 	var sly := 0.12
 	var r := rng.randf()
 	if r < bone:
@@ -271,6 +271,8 @@ func item_color(kind: String, key: String) -> Color:
 #   move         全速移动时额外增加的散布；air 跳在空中；crouch 蹲下乘的系数
 #   bloom        每发增加的散布，停火后按 bloom_recover 每秒恢复；刚开第一枪最准
 const WEAPON_ORDER := ["xiujian", "zhuge", "kongque", "baoyu", "zhuihun"]
+# 拿着暗器跑的速度（越重越慢）；空手最快
+const MOVE_K := {"xiujian": 0.96, "zhuge": 0.92, "kongque": 0.88, "baoyu": 0.9, "zhuihun": 0.84, "fist": 1.15}
 # 暗器跟着章节开放：第一章只有袖箭和梨花针，第二章诸葛神弩，第三章孔雀翎，第四章追魂穿心弩
 const WEAPON_UNLOCK := {"xiujian": 1, "baoyu": 1, "zhuge": 2, "kongque": 3, "zhuihun": 4}
 
@@ -331,7 +333,7 @@ const WEAPONS := {
 		"name": "追魂穿心弩", "cat": "狙击", "desc": "重弩，一箭贯穿。要装狙击镜才好用（暗器铺 → 配件）。",
 		"price": 40000, "mode": "bolt", "rpm": 48, "damage": 420.0, "headshot": 2.5, "pellets": 1,
 		"mag": 5, "reload": 2.7, "reload_empty": 3.1, "per_shell": false, "cycle": 1.1,
-		"range": 400.0, "falloff": Vector3(200, 400, 0.9), "pierce": 3,
+		"range": 1500.0, "falloff": Vector3(1500, 1500, 1.0), "pierce": 3,
 		"hip": 6.5, "ads": 0.0, "move": 5.0, "air": 8.0, "crouch": 0.7,
 		"bloom": 0.0, "bloom_max": 0.0, "bloom_recover": 1.0,
 		"pattern": [Vector2(0, 8.5)], "jitter": 0.8, "ads_recoil": 1.0,
@@ -410,11 +412,11 @@ func attach_price(weapon: String, a: String) -> int:
 const ITEMS := {
 	"grenade": {"name": "佛怒唐莲", "desc": "唐门至高暗器。按 3 拿出来左键扔，爆炸把周围魂兽全部炸上天", "price": 60, "max": 5, "key": "3"},
 	"pill": {"name": "回血丹", "desc": "按 H 直接吃（或者按 4 拿出来左键吃），立刻恢复 40% 体力，还能解毒", "price": 40, "max": 5, "key": "H"},
-	"lure_gold": {"name": "引兽香", "desc": "接下来 5 次咬钩必定是百年以上的魂兽", "price": 120, "max": 3, "key": "自动"},
+	"lure_gold": {"name": "引兽香", "desc": "接下来 5 次咬钩必定是百年以上的魂兽", "price": 120, "max": 3, "key": "自动", "ch": 3},
 	"meat": {"name": "烤魂兽肉", "desc": "按 4 拿出来（再按 4 在肉和回血丹之间换），左键吃：饱食 +40、体力 +10。打死魂兽也常掉", "price": 15, "max": 10, "key": "4"},
-	"bait_blood": {"name": "血腥饵 ×5", "desc": "钓上来的百年魂兽多，魂兽更凶，常带词缀，奖励 +30%", "price": 45, "max": 60, "key": "B", "bundle": 5},
-	"bait_soul": {"name": "魂晶饵 ×5", "desc": "千年魂兽出现率高好几倍，带词缀的更多（突破第四、五魂环靠它）", "price": 110, "max": 60, "key": "B", "bundle": 5},
-	"bait_gold": {"name": "金骨饵 ×5", "desc": "魂骨兽出现率 ×5，想刷魂骨就用它", "price": 130, "max": 60, "key": "B", "bundle": 5},
+	"bait_blood": {"name": "血腥饵 ×5", "desc": "钓上来的百年魂兽多，魂兽更凶，常带词缀，奖励 +30%", "price": 45, "max": 60, "key": "B", "bundle": 5, "ch": 2},
+	"bait_soul": {"name": "魂晶饵 ×5", "desc": "千年魂兽出现率高好几倍，带词缀的更多（突破第四、五魂环靠它）", "price": 110, "max": 60, "key": "B", "bundle": 5, "ch": 3},
+	"bait_gold": {"name": "金骨饵 ×5", "desc": "魂骨兽出现率 ×5，想刷魂骨就用它", "price": 130, "max": 60, "key": "B", "bundle": 5, "ch": 2},
 }
 
 # ================================================================ 鱼饵（引魂索每次咬钩消耗一个，按 B 换）
@@ -490,8 +492,18 @@ const FOOD_MAX := 100.0
 const FOOD_DRAIN := 100.0 / 720.0      # 12 分钟从满到空（跑步饿得快）
 const MEAT_FOOD := 40.0
 const BOUNTY_N := 3
-const TIDE_FIRST := 360.0              # 进图 6 分钟后第一波兽潮
-const TIDE_GAP := [420.0, 560.0]
+# 每张图自己的"奇遇"（代替原来千篇一律的兽潮）：天色 / 天气变化 + 专属魂兽 + 一只王
+# mode：flock 天上飞过的一大群（打下来奖励 ×3），pack 从四面八方冲过来；env：天色天气
+const CH_EVENTS := {
+	1: {"name": "风铃鸟迁徙", "desc": "一大群风铃鸟从湖上飞过，在它们飞走之前打下来——每只奖励 ×3", "species": ["bird"], "n": 14, "mode": "flock", "king": "", "env": "gold", "color": Color(0.6, 1.0, 0.9)},
+	2: {"name": "狼王夜袭", "desc": "天黑了。疾风狼王带着狼群从林子里扑出来，打死狼王必掉魂骨", "species": ["wolf"], "n": 10, "mode": "pack", "king": "wolf", "env": "night", "color": Color(1.0, 0.45, 0.35)},
+	3: {"name": "星斗兽潮", "desc": "星辰坠落，星斗大森林的魂兽成群冲出来，鬼眼鹿王压阵", "species": ["stag", "raptor", "spiderling"], "n": 12, "mode": "pack", "king": "stag", "env": "stars", "color": Color(0.7, 0.6, 1.0)},
+	4: {"name": "极北暴风雪", "desc": "暴风雪来了，看不远、走不快，雪原狼群借着风雪偷袭，冰甲龙王压阵", "species": ["husky", "snowape"], "n": 12, "mode": "pack", "king": "icehorn", "env": "blizzard", "color": Color(0.7, 0.9, 1.0)},
+	5: {"name": "海神怒潮", "desc": "风暴压境，铁钳蟹爬满沙滩，海魂鸥成群俯冲，蟹王压阵", "species": ["crab", "gull"], "n": 14, "mode": "pack", "king": "crab", "env": "storm", "color": Color(0.5, 0.75, 1.0)},
+}
+const TIDE_FIRST := 300.0              # 进图 5 分钟后第一次奇遇
+const TIDE_GAP := [380.0, 520.0]
+const TIDE_TIME := 75.0
 
 # ================================================================ 外观：暗器皮肤、装扮（暗器铺"外观"页买；打败每章 Boss 送一款）
 # pal：换掉暗器模型的哪些材质颜色；glow：发光部件的颜色；metal：金属感
@@ -628,7 +640,7 @@ const SPECIES_CH := {
 const CH_REF_LEVEL := {1: 10, 2: 30, 3: 50, 4: 70, 5: 90}      # 这一章大概在多少级
 const CH_MONEY := {1: 12.0, 2: 45.0, 3: 120.0, 4: 280.0, 5: 600.0}   # 这一章一只普通魂兽给多少金魂币
 const CH_PRICE := {1: 1.0, 2: 3.0, 3: 8.0, 4: 20.0, 5: 45.0}         # 道具、鱼饵价格倍数
-const KILLS_PER_LEVEL := 12.0                                      # 这一章里大约杀多少只升一级
+const KILLS_PER_LEVEL := 24.0                                      # 这一章里大约杀多少只升一级
 var cur_chapter := 1                                               # 当前地图是第几章（World 设置）
 
 
@@ -1073,6 +1085,7 @@ func age_color(age: int) -> Color:
 const AGE_WEIGHTS := {1: [70.0, 28.0, 2.0, 0.0], 2: [30.0, 55.0, 15.0, 0.0], 3: [0.0, 55.0, 42.0, 3.0], 4: [0.0, 20.0, 60.0, 20.0], 5: [0.0, 0.0, 45.0, 55.0]}
 ## 每章魂兽的攻击力倍数，和每章魂兽的特点（被咬到时）
 const CH_POWER := {1: 1.0, 2: 1.35, 3: 1.8, 4: 2.3, 5: 3.0}
+const BEAST_DMG := 1.8        # 魂兽伤害总倍数（用户说第一章升到 15 级基本没掉过血）
 const CH_TRAIT := {1: "", 2: "poison", 3: "pack", 4: "frost", 5: "drag"}
 const TRAIT_TEXT := {
 	"poison": "这里的魂兽带毒：被咬会中毒，持续掉血",
@@ -1110,7 +1123,7 @@ const CH_HP := {1: 1.0, 2: 2.0, 3: 4.0, 4: 6.0, 5: 8.0}
 
 func beast_max_hp(species: String, age: int) -> float:
 	# 自动测试是功能测试（能不能拽、能不能打死），用的是 1 级的暗器，不乘章节血量
-	var ch_k := 1.0 if autotest else float(CH_HP.get(int(SPECIES_CH.get(species, 1)), 1.0))
+	var ch_k := 1.0 if autotest else float(CH_HP.get(int(SPECIES_CH.get(species, 1)), 1.0)) * Profile.rebirth_hard()
 	return BEASTS[species]["hp"] * AGES[clampi(age, 0, AGES.size() - 1)]["hp"] * ch_k
 
 

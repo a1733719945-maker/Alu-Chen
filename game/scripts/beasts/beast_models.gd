@@ -94,6 +94,70 @@ static func instance_model(cfg: Dictionary) -> Node3D:
 	return holder
 
 
+## 用户自己放的 Boss 模型（assets/models/bosses/<Boss 名>.glb，比如 Tripo / Meshy 从图片生成的）：
+## 按包围盒自动缩放到 cfg 里的尺寸（fit + size）、居中，有动画就按名字找 idle / attack / run
+const CUSTOM_BOSS_DIR := "res://assets/models/bosses/"
+
+
+static func custom_boss_path(kind: String) -> String:
+	for ext in [".glb", ".gltf"]:
+		var p: String = CUSTOM_BOSS_DIR + kind + ext
+		if ResourceLoader.exists(p):
+			return p
+	return ""
+
+
+static func instance_custom(path: String, cfg: Dictionary) -> Node3D:
+	var inst: Node3D = (load(path) as PackedScene).instantiate()
+	var holder := Node3D.new()
+	holder.name = "Mesh"
+	holder.add_child(inst)
+	inst.rotation.y = PI
+	var box := AABB()
+	var first := true
+	for mi: MeshInstance3D in inst.find_children("*", "MeshInstance3D", true, false):
+		if mi.mesh == null:
+			continue
+		var bb := _local_xform(inst, mi) * mi.mesh.get_aabb()
+		box = bb if first else box.merge(bb)
+		first = false
+	if first or box.size.length() < 0.001:
+		box = AABB(Vector3(-0.5, 0, -0.5), Vector3.ONE)
+	var dim: float = {"w": box.size.x, "h": box.size.y, "l": box.size.z}.get(str(cfg.get("fit", "l")), box.size.z)
+	var k := float(cfg.get("size", 4.0)) / maxf(dim, 0.001)
+	inst.scale = Vector3.ONE * k
+	inst.position = -(Basis(Vector3.UP, PI) * box.get_center()) * k
+	var aps := inst.find_children("*", "AnimationPlayer", true, false)
+	if aps.size() > 0:
+		var ap: AnimationPlayer = aps[0]
+		var roles := {}
+		var names := ap.get_animation_list()
+		for role in ROLE_KEYS:
+			roles[role] = _pick_anim(names, ROLE_KEYS[role])
+			if roles[role] == "" and names.size() > 0 and role == "idle":
+				roles[role] = names[0]
+			if roles[role] != "" and role in ["idle", "run", "air"]:
+				ap.get_animation(roles[role]).loop_mode = Animation.LOOP_LINEAR
+		holder.set_meta("ap", ap)
+		holder.set_meta("roles", roles)
+		if roles["idle"] != "":
+			ap.play(roles["idle"])
+	for gi: GeometryInstance3D in inst.find_children("*", "GeometryInstance3D", true, false):
+		gi.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
+	return holder
+
+
+## 还没进场景树时，子节点相对 root 的变换
+static func _local_xform(root: Node3D, n: Node3D) -> Transform3D:
+	var t := Transform3D.IDENTITY
+	var cur: Node = n
+	while cur != null and cur != root:
+		if cur is Node3D:
+			t = (cur as Node3D).transform * t
+		cur = cur.get_parent()
+	return t
+
+
 static func _pick_anim(names: PackedStringArray, keys: Array) -> String:
 	for k in keys:
 		for n in names:

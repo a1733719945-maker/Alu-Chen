@@ -32,6 +32,8 @@ var stats := {}                     # 成就用的计数
 var achieved := {}                  # 已完成的成就 id -> true
 var god := false                    # 成神了（通关）
 var max_chapter := 1                # 去过的最远一章（渡船能回以前的岛）
+var rebirth := 0                    # 转生了几次（成神以后可以转生，换武魂从头再来，永久变强，魂兽也更凶）
+var boss_tier := {}                 # 每个 Boss 打赢了几次：再召唤就是"二重、三重"，血更厚、奖励更高
 var chapter := 1
 var quest := 0              # 当前章节的任务进度
 var quest_count := 0        # 当前任务的计数（击杀数等）
@@ -100,6 +102,8 @@ func load_profile() -> void:
 	stats = d.get("stats", {})
 	achieved = d.get("achieved", {})
 	god = bool(d.get("god", false))
+	rebirth = int(d.get("rebirth", 0))
+	boss_tier = d.get("boss_tier", {})
 	skin = str(d.get("skin", "default"))
 	outfit = str(d.get("outfit", "default"))
 	if not skin in skins:
@@ -133,7 +137,7 @@ func save_profile() -> void:
 	var d := {
 		"version": VERSION, "money": money, "xp": xp, "level": level, "weapons": weapons,
 		"upgrades": upgrades, "items": items, "rings": rings, "bones": bones, "equipped": equipped, "bag": bag, "food": food, "bait": bait, "bounties": bounties, "skins": skins, "skin": skin, "outfits": outfits, "outfit": outfit, "codex": codex,
-		"skill_slots": skill_slots, "attach_owned": attach_owned, "attach_on": attach_on, "stats": stats, "achieved": achieved, "god": god, "max_chapter": max_chapter,
+		"skill_slots": skill_slots, "attach_owned": attach_owned, "attach_on": attach_on, "stats": stats, "achieved": achieved, "god": god, "max_chapter": max_chapter, "rebirth": rebirth, "boss_tier": boss_tier,
 		"chapter": chapter, "quest": quest, "quest_count": quest_count, "kills": kills, "loadout": loadout,
 	}
 	var f := FileAccess.open(path, FileAccess.WRITE)
@@ -146,7 +150,67 @@ func mark_dirty() -> void:
 	changed.emit()
 
 
+## 三个存档位：1 号是 user://profile.json（老存档就在这里），2、3 号是 profile_2 / profile_3
+var slot := 1
+
+
+static func slot_path(n: int) -> String:
+	return "user://profile.json" if n <= 1 else "user://profile_%d.json" % n
+
+
+func use_slot(n: int) -> void:
+	if _dirty:
+		save_profile()
+	slot = clampi(n, 1, 3)
+	path = slot_path(slot)
+	_defaults()
+	load_profile()
+	changed.emit()
+
+
+## 存档位的一行简介（菜单上显示）
+func slot_summary(n: int) -> String:
+	var p := slot_path(n)
+	if not FileAccess.file_exists(p):
+		return "空存档"
+	var d: Variant = JSON.parse_string(FileAccess.get_file_as_string(p))
+	if typeof(d) != TYPE_DICTIONARY:
+		return "空存档"
+	var ch := int(d.get("chapter", 1))
+	var nm: String = str(Data.CHAPTERS[ch]["name"]).split(" · ")[-1] if Data.CHAPTERS.has(ch) else ""
+	return "%d 级 · %s · %d 环" % [int(d.get("level", 1)), nm, (d.get("rings", []) as Array).size()]
+
+
 func reset() -> void:
+	_defaults()
+	save_profile()
+	changed.emit()
+
+
+## 转生：成神以后从 1 级、第一章重新来（可以换武魂，魂技全新），
+## 留下：外观、成就、猎魂录、配件、一成金魂币；每转一次：自己伤害 / 体力 +25%，魂兽血量 / 伤害 +30%
+func rebirth_power() -> float:
+	return 1.0 + 0.25 * rebirth
+
+
+func rebirth_hard() -> float:
+	return 1.0 + 0.3 * rebirth
+
+
+func do_rebirth() -> bool:
+	if not god:
+		return false
+	var keep := {"skins": skins, "skin": skin, "outfits": outfits, "outfit": outfit, "achieved": achieved, "stats": stats,
+		"codex": codex, "attach_owned": attach_owned, "money": money / 10, "rebirth": rebirth + 1}
+	_defaults()
+	for k in keep:
+		set(k, keep[k])
+	save_profile()
+	changed.emit()
+	return true
+
+
+func _defaults() -> void:
 	money = 0
 	xp = 0
 	level = 1
@@ -172,13 +236,13 @@ func reset() -> void:
 	achieved = {}
 	god = false
 	max_chapter = 1
+	rebirth = 0
+	boss_tier = {}
 	chapter = 1
 	quest = 0
 	quest_count = 0
 	kills = 0
 	loadout = ["xiujian"]
-	save_profile()
-	changed.emit()
 
 
 func _fix_loadout() -> void:
@@ -454,7 +518,7 @@ func codex_kill(sp: String, age: int, has_affix: bool, elite: bool) -> int:
 
 
 func max_hp() -> float:
-	return 100.0 + (level - 1) * 5.0 + bone_bonus("hp") * (1.0 + level * 0.02) + codex_stars() * 3.0
+	return (100.0 + (level - 1) * 5.0 + bone_bonus("hp") * (1.0 + level * 0.02) + codex_stars() * 3.0) * rebirth_power()
 
 
 func max_soul() -> float:
@@ -567,4 +631,4 @@ func wear(kind: String, id: String) -> void:
 
 
 func title() -> String:
-	return "%d 级%s" % [level, Data.titles(level)]
+	return "%d 级%s%s" % [level, Data.titles(level), ("（第%d世）" % (rebirth + 1)) if rebirth > 0 else ""]

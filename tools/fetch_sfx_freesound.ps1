@@ -24,7 +24,7 @@ $want = @(
 	@{name="pump"; q="shotgun pump reload"; min=0.2; max=3; len=0.8; vol=-3},
 	@{name="dry"; q="gun dry fire click"; min=0.05; max=2; len=0.3; vol=-6},
 	@{name="hit"; q="bullet impact flesh"; min=0.1; max=2; len=0.35; vol=-3},
-	@{name="punch"; q="punch hit"; min=0.1; max=2; len=0.45; vol=-2},
+	@{name="punch"; q="body punch"; min=0.1; max=1.5; len=0.35; vol=-4},
 	@{name="boom"; q="explosion"; min=1.0; max=6; len=2.5; vol=-1},
 	@{name="gull_cry"; q="seagull"; min=0.4; max=8; len=1.6; vol=-3},
 	@{name="splash_big"; q="water splash big"; min=0.4; max=4; len=1.6; vol=-2},

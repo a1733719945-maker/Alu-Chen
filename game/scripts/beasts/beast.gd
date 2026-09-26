@@ -554,7 +554,8 @@ func _vanish() -> void:
 	_dead_t = -1.0
 	var pos := global_position + Vector3(0, 0.4 * float(Data.AGES[age]["scale"]), 0)
 	world.fx.death_burst(pos, Data.age_color(age), age)
-	Sfx.play_at("kill_burst", pos, -8.0, 0.05)
+	if age >= 2:
+		Sfx.play_at("kill_burst", pos, -12.0, 0.08)
 	queue_free()
 
 

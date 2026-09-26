@@ -44,6 +44,7 @@ var _lever_len := 0.0
 var _idle_t := 0.0
 var _item: Node3D                # 手上拿的道具（唐莲、回血丹、魂骨），拿着时暗器收起来
 var _punch_t := 0.0              # 出拳进度（1 → 0）
+var _inspect_t := 0.0            # 检视暗器（按 V）：把暗器翻过来看皮肤
 var _punch_side := 1.0
 
 
@@ -108,6 +109,7 @@ func set_weapon(id: String, instant := false) -> void:
 		_item.queue_free()
 		_item = null
 	cur = id
+	_inspect_t = 0.0
 	for k in models:
 		models[k].visible = k == id
 	_switch = 0.0 if instant else 1.0
@@ -132,6 +134,13 @@ func two_handed() -> bool:
 	return not cur in ["xiujian", "fist"] and _item == null
 
 
+const INSPECT_TIME := 2.4
+
+
+func inspect() -> void:
+	_inspect_t = INSPECT_TIME
+
+
 ## 空手出拳：side 1 右拳、-1 左拳
 func punch(side: float) -> void:
 	_punch_t = 1.0
@@ -147,6 +156,7 @@ func kick(back: float, up: float, lever_time := 0.0) -> void:
 	_kpv += Vector3(randf_range(-0.25, 0.25), 0.2, 1.0) * back * 1.6
 	_krv += Vector3(up * 1.4, randf_range(-0.35, 0.35) * up, randf_range(-0.8, 0.8) * up)
 	_arm_flex = 1.0
+	_inspect_t = 0.0
 	if lever_time > 0.0:
 		_lever_t = lever_time
 		_lever_len = lever_time
@@ -226,11 +236,20 @@ func update(dt: float, ads: float, speed_k: float, grounded: bool, reload_k: flo
 	p += Vector3(-0.02, -0.07, 0.03) * rs
 	# 冲刺：暗器斜着放低
 	p += Vector3(-0.03, -0.05, 0.04) * sprint * (1.0 - ads_k)
+	# 检视：举到眼前翻过来看一圈，再放回去
+	var insp := Vector3.ZERO
+	if _inspect_t > 0.0:
+		_inspect_t = 0.0 if ads > 0.05 or reload_k > 0.0 else maxf(_inspect_t - dt, 0.0)
+		var ph := 1.0 - _inspect_t / INSPECT_TIME
+		var e := sin(ph * PI)
+		e = e * e * (3.0 - 2.0 * e)
+		p += Vector3(-0.1, 0.06, 0.06) * e
+		insp = Vector3(0.25 * e + sin(ph * TAU * 1.5) * 0.12 * e, 1.3 * e * (1.0 if ph < 0.55 else lerpf(1.0, -0.4, (ph - 0.55) / 0.45)), 0.5 * sin(ph * TAU) * e)
 	m.position = p
 	m.rotation = Vector3(
-		_kr.x + rs * 0.35 - sprint * 0.35 * (1.0 - ads_k) + _switch * 0.5,
-		-_sway.x * 1.4 + _kr.y + sprint * 0.55 * (1.0 - ads_k),
-		-_sway.x * 1.8 + _kr.z + rs * 0.55 + _move_tilt * calm)
+		_kr.x + rs * 0.35 - sprint * 0.35 * (1.0 - ads_k) + _switch * 0.5 + insp.x,
+		-_sway.x * 1.4 + _kr.y + sprint * 0.55 * (1.0 - ads_k) + insp.y,
+		-_sway.x * 1.8 + _kr.z + rs * 0.55 + _move_tilt * calm + insp.z)
 
 	_animate_parts(m, reload_k, per_shell)
 	if cur == "fist":

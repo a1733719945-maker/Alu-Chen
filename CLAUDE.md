@@ -105,6 +105,19 @@
    - 碧磷沼 / 毒沼：`Island._raw_height` 水塘改成大片缓坡浅滩
    - 字体：裁剪过的思源黑体缺字时用系统字体补（`Data._init` 里的 SystemFont fallback）；本机没有 Python 跑 `subset_fonts.py`，新字尽量用常用字
 
+8. 第五版补丁 2（2026-09-26 用户试玩反馈：太简单、1 小时通关、没有重玩动力、中间关卡没记忆点）：
+   - 难度：`Data.BEAST_DMG`（魂兽伤害 ×1.8）、凶暴概率提高、`Player.REGEN_*` 变慢；`KILLS_PER_LEVEL` 12 → 24
+   - 每张图的奇遇 `Data.CH_EVENTS`（代替兽潮）：`World._host_tide / _on_tide / _event_env`（天色天气 tween + 粒子）/ `_host_tide_king`
+   - 转生 `Profile.rebirth / do_rebirth / rebirth_power / rebirth_hard`（主菜单按钮）；Boss 重数 `Profile.boss_tier`、`World.boss_tier / _boss_k`
+   - 三个存档位 `Profile.slot / use_slot / slot_summary`，`Settings.save_slot`，菜单按钮
+   - X 收起暗器（`holster`，fist 一直在 guns 里）、`Data.MOVE_K` 暗器重量影响移速、V 检视（`ViewModel.inspect`）
+   - 瞬狙（`Gun.spread` 开镜六成就准，`scoped` 阈值 0.6）、切枪取消拉栓、狙击 range 1500 不衰减；Boss 挨打 15 秒内不回血（`Boss._since_hit`）
+   - 海鸥群 `Loot._flock`（FLOCK_N 只盘旋、俯冲叼东西、叼着不走、打下来掉东西 + 按距离给钱、40 秒补一只；消息 gflock / gdive）
+   - 瓶颈感应：`Lure` 钓到需要年份的机会 30%；精英年份按章节 `[1,1,2,3,3]`
+   - 鱼饵按章节开放（`ITEMS` 的 `ch`）；Boss 大招期间不出别的招、绿圈判定 5.8 米
+   - 自定义 Boss 模型：`assets/models/bosses/<kind>.glb`（`BeastModels.custom_boss_path / instance_custom`，按包围盒自动缩放）
+   - 修：换地图后鼠标没锁（旧 World._exit_tree 把鼠标放出来了），4 号位烤肉名字，击杀音效变轻，拳头音效重新下载
+
 ## 还没做 / 可以继续
 
 - Boss 写实模型：免费 CC0 里没有合适的，要用户提供素材；现在靠着色器 + 光环 + 死亡神光

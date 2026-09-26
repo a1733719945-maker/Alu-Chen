@@ -70,6 +70,8 @@ var _cap_t := 0.0
 var _tide_t := Data.TIDE_FIRST   # 下一波兽潮倒计时（房主）
 var _tide_left := 0
 var _tide_spawn_t := 0.0
+var _tide_total := 0
+var _tide_king_done := true
 
 
 func _init(p_chapter := 1) -> void:
@@ -141,10 +143,14 @@ func _ready() -> void:
 func _exit_tree() -> void:
 	if Settings.changed.is_connected(builder.apply_quality):
 		Settings.changed.disconnect(builder.apply_quality)
+	Profile.save_profile()
+	# 换地图时旧世界比新世界晚一帧才删掉：新世界已经在了就别把鼠标放出来（以前要点一下鼠标才能转视角）
+	for w in get_tree().get_nodes_in_group("world"):
+		if w != self and is_instance_valid(w):
+			return
 	Sfx.stop_ambient()
 	Sfx.set_underwater(false)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	Profile.save_profile()
 
 
 func _my_info() -> Dictionary:
@@ -202,7 +208,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 
 func _notification(what: int) -> void:
-	if what == NOTIFICATION_APPLICATION_FOCUS_OUT and not paused and not ui_open and is_inside_tree():
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT and not paused and not ui_open and is_inside_tree() and not Data.autotest:
 		set_paused(true)
 
 
@@ -879,54 +885,171 @@ func _check_bounty(species: String, age: int, affixes: Array) -> void:
 		return
 
 
-# ------------------------------------------------------------------ 兽潮：隔一阵子一大波凶暴魂兽从四面八方冲过来
+# ------------------------------------------------------------------ 奇遇：每张图自己的事件（Data.CH_EVENTS），隔 6~8 分钟一次
 
 func _host_tide(dt: float) -> void:
 	if boss or Data.autotest:
 		return
+	var ev: Dictionary = Data.CH_EVENTS.get(chapter, {})
 	if _tide_left > 0:
 		_tide_spawn_t -= dt
 		if _tide_spawn_t <= 0.0:
-			_tide_spawn_t = rng.randf_range(1.8, 3.0)
+			_tide_spawn_t = rng.randf_range(0.6, 1.2) if str(ev.get("mode", "")) == "flock" else rng.randf_range(1.8, 3.0)
 			_tide_left -= 1
-			_host_tide_spawn()
+			_host_tide_spawn(ev)
+			# 一半的时候王出来
+			if not _tide_king_done and _tide_left <= _tide_total / 2:
+				_tide_king_done = true
+				_host_tide_king(ev)
 			if _tide_left <= 0:
 				_tide_t = rng.randf_range(Data.TIDE_GAP[0], Data.TIDE_GAP[1])
 		return
 	_tide_t -= dt
 	if _tide_t <= 0.0:
-		_tide_left = 8 + 3 * (_all_peers().size() - 1)
+		_tide_total = int(ev.get("n", 8)) + 3 * (_all_peers().size() - 1)
+		_tide_left = _tide_total
+		_tide_king_done = str(ev.get("king", "")) == ""
 		_tide_spawn_t = 3.0
-		Net.send(0, "tide", [])
-		_on_tide()
+		Net.send(0, "tide", [chapter])
+		_on_tide([chapter])
 
 
-func _on_tide() -> void:
-	_tide_until = Time.get_ticks_msec() / 1000.0 + 75.0
-	hud._show_banner("兽潮来了！", "一大波凶暴魂兽正从四面八方冲过来，守住！", Color(1.0, 0.4, 0.3), 4.5)
+func _on_tide(msg: Array = []) -> void:
+	var ch := int(msg[0]) if msg.size() > 0 else chapter
+	var ev: Dictionary = Data.CH_EVENTS.get(ch, {})
+	_tide_until = Time.get_ticks_msec() / 1000.0 + Data.TIDE_TIME
+	hud._show_banner("奇遇 · %s" % ev.get("name", "兽潮"), str(ev.get("desc", "")), ev.get("color", Color(1.0, 0.4, 0.3)), 5.0)
 	Sfx.play("boss_roar", 0.0, 0.0, 1.2)
 	player.trauma = minf(player.trauma + 0.5, 1.0)
+	_event_env(str(ev.get("env", "")), Data.TIDE_TIME)
 
 
-func _host_tide_spawn() -> void:
+## 奇遇的天色天气：慢慢变过去，结束后变回来
+var _env_saved := {}
+
+
+func _event_env(kind: String, dur: float) -> void:
+	var env: Environment = builder.env
+	var sun: DirectionalLight3D = builder.sun
+	if env == null or sun == null or kind == "":
+		return
+	if _env_saved.is_empty():
+		_env_saved = {"sun": sun.light_energy, "sky": env.background_energy_multiplier, "amb": env.ambient_light_energy, "fog": env.fog_density, "sun_c": sun.light_color}
+	var sun_k := 1.0
+	var fog_k := 1.0
+	var tint: Color = _env_saved["sun_c"]
+	match kind:
+		"gold":
+			tint = Color(1.0, 0.8, 0.55)
+		"night":
+			sun_k = 0.18
+			fog_k = 1.6
+			tint = Color(0.55, 0.65, 1.0)
+		"stars":
+			sun_k = 0.35
+			tint = Color(0.75, 0.7, 1.0)
+		"blizzard":
+			sun_k = 0.55
+			fog_k = 7.0
+		"storm":
+			sun_k = 0.4
+			fog_k = 3.0
+			tint = Color(0.7, 0.8, 1.0)
+	var tw := create_tween()
+	tw.set_parallel(true)
+	tw.tween_property(sun, "light_energy", float(_env_saved["sun"]) * sun_k, 3.0)
+	tw.tween_property(sun, "light_color", tint, 3.0)
+	tw.tween_property(env, "background_energy_multiplier", float(_env_saved["sky"]) * lerpf(1.0, sun_k, 0.8), 3.0)
+	tw.tween_property(env, "ambient_light_energy", float(_env_saved["amb"]) * lerpf(1.0, sun_k, 0.7), 3.0)
+	tw.tween_property(env, "fog_density", float(_env_saved["fog"]) * fog_k, 3.0)
+	tw.chain().tween_interval(dur)
+	tw.chain().tween_property(sun, "light_energy", float(_env_saved["sun"]), 4.0)
+	tw.parallel().tween_property(sun, "light_color", _env_saved["sun_c"], 4.0)
+	tw.parallel().tween_property(env, "background_energy_multiplier", float(_env_saved["sky"]), 4.0)
+	tw.parallel().tween_property(env, "ambient_light_energy", float(_env_saved["amb"]), 4.0)
+	tw.parallel().tween_property(env, "fog_density", float(_env_saved["fog"]), 4.0)
+	# 下雪 / 下雨 / 星星坠落：跟着玩家的粒子
+	if kind in ["blizzard", "storm", "stars"]:
+		var p := CPUParticles3D.new()
+		p.amount = 500 if kind != "stars" else 60
+		p.lifetime = 2.5 if kind == "storm" else 5.0
+		p.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+		p.emission_box_extents = Vector3(30, 1, 30)
+		p.direction = Vector3(0.3, -1, 0.1)
+		p.spread = 10.0
+		p.gravity = Vector3(0, -30.0 if kind == "storm" else -3.0, 0)
+		p.initial_velocity_min = 8.0 if kind == "storm" else 1.0
+		p.initial_velocity_max = 14.0 if kind == "storm" else 3.0
+		var q := QuadMesh.new()
+		q.size = Vector2(0.03, 0.6) if kind == "storm" else (Vector2(0.12, 0.12) if kind == "blizzard" else Vector2(0.25, 0.25))
+		p.mesh = q
+		var m := StandardMaterial3D.new()
+		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		m.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED if kind != "storm" else BaseMaterial3D.BILLBOARD_FIXED_Y
+		m.albedo_color = {"blizzard": Color(1, 1, 1, 0.85), "storm": Color(0.7, 0.8, 1.0, 0.45), "stars": Color(0.8, 0.75, 1.0, 1.0)}[kind]
+		if kind == "stars":
+			m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		m.albedo_texture = fx._soft_tex if kind != "storm" else null
+		p.material_override = m
+		p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		player.add_child(p)
+		p.position = Vector3(0, 18, 0)
+		p.emitting = true
+		get_tree().create_timer(dur + 2.0).timeout.connect(func():
+			if is_instance_valid(p):
+				p.emitting = false
+				get_tree().create_timer(5.0).timeout.connect(p.queue_free))
+
+
+func _host_tide_spawn(ev: Dictionary) -> void:
 	var targets := alive_players()
 	if targets.is_empty():
 		return
 	var tp: Dictionary = targets[rng.randi() % targets.size()]
 	var center: Vector3 = tp["pos"]
-	var land: Array = _map_species().filter(func(s): return not island.is_water_habitat(str(Data.BEASTS[s]["habitat"])))
-	if land.is_empty():
+	var sp: Array = (ev.get("species", []) as Array).filter(func(s): return Data.BEASTS.has(str(s)))
+	if sp.is_empty():
+		sp = _map_species().filter(func(s): return not island.is_water_habitat(str(Data.BEASTS[s]["habitat"])))
+	if sp.is_empty():
+		return
+	var species: String = sp[rng.randi() % sp.size()]
+	if str(ev.get("mode", "")) == "flock":
+		# 天上飞过的鸟群：在高处出现，打下来奖励 ×3
+		var a0 := rng.randf() * TAU
+		var p0 := center + Vector3(cos(a0) * 30.0, 16.0 + rng.randf() * 8.0, sin(a0) * 30.0)
+		var b0 := _host_spawn(1, p0, species, Data.roll_age(rng, 0, chapter), center, "flee", "grass")
+		if b0:
+			b0.reward_k *= 3.0
 		return
 	for k in 16:
 		var a := rng.randf() * TAU
 		var r := rng.randf_range(24.0, 36.0)
 		var p := center + Vector3(cos(a) * r, 0, sin(a) * r)
-		if island.is_land(p.x, p.z):
-			p.y = island.height_at(p.x, p.z) + 0.3
-			var species: String = land[rng.randi() % land.size()]
+		if island.is_land(p.x, p.z) or Data.BEASTS[species]["motion"] in ["fly", "flutter"]:
+			p.y = maxf(island.height_at(p.x, p.z), Island.WATER_Y) + 0.3
 			_host_spawn(1, p, species, Data.roll_age(rng, 0, chapter), center, "fierce", "blood")
 			return
 
+
+## 奇遇里的王：精英，打死必掉魂骨
+func _host_tide_king(ev: Dictionary) -> void:
+	var king := str(ev.get("king", ""))
+	var targets := alive_players()
+	if king == "" or targets.is_empty() or not Data.BEASTS.has(king):
+		return
+	var center: Vector3 = targets[0]["pos"]
+	for k in 20:
+		var a := rng.randf() * TAU
+		var p := center + Vector3(cos(a) * 26.0, 0, sin(a) * 26.0)
+		if island.is_land(p.x, p.z):
+			p.y = island.height_at(p.x, p.z) + 0.5
+			var age: int = [1, 1, 2, 3, 3][clampi(chapter - 1, 0, 4)]
+			_host_spawn(1, p, king, age, center, "elite", "blood")
+			var msg := ["%s王来了！" % Data.BEASTS[king]["name"]]
+			Net.send(0, "feedall", msg)
+			hud.feed(str(msg[0]), Color(1.0, 0.6, 0.3))
+			return
 
 ## 精英魂兽（小 Boss）：每张地图在陆地栖息地附近固定几个点，打死了 2 分钟后原地重生
 func _host_elites(dt: float) -> void:
@@ -965,10 +1088,9 @@ func _host_elites(dt: float) -> void:
 
 
 func _init_elites() -> void:
-	var age := 1 if chapter <= 2 else 2
+	# 精英的年份：第一、二章百年，第三章千年，第四、五章万年（第六~九魂环可以打王拿）
+	var age: int = [1, 1, 2, 3, 3][clampi(chapter - 1, 0, 4)]
 	for h in island.habitats:
-		if chapter >= 5:
-			age = 2
 		if elites.size() >= Data.ELITE_MAX:
 			break
 		var type := str(h["type"])
@@ -998,7 +1120,7 @@ func _host_spawn_elite(key: String) -> void:
 
 ## 魔狼 / 犀牛 咬到玩家（章节越后越疼，还带这一章的特点：毒 / 冰冻 / 拖拽）
 func beast_bite(b: Beast, peer: int, dmg: float) -> void:
-	dmg *= float(Data.CH_POWER.get(chapter, 1.0))
+	dmg *= float(Data.CH_POWER.get(chapter, 1.0)) * Data.BEAST_DMG * Profile.rebirth_hard()
 	var ch_trait := str(Data.CH_TRAIT.get(chapter, ""))
 	if peer == Net.my_id:
 		player.take_damage(dmg, b.global_position)
@@ -1027,7 +1149,7 @@ func _apply_trait(ch_trait: String, from: Vector3, dmg: float) -> void:
 ## 金刚猿扔石头
 func beast_throw_rock(b: Beast, target: Vector3) -> void:
 	var from := b.global_position + Vector3(0, 1.4 * Data.AGES[b.age]["scale"], 0)
-	var dmg: float = float(Data.BEASTS[b.species].get("hurt", 12.0)) * (1.0 + b.age * 0.5) * float(Data.CH_POWER.get(chapter, 1.0))
+	var dmg: float = float(Data.BEASTS[b.species].get("hurt", 12.0)) * (1.0 + b.age * 0.5) * float(Data.CH_POWER.get(chapter, 1.0)) * Data.BEAST_DMG
 	_host_hazard("rock", from, target, 1.0, 2.2, dmg)
 
 
@@ -1071,7 +1193,7 @@ func _on_btel(msg: Array) -> void:
 func host_beast_special(b: Beast, sk: Dictionary, at: Vector3) -> void:
 	var center: Vector3 = b.global_position if str(sk["at"]) == "self" else at
 	var r := float(sk["radius"]) * b.size_k
-	var base: float = float(Data.BEASTS[b.species].get("hurt", 8.0)) * (1.0 + b.age * 0.5) * (Data.ELITE_DMG if b.temper == "elite" else 1.0) * b._dmgk() * float(Data.CH_POWER.get(chapter, 1.0))
+	var base: float = float(Data.BEASTS[b.species].get("hurt", 8.0)) * (1.0 + b.age * 0.5) * (Data.ELITE_DMG if b.temper == "elite" else 1.0) * b._dmgk() * float(Data.CH_POWER.get(chapter, 1.0)) * Data.BEAST_DMG * Profile.rebirth_hard()
 	var dmg := base * float(sk.get("dmg", 1.0))
 	if sk.has("howl"):
 		for o: Beast in beasts.values():
@@ -1206,7 +1328,8 @@ func _on_kill(msg: Array) -> void:
 		fx.impact_beast(pos + Vector3(0, 0.3, 0), Vector3.UP, Data.age_color(age), true)
 	else:
 		fx.death_burst(pos, Data.age_color(age), age)
-	Sfx.play_at("kill_burst", pos, 0.0, 0.05)
+	if age >= 2:
+		Sfx.play_at("kill_burst", pos, -6.0, 0.08)
 	var mine: Array = rewards.get(Net.my_id, rewards.get(str(Net.my_id), [0, 0]))
 	var who := peer_name(killer)
 	if killer == Net.my_id:
@@ -1228,7 +1351,7 @@ func _on_kill(msg: Array) -> void:
 			tags = tags.duplicate()
 			tags.append("%s  +%d 金魂币" % [["", "", "双杀", "三连杀", "四连杀", "五连杀"][mini(_streak, 5)] if _streak <= 5 else "%d 连杀！" % _streak, bonus])
 		hud.kill_popup(int(mine[0]) + bonus, int(mine[1]), tags, species, age)
-		Sfx.play("kill", -1.0)
+		Sfx.play("kill", -9.0, 0.12)
 		Sfx.play("coin", -4.0, 0.03)
 
 
@@ -1654,12 +1777,18 @@ func _on_profile_changed() -> void:
 
 # ------------------------------------------------------------------ Boss
 
+var boss_tier := 0
+var _boss_k := 1.0
+
+
 func _host_spawn_boss() -> void:
 	var kind := str(Data.CHAPTERS[chapter]["boss"])
 	var n := _all_peers().size()
-	var hp: float = float(Data.BOSSES[kind]["hp"]) * (1.0 + 0.6 * (n - 1))
+	# 打赢过的 Boss 再召唤：二重、三重……血更厚、招更狠、奖励更高
+	var tier := int(Profile.boss_tier.get(kind, 0))
+	var hp: float = float(Data.BOSSES[kind]["hp"]) * (1.0 + 0.6 * (n - 1)) * (1.0 + 0.7 * tier) * Profile.rebirth_hard()
 	var anchor := island.boss_pos
-	var msg := [kind, hp, anchor]
+	var msg := [kind, hp, anchor, tier]
 	Net.send(0, "bossspawn", msg)
 	_on_boss_spawn(msg)
 
@@ -1670,8 +1799,11 @@ func _on_boss_spawn(msg: Array) -> void:
 	boss = Boss.new()
 	add_child(boss)
 	boss.setup(self, str(msg[0]), float(msg[1]), not Net.is_host(), msg[2])
-	hud.boss_bar(str(Data.BOSSES[msg[0]]["name"]))
-	hud.boss_intro(str(Data.BOSSES[msg[0]]["name"]))
+	boss_tier = int(msg[3]) if msg.size() > 3 else 0
+	_boss_k = (1.0 + 0.25 * boss_tier) * Profile.rebirth_hard()
+	var bname := str(Data.BOSSES[msg[0]]["name"]) + ((" · %s重" % ["一", "二", "三", "四", "五", "六", "七", "八", "九", "十"][mini(boss_tier, 9)]) if boss_tier > 0 else "")
+	hud.boss_bar(bname)
+	hud.boss_intro(bname)
 	Sfx.play("boss_roar", 2.0)
 	if str(Data.BOSSES[msg[0]].get("ai", "")) == "water":
 		fx.splash(msg[2], true)
@@ -1725,8 +1857,12 @@ func _on_boss_dead(msg: Array) -> void:
 		boss.die_visual()     # 播死亡动画、摔下来，自己炸掉
 		boss = null
 	hud.boss_bar("")
-	_gain(int(mine[0]), int(mine[1]))
+	# 重数越高奖励越多（每重 +60%），下次召唤再加一重
+	var tier_k := 1.0 + 0.6 * boss_tier
+	_gain(int(float(mine[0]) * tier_k), int(float(mine[1]) * tier_k))
 	Profile.count("boss_" + kind)
+	Profile.boss_tier[kind] = maxi(int(Profile.boss_tier.get(kind, 0)), boss_tier + 1)
+	Profile.mark_dirty()
 	# 魂骨：每人拿一块自己还没有的
 	# 每章 Boss 送一款专属外观
 	for sid in Data.GUN_SKINS:
@@ -1736,9 +1872,10 @@ func _on_boss_dead(msg: Array) -> void:
 		if str(Data.OUTFITS[oid].get("boss", "")) == kind and Profile.unlock_look("outfit", oid):
 			hud.feed("解锁了装扮【%s】（暗器铺 → 外观）" % Data.OUTFITS[oid]["name"], UiKit.GOLD)
 	var got := ""
+	var bone_age := mini(int(d["age"]) + boss_tier / 2, 4)    # 二重、三重掉的魂骨年份更高
 	for bid in d["bones"]:
-		if Profile.add_bone("%s@%d" % [str(bid), int(d["age"])], true):
-			got = "%s@%d" % [str(bid), int(d["age"])]
+		if Profile.add_bone("%s@%d" % [str(bid), bone_age], true):
+			got = "%s@%d" % [str(bid), bone_age]
 			player.on_bones_changed()
 			break
 	hud.boss_defeated(str(d["name"]), int(mine[0]), got)
@@ -1749,7 +1886,7 @@ func _on_boss_dead(msg: Array) -> void:
 # ------------------------------------------------------------------ 危险物：毒液、蛛网、石头、红圈
 
 func boss_projectile(kind: String, from: Vector3, to: Vector3, flight: float, radius: float, dmg: float) -> void:
-	_host_hazard(kind, from, to, flight, radius, dmg * float(Data.CH_POWER.get(chapter, 1.0)))
+	_host_hazard(kind, from, to, flight, radius, dmg * float(Data.CH_POWER.get(chapter, 1.0)) * _boss_k)
 
 
 func _host_hazard(kind: String, from: Vector3, to: Vector3, flight: float, radius: float, dmg: float) -> void:
@@ -1800,7 +1937,7 @@ var _zones: Array = []
 ## 冲击环：从中心往外扩的一圈红墙，贴地的人被扫到。跳过去或者翻滚穿过去
 func boss_shockwave(center: Vector3, max_r: float, speed: float, dmg: float) -> void:
 	center.y = maxf(island.height_at(center.x, center.z), Island.WATER_Y)
-	var msg := [center, max_r, speed, dmg * float(Data.CH_POWER.get(chapter, 1.0))]
+	var msg := [center, max_r, speed, dmg * float(Data.CH_POWER.get(chapter, 1.0)) * _boss_k]
 	Net.send(0, "sw", msg)
 	_on_shockwave(msg)
 
@@ -1826,7 +1963,7 @@ func _on_shockwave(msg: Array) -> void:
 ## 扇形横扫：地上先出扇形，一会儿后扇形里的人挨打
 func boss_cone(origin: Vector3, dir: Vector3, half: float, reach: float, delay: float, dmg: float) -> void:
 	origin.y = maxf(island.height_at(origin.x, origin.z), Island.WATER_Y)
-	var msg := [origin, Vector3(dir.x, 0, dir.z).normalized(), half, reach, delay, dmg * float(Data.CH_POWER.get(chapter, 1.0))]
+	var msg := [origin, Vector3(dir.x, 0, dir.z).normalized(), half, reach, delay, dmg * float(Data.CH_POWER.get(chapter, 1.0)) * _boss_k]
 	Net.send(0, "cone", msg)
 	_on_cone(msg)
 
@@ -1863,7 +2000,7 @@ func _on_cone(msg: Array) -> void:
 
 ## 全场大招：一大片都会被砸，只有几个绿圈安全（翻滚也躲不掉，要跑进绿圈）
 func boss_ultimate(center: Vector3, radius: float, safes: Array, delay: float, dmg: float) -> void:
-	var msg := [center, radius, safes, delay, dmg * float(Data.CH_POWER.get(chapter, 1.0))]
+	var msg := [center, radius, safes, delay, dmg * float(Data.CH_POWER.get(chapter, 1.0)) * _boss_k]
 	Net.send(0, "ult", msg)
 	_on_ultimate(msg)
 
@@ -1871,7 +2008,7 @@ func boss_ultimate(center: Vector3, radius: float, safes: Array, delay: float, d
 func _on_ultimate(msg: Array) -> void:
 	var nodes: Array = [fx.telegraph(msg[0], float(msg[1]), float(msg[3]))]
 	for s in msg[2]:
-		nodes.append(fx.telegraph(s, 4.5, 0.3, Color(0.3, 1.0, 0.4)))
+		nodes.append(fx.telegraph(s, 5.0, 0.3, Color(0.3, 1.0, 0.4)))
 	_zones.append({"c": msg[0], "r": float(msg[1]), "safes": msg[2], "t": float(msg[3]), "dmg": float(msg[4]), "nodes": nodes})
 	hud._show_banner("躲进绿圈！", "Boss 要砸整片地了", Color(0.5, 1.0, 0.5), float(msg[3]))
 	Sfx.play("boss_roar", 3.0, 0.0, 0.7)
@@ -1924,7 +2061,7 @@ func _update_boss_moves(dt: float) -> void:
 			player.trauma = 1.0
 			var safe := false
 			for s in z["safes"]:
-				if Vector2(me.x - (s as Vector3).x, me.z - (s as Vector3).z).length() < 4.7:
+				if Vector2(me.x - (s as Vector3).x, me.z - (s as Vector3).z).length() < 5.8:
 					safe = true
 			if not safe and Vector2(me.x - c2.x, me.z - c2.z).length() < float(z["r"]) and not player.dead:
 				var inv := player.invuln_t
@@ -2479,8 +2616,8 @@ func on_message(from: int, type: String, data: Variant) -> void:
 		"hint":
 			hud.toast(str(data[0]), Color(1.0, 0.8, 0.5), 4.0)
 		"tide":
-			_on_tide()
-		"gi", "gitake", "gigone", "gull", "gullhit", "gulldown":
+			_on_tide(data if data is Array else [])
+		"gi", "gitake", "gigone", "gull", "gullhit", "gulldown", "gdive", "gflock":
 			loot.on_message(from, type, data)
 		"init":
 			_apply_init(data)

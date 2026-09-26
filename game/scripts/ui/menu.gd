@@ -139,6 +139,22 @@ func _ready() -> void:
 	var b_quit := UiKit.button("退出", 20)
 	b_quit.pressed.connect(func(): quit.emit())
 	rv.add_child(b_quit)
+	# 三个存档位
+	rv.add_child(UiKit.label("存档位（点一下切换）", 16, UiKit.MIST))
+	var srow := HBoxContainer.new()
+	srow.add_theme_constant_override("separation", 6)
+	rv.add_child(srow)
+	for n in [1, 2, 3]:
+		var sb := UiKit.button("", 14)
+		sb.custom_minimum_size = Vector2(122, 56)
+		sb.pressed.connect(func():
+			Settings.save_slot = n
+			Settings.save_settings()
+			Profile.use_slot(n)
+			_refresh_save()
+			_pick_wuhun(Settings.wuhun, true))
+		srow.add_child(sb)
+		_slot_btns.append(sb)
 	_save_info = UiKit.label("", 16, UiKit.MIST)
 	_save_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_save_info.custom_minimum_size = Vector2(380, 0)
@@ -146,6 +162,10 @@ func _ready() -> void:
 	_reset_btn = UiKit.button("重新开始（清空存档）", 15)
 	_reset_btn.pressed.connect(_on_reset)
 	rv.add_child(_reset_btn)
+	# 成神以后：转生（换武魂从 1 级再来，永久变强，魂兽也更凶）
+	_rebirth_btn = UiKit.button("", 17, true)
+	_rebirth_btn.pressed.connect(_on_rebirth)
+	rv.add_child(_rebirth_btn)
 	_refresh_save()
 	_buttons = [b_solo, b_host, b_join]
 
@@ -155,10 +175,10 @@ func _ready() -> void:
 	_status.custom_minimum_size = Vector2(900, 0)
 	col.add_child(_status)
 
-	var help := UiKit.label("WASD 移动 · 空格 跳 · 轻点 Ctrl 翻滚 · 左键 射击 · 右键 瞄准 · 1–5 物品栏 · E 引魂索 · Q 攻击魂技 · F 交互/辅助魂技 · 双击 Shift 位移魂技 · T 丢东西 · B 鱼饵 · M 地图 · K 武魂", 16, UiKit.MIST)
+	var help := UiKit.label("WASD 移动 · 空格 跳 · 轻点 Ctrl 翻滚 · 左键 射击 · 右键 瞄准 · 1–5 物品栏 · X 收起暗器（跑得快）· G / 鼠标中键 引魂索 · Q / E / F 魂技 · F 交互 · V 检视暗器 · T 丢东西 · B 鱼饵 · M 地图 · K 武魂 · J 成就", 16, UiKit.MIST)
 	help.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	col.add_child(help)
-	var ver := UiKit.label("版本 %s · 第四版" % ProjectSettings.get_setting("application/config/version", "0"), 14, Color(0.5, 0.6, 0.57))
+	var ver := UiKit.label("版本 %s · 第五版" % ProjectSettings.get_setting("application/config/version", "0"), 14, Color(0.5, 0.6, 0.57))
 	ver.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	col.add_child(ver)
 
@@ -168,6 +188,11 @@ func _ready() -> void:
 	col.add_child(_settings)
 
 	_pick_wuhun(Settings.wuhun, true)
+
+
+func _enter_tree() -> void:
+	if not Data.autotest and Settings.save_slot != Profile.slot:
+		Profile.use_slot(Settings.save_slot)
 
 
 func _pick_wuhun(i: int, silent := false) -> void:
@@ -180,13 +205,37 @@ func _pick_wuhun(i: int, silent := false) -> void:
 	for k in _wuhun_btns.size():
 		_wuhun_btns[k].modulate = Color(1, 1, 1) if k == i else Color(0.75, 0.8, 0.78)
 		_wuhun_btns[k].add_theme_color_override("font_color", UiKit.GOLD if k == i else UiKit.MOON)
-	var lines := ["魂技不固定：吸收哪种魂兽的魂环，就领悟哪种魂技，吸收了才知道。", "同一种魂兽总给同一个魂技；魂兽年份越高，魂技越强。", "Q 攻击魂技 · F 辅助魂技 · 双击 Shift 位移魂技，自动放能放的。"]
+	var lines := ["魂技不固定：吸收哪种魂兽的魂环，就领悟哪种魂技，吸收了才知道。", "同一种魂兽总给同一个魂技；魂兽年份越高，魂技越强。", "Q / E / F 三个键各放一个魂技，在 K 武魂面板里自己选装哪个。"]
 	if not Profile.rings.is_empty():
 		lines.append("（已经有的魂技不会因为换武魂而改变）")
 	_skills_hint.text = "\n".join(lines)
 
 
+var _slot_btns: Array = []
+var _rebirth_btn: Button
+var _rebirth_armed := false
+
+
+func _on_rebirth() -> void:
+	if not _rebirth_armed:
+		_rebirth_armed = true
+		_rebirth_btn.text = "确定转生？再点一次（等级、魂环、暗器、魂骨清零）"
+		return
+	_rebirth_armed = false
+	if Profile.do_rebirth():
+		set_status("转生成功！第%d世：伤害、体力 +%d%%，魂兽也凶了 %d%%。可以换一个武魂，领悟全新的魂技" % [Profile.rebirth + 1, Profile.rebirth * 25, Profile.rebirth * 30])
+	_refresh_save()
+	_pick_wuhun(Settings.wuhun, true)
+
+
 func _refresh_save() -> void:
+	if _rebirth_btn:
+		_rebirth_btn.visible = Profile.god
+		_rebirth_btn.text = "转生 · 开始第 %d 世（永久更强，魂兽更凶）" % (Profile.rebirth + 2)
+	for i in _slot_btns.size():
+		var b: Button = _slot_btns[i]
+		b.text = "存档 %d\n%s" % [i + 1, Profile.slot_summary(i + 1)]
+		b.add_theme_color_override("font_color", UiKit.GOLD if Profile.slot == i + 1 else UiKit.MOON)
 	if Profile.level <= 1 and Profile.money == 0 and Profile.rings.is_empty() and Profile.chapter == 1:
 		_save_info.text = "新存档：从第一章 · 湖心岛开始"
 		_reset_btn.visible = false

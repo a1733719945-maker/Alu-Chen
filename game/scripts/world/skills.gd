@@ -1,6 +1,6 @@
 class_name SkillSystem
 extends Node
-## 魂技：五个魂环各一个魂技。轻按 Q 放"当前魂技"，按住 Q 弹出轮盘切换（见 Player._skill_input）。
+## 魂技：每个魂环一个魂技。Q / E / F 三个槽各装一个（Profile.skill_slots，K 面板里换），见 cast_slot。
 ##
 ## 放技能的人：扣魂力、算目标、处理自己身上的效果（增益、冲刺、跳跃），把"对魂兽的效果"发给房主。
 ## 房主：对魂兽 / Boss 生效（炸飞、定身、易伤、牵引、光束……），再广播特效。

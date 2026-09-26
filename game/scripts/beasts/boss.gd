@@ -63,6 +63,8 @@ var _combo_t := 0.0
 var _combo_peer := 0
 var _ult_cd := 0.0               # 二阶段全场大招
 var _ult_ready := false
+var _since_hit := 99.0
+var _custom := false              # 用的是玩家自己放的模型（有真贴图，不压暗）            # 多久没挨打了：远处狙击也算在打它，不会回血
 var _soul_rings: Array = []
 var _pillar: MeshInstance3D
 
@@ -152,7 +154,10 @@ func _build() -> void:
 	head.name = "Head"
 	head.top_level = true
 	add_child(head)
-	model = BeastModels.instance_model(cfg)
+	# 有用户自己放的模型（assets/models/bosses/<kind>.glb）就用它
+	var custom := BeastModels.custom_boss_path(kind)
+	_custom = custom != ""
+	model = BeastModels.instance_custom(custom, cfg) if _custom else BeastModels.instance_model(cfg)
 	head.add_child(model)
 	var d := BeastModels._dims(str(cfg["model"]))
 	var k := BeastModels._model_scale(cfg)
@@ -205,6 +210,10 @@ func _decorate() -> void:
 	holy.set_shader_parameter("rim_color", theme)
 	var vein: Color = cfg.get("glow", Color(0.2, 0.1, 0.35))
 	holy.set_shader_parameter("vein_color", Color(vein.r * 3.0 + 0.3, vein.g * 3.0 + 0.2, vein.b * 3.0 + 0.5))
+	if _custom:
+		# 自己的模型有真贴图：流光和边缘光淡一点，不要把贴图盖住
+		holy.set_shader_parameter("strength", 0.6)
+		holy.set_shader_parameter("vein_color", Color(vein.r * 0.8, vein.g * 0.8, vein.b * 0.8))
 	for mi: MeshInstance3D in model.find_children("*", "MeshInstance3D", true, false):
 		if mi.mesh == null:
 			continue
@@ -214,12 +223,14 @@ func _decorate() -> void:
 				continue
 			var m := (base as BaseMaterial3D).duplicate() as BaseMaterial3D
 			var a := m.albedo_color
-			m.albedo_color = Color(a.r * 0.72, a.g * 0.7, a.b * 0.74, a.a)
-			m.roughness = 0.42
-			m.metallic_specular = 0.75
-			m.rim_enabled = true
-			m.rim = 0.7
-			m.rim_tint = 0.4
+			if not _custom:
+				m.albedo_color = Color(a.r * 0.72, a.g * 0.7, a.b * 0.74, a.a)
+				m.roughness = 0.42
+			if not _custom:
+				m.metallic_specular = 0.75
+				m.rim_enabled = true
+				m.rim = 0.7
+				m.rim_tint = 0.4
 			m.next_pass = holy
 			mi.set_surface_override_material(i, m)
 	var c := _box.get_center()
@@ -252,8 +263,8 @@ func _decorate() -> void:
 		var a := TAU * k / 16.0
 		var ln := hr * (0.5 if k % 2 == 0 else 0.3)
 		U.part(_halo, U.box(Vector3(0.08, ln, 0.04)), gold, Vector3(cos(a), sin(a), 0) * (hr + ln * 0.5 + 0.2), Vector3(0, 0, a - PI / 2), Vector3.ONE, false)
-	# 眼睛
-	for side in [-1.0, 1.0]:
+	# 眼睛（只给自带的模型加；自己的模型眼睛位置不知道，别乱挂两个光球）
+	for side in ([] if _custom else [-1.0, 1.0]):
 		var e := U.part(head, U.sphere(_weak_r * 0.14, 8, 6), U.glow(Color(1.0, 0.9, 0.5), 10.0), _weak_pos + Vector3(side * _weak_r * 0.35, _weak_r * 0.15, -_weak_r * 0.75), Vector3.ZERO, Vector3.ONE, false)
 		e.name = "Eye"
 	var el := OmniLight3D.new()
@@ -296,6 +307,7 @@ func _decorate() -> void:
 	pm.shader = Shader.new()
 	pm.shader.code = PILLAR_SHADER
 	pm.set_shader_parameter("color", theme)
+	pm.set_shader_parameter("alpha", 0.07 if _custom else 0.12)
 	_pillar.material_override = pm
 	_pillar.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_pillar.top_level = true
@@ -320,6 +332,7 @@ func take_hit(dmg: float, weak: bool, shooter: int) -> float:
 		return 0.0
 	var real := dmg * (1.7 if weak else 0.6) * (_mark_mult if _mark_t > 0.0 else 1.0)
 	hp -= real
+	_since_hit = 0.0
 	damagers[shooter] = float(damagers.get(shooter, 0.0)) + real
 	if hp <= max_hp * 0.5 and phase == 1:
 		phase = 2
@@ -452,11 +465,13 @@ func _pick_target() -> Dictionary:
 
 func _think(dt: float) -> void:
 	state_t += dt
+	_since_hit += dt
 	_mark_t = maxf(_mark_t - dt, 0.0)
 	if _targets().is_empty():
-		# 没人可打：脱战，慢慢回血（打死人以后复活回来不会一直被追着打）
+		# 没人可打：脱战，慢慢回血（打死人以后复活回来不会一直被追着打）。
+		# 远处还有人在打它（狙击）就不算脱战，不回血
 		_no_target_t += dt
-		if _no_target_t > 8.0:
+		if _no_target_t > 8.0 and _since_hit > 15.0:
 			hp = minf(hp + max_hp * 0.015 * dt, max_hp)
 		if state in ["idle"]:
 			_atk_cd = maxf(_atk_cd, 2.0)
@@ -559,6 +574,9 @@ func _ultimate() -> void:
 		safes.append(c)
 	world.boss_ultimate(c, 32.0, safes, 4.0, 70.0)
 	BeastModels.play_role(model, "attack")
+	# 放大招的这几秒不出别的招：躲进绿圈就一定安全
+	_sp_cd = 6.5
+	_atk_cd = maxf(_atk_cd, 5.5)
 
 
 func _summon_tick(dt: float) -> void:

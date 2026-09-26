@@ -262,6 +262,10 @@ func _item_row(id: String) -> void:
 	var d := UiKit.label(str(it["desc"]), 15, UiKit.MIST)
 	d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	v.add_child(d)
+	var need_ch := int(it.get("ch", 1))
+	if maxi(int(Profile.max_chapter), int(world.chapter)) < need_ch:
+		h.add_child(UiKit.label("第%s章开放" % Data.RING_NAMES[need_ch - 1], 18, UiKit.MIST))
+		return
 	var price := Data.item_price(id)
 	var b := UiKit.button("%d 金魂币" % price, 18, true)
 	b.disabled = Profile.money < price

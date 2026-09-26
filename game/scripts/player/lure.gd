@@ -1,7 +1,7 @@
 class_name Lure
 extends Node3D
-## 引魂索：按住 E 蓄力、松开甩出去；魂兽咬住时再按 E 把它拽上天。
-## 千年魂兽要按住 E 拉扯几秒，拉力太大（红色）要松一下，不然索会断。
+## 引魂索：按住 G（或鼠标中键）蓄力、松开甩出去；魂兽咬住时再按 G 把它拽上天。
+## 千年魂兽要按住 G 拉扯几秒，拉力太大（红色）要松一下，不然索会断。
 ##
 ## 本地玩家：自己算状态。其他玩家：只按同步过来的 state/pos 显示。
 
@@ -113,7 +113,7 @@ func update_local(dt: float, pressed: bool, just_pressed: bool, just_released: b
 					reel_progress = 0.0
 					reel_tension = 0.25
 					_struggle_timer = 0.5
-					hint.emit("千年魂兽！按住 E 拉，拉力变红就松一下", Color(0.75, 0.5, 1.0))
+					hint.emit("千年魂兽！按住 G 拉，拉力变红就松一下", Color(0.75, 0.5, 1.0))
 					Sfx.play("yank", -4.0, 0.05, 0.8)
 				else:
 					_yank()
@@ -182,7 +182,7 @@ func _land(p: Vector3, water: bool) -> void:
 		world.fx.dirt_puff(p)
 		Sfx.play_at("thud", p, -6.0)
 	if habitat == "":
-		hint.emit("这里没有魂兽。看路牌，抛到水里或魂兽的窝附近（按 E 收回）", Color(0.9, 0.9, 0.9))
+		hint.emit("这里没有魂兽。看路牌，抛到水里或魂兽的窝附近（按 G 收回）", Color(0.9, 0.9, 0.9))
 	else:
 		_schedule_bite()
 
@@ -206,6 +206,12 @@ func _schedule_bite() -> void:
 		# 鱼饵决定钓上来什么：青草饵基本只有十年，魂晶饵千年多……
 		bait = world.player.current_bait() if not remote else "grass"
 		age = Data.roll_age_bait(rng, world.chapter, bait)
+		# 卡在瓶颈、年份不够：魂环会"感应"同年份的魂兽，钓到它的机会大很多（不然第六环要的万年魂兽根本找不到）
+		if not remote and Profile.at_bottleneck() and Profile.rings.size() < Data.MAX_RINGS:
+			var need := int(Data.RING_MIN_AGE[Profile.rings.size()])
+			if age < need and rng.randf() < 0.3:
+				age = need
+				hint.emit("魂环感应：%s魂兽咬钩了！" % Data.age_name(need), Data.AGES[need]["glow"])
 
 
 func _bite() -> void:

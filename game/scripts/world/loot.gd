@@ -233,8 +233,10 @@ func _process(dt: float) -> void:
 			it["pending"] = 1.5
 			Net.send_host("gitake", [iid])
 	if Net.is_host():
+		_host_flock(dt)
 		_host_gulls()
 	_update_gulls(dt)
+	_update_flock(dt)
 
 
 func _sim(it: Dictionary, dt: float) -> void:
@@ -372,8 +374,14 @@ func _host_gulls() -> void:
 		if near:
 			continue
 		it["taken"] = true
-		Net.send(0, "gull", [iid])
-		gull_steal(iid)
+		# 天上那群海鸥里挑一只空着嘴的飞下来叼；都叼着东西就从远处飞来一只
+		var gid := _free_flock_gull(it["pos"])
+		if gid >= 0:
+			Net.send(0, "gdive", [gid, iid])
+			flock_dive(gid, iid)
+		else:
+			Net.send(0, "gull", [iid])
+			gull_steal(iid)
 
 
 ## 海鸥飞下来叼走地上的东西
@@ -504,6 +512,12 @@ func on_message(from: int, type: String, data: Variant) -> void:
 				_host_gull_hit(int(data[0]), from)
 		"gulldown":
 			_on_gull_down(data)
+		"gdive":
+			flock_dive(int(data[0]), int(data[1]))
+		"gflock":
+			for e in data:
+				if not _flock.has(int(e[0])):
+					_add_flock_gull(e)
 
 
 func _find_gull(gid: int) -> Dictionary:
@@ -514,6 +528,9 @@ func _find_gull(gid: int) -> Dictionary:
 
 
 func _host_gull_hit(gid: int, from: int) -> void:
+	if _flock.has(gid):
+		_host_flock_hit(gid, from)
+		return
 	var gl := _find_gull(gid)
 	if gl.is_empty():
 		return
@@ -529,6 +546,9 @@ func _host_gull_hit(gid: int, from: int) -> void:
 
 
 func _on_gull_down(msg: Array) -> void:
+	if _flock.has(int(msg[0])):
+		_on_flock_down(msg)
+		return
 	var gl := _find_gull(int(msg[0]))
 	var killer := int(msg[1])
 	if gl.is_empty():
@@ -560,3 +580,212 @@ func init_list() -> Array:
 		if not it["taken"]:
 			out.append([iid, it["kind"], it["key"], it["n"], it["owner"], it["pos"], Vector3.ZERO, 0])
 	return out
+
+
+# ------------------------------------------------------------------ 海鸥群：固定几只在天上盘旋（像 How to Fish）
+# 地上放久了的东西会被其中一只俯冲叼走，叼着一直在天上飞，打下来东西就掉回地上；
+# 打下来还掉金魂币（越远越多，狙击很爽），40 秒后补一只。
+
+const FLOCK_N := 7
+const FLOCK_RESPAWN := 40.0
+var _flock := {}              # gid -> {c, r, h, a0, w, t, node, state, st_t, from, dive, cargo, item, dead, vy}
+var _flock_next := 100000
+var _flock_wait := 0.0
+var _flock_sync_t := 0.0
+
+
+func _host_flock(dt: float) -> void:
+	if Data.autotest:
+		return
+	var alive := 0
+	for gid in _flock:
+		if not _flock[gid]["dead"]:
+			alive += 1
+	if alive < FLOCK_N:
+		_flock_wait -= dt
+		if _flock_wait <= 0.0:
+			_flock_wait = FLOCK_RESPAWN if alive > 0 else 0.5
+			var a := randf() * TAU
+			var r := randf_range(30.0, 110.0)
+			var e := [_flock_next, Vector3(cos(a) * r * 0.5, 0, sin(a) * r * 0.5), randf_range(18.0, 40.0), randf_range(24.0, 36.0), randf() * TAU, randf_range(0.18, 0.32) * (1.0 if randf() < 0.5 else -1.0), 0.0]
+			_flock_next += 1
+			Net.send(0, "gflock", [e])
+			_add_flock_gull(e)
+	# 定时把整群发一遍（后进来的队友也看得到）
+	_flock_sync_t -= dt
+	if _flock_sync_t <= 0.0:
+		_flock_sync_t = 15.0
+		var all: Array = []
+		for gid in _flock:
+			var g: Dictionary = _flock[gid]
+			if not g["dead"]:
+				all.append([gid, g["c"], g["r"], g["h"], g["a0"], g["w"], g["t"]])
+		if not all.is_empty():
+			Net.send(0, "gflock", all)
+
+
+func _add_flock_gull(e: Array) -> void:
+	var gid := int(e[0])
+	var n := BeastModels.instance_model({"model": "pigeon", "fit": "w", "size": 1.9, "tint": Color(1.3, 1.3, 1.35)})
+	add_child(n)
+	BeastModels.play_role(n, "run")
+	var sb := StaticBody3D.new()
+	sb.collision_layer = U.LAYER_BEAST
+	sb.collision_mask = 0
+	sb.set_meta("gull", gid)
+	var cs := CollisionShape3D.new()
+	var sh := SphereShape3D.new()
+	sh.radius = 1.0
+	cs.shape = sh
+	sb.add_child(cs)
+	n.add_child(sb)
+	_flock[gid] = {"c": e[1], "r": float(e[2]), "h": float(e[3]), "a0": float(e[4]), "w": float(e[5]), "t": float(e[6]),
+		"node": n, "state": "circle", "st_t": 0.0, "from": Vector3.ZERO, "dive": Vector3.ZERO, "cargo": null, "item": [], "dead": false, "vy": 0.0}
+	_flock_wait = maxf(_flock_wait, 0.0)
+
+
+func _circle_pos(g: Dictionary) -> Vector3:
+	var t: float = g["t"]
+	var a := float(g["a0"]) + float(g["w"]) * t
+	var c: Vector3 = g["c"]
+	return Vector3(c.x + cos(a) * float(g["r"]), Island.WATER_Y + float(g["h"]) + sin(t * 0.7 + float(g["a0"])) * 2.0, c.z + sin(a) * float(g["r"]))
+
+
+## 房主：找一只嘴里没东西、在盘旋的，离得最近的
+func _free_flock_gull(pos: Vector3) -> int:
+	var best := -1
+	var bd := INF
+	for gid in _flock:
+		var g: Dictionary = _flock[gid]
+		if g["dead"] or g["state"] != "circle" or not (g["item"] as Array).is_empty():
+			continue
+		var d := _circle_pos(g).distance_to(pos)
+		if d < bd:
+			bd = d
+			best = int(gid)
+	return best
+
+
+## 一只俯冲下来叼走地上的东西，然后回到天上接着转（东西一直叼着）
+func flock_dive(gid: int, iid: int) -> void:
+	if not _flock.has(gid) or not items.has(iid):
+		return
+	var g: Dictionary = _flock[gid]
+	var it: Dictionary = items[iid]
+	it["taken"] = true
+	g["item"] = [it["kind"], it["key"], it["n"], it["owner"]]
+	g["state"] = "dive"
+	g["st_t"] = 0.0
+	g["from"] = _circle_pos(g)
+	g["dive"] = it["pos"]
+	g["cargo"] = it["node"]
+	_on_gone([iid, 0, 2])
+	world.hud.feed("海鸥叼走了 %s（把它打下来就能拿回来）" % Data.item_name(str(it["kind"]), str(it["key"])), Color(0.8, 0.85, 0.9))
+	Sfx.play_at("gull_cry", it["pos"] + Vector3(0, 10, 0), 2.0, 0.1)
+
+
+func _update_flock(dt: float) -> void:
+	for gid in _flock.keys():
+		var g: Dictionary = _flock[gid]
+		var n: Node3D = g["node"]
+		if g["dead"]:
+			g["vy"] = float(g["vy"]) - 14.0 * dt
+			g["st_t"] = float(g["st_t"]) + dt
+			if is_instance_valid(n):
+				n.global_position += Vector3(0, float(g["vy"]) * dt, 0)
+				n.rotation.z += dt * 9.0
+				var gy: float = world.island.height_at(n.global_position.x, n.global_position.z)
+				if n.global_position.y < maxf(gy, Island.WATER_Y) or float(g["st_t"]) > 4.0:
+					world.fx.poof(n.global_position)
+					n.queue_free()
+					_flock.erase(gid)
+			else:
+				_flock.erase(gid)
+			continue
+		g["t"] = float(g["t"]) + dt
+		var p := _circle_pos(g)
+		match str(g["state"]):
+			"dive":
+				g["st_t"] = float(g["st_t"]) + dt
+				var k := minf(float(g["st_t"]) / 1.6, 1.0)
+				k = 1.0 - (1.0 - k) * (1.0 - k)
+				p = (g["from"] as Vector3).lerp((g["dive"] as Vector3) + Vector3(0, 1.3, 0), k)
+				if float(g["st_t"]) >= 1.6:
+					g["state"] = "rise"
+					g["st_t"] = 0.0
+					g["from"] = p
+					world.fx.poof(g["dive"])
+					Sfx.play_at("gull_cry", p, 0.0, 0.1, 1.15)
+			"rise":
+				g["st_t"] = float(g["st_t"]) + dt
+				var k2 := minf(float(g["st_t"]) / 3.0, 1.0)
+				p = (g["from"] as Vector3).lerp(p, k2 * k2 * (3.0 - 2.0 * k2))
+				if k2 >= 1.0:
+					g["state"] = "circle"
+		if is_instance_valid(n):
+			var vel := p - n.global_position
+			n.global_position = p
+			if Vector3(vel.x, 0, vel.z).length() > 0.005:
+				n.look_at(p + Vector3(vel.x, 0, vel.z), Vector3.UP)
+			var cargo: Variant = g["cargo"]
+			if cargo != null and is_instance_valid(cargo):
+				(cargo as Node3D).global_position = p + Vector3(0, -0.6, 0)
+		if randf() < dt * 0.04:
+			Sfx.play_at("gull_cry", p, -6.0, 0.15)
+
+
+func _host_flock_hit(gid: int, from: int) -> void:
+	var g: Dictionary = _flock[gid]
+	if g["dead"]:
+		return
+	var n: Node3D = g["node"]
+	var pos: Vector3 = n.global_position if is_instance_valid(n) else _circle_pos(g)
+	var msg := [gid, from, pos]
+	Net.send(0, "gulldown", msg)
+	_on_flock_down(msg)
+	# 叼着的东西掉回地上；另外掉一块烤肉
+	var land := pos
+	if (g["item"] as Array).size() >= 4:
+		var it: Array = g["item"]
+		spawn(str(it[0]), str(it[1]), int(it[2]), int(it[3]), land, Vector3(randf_range(-1, 1), -1.0, randf_range(-1, 1)))
+	if randf() < 0.5:
+		spawn("item", "meat", 1, 0, land, Vector3(randf_range(-1.5, 1.5), -1.0, randf_range(-1.5, 1.5)))
+	_flock_wait = maxf(_flock_wait, FLOCK_RESPAWN)
+
+
+func _on_flock_down(msg: Array) -> void:
+	var gid := int(msg[0])
+	var g: Dictionary = _flock[gid]
+	if g["dead"]:
+		return
+	g["dead"] = true
+	g["st_t"] = 0.0
+	g["vy"] = 2.0
+	var n: Node3D = g["node"]
+	if is_instance_valid(n):
+		for sb in n.find_children("*", "StaticBody3D", true, false):
+			(sb as StaticBody3D).collision_layer = 0
+		world.fx.impact_beast(n.global_position, Vector3.UP, Color(1, 1, 1), true)
+		world.fx._burst(n.global_position, Vector3.UP, Color(1, 1, 1, 0.9), 26, 4.0, 1.4, 1.6, false, -2.0, 180.0)
+	var cargo: Variant = g["cargo"]
+	if cargo != null and is_instance_valid(cargo):
+		(cargo as Node).queue_free()
+	g["cargo"] = null
+	Sfx.play_at("gull_cry", msg[2], 2.0, 0.1, 1.5)
+	var killer := int(msg[1])
+	world.hud.feed("%s 打下了海鸥！" % world.peer_name(killer), Color(0.85, 0.95, 1.0))
+	if killer == Net.my_id:
+		# 越远越值钱：60 米外 ×2，120 米外 ×3，200 米外 ×5
+		var dist: float = world.player.global_position.distance_to(msg[2])
+		var k := 1.0
+		if dist > 200.0:
+			k = 5.0
+		elif dist > 120.0:
+			k = 3.0
+		elif dist > 60.0:
+			k = 2.0
+		var money := int(float(Data.CH_MONEY.get(world.chapter, 12.0)) * 1.5 * k)
+		Profile.add_money(money)
+		Profile.count("gulls")
+		world.hud.toast("打下了海鸥 · %d 米%s  +%d 金魂币" % [int(dist), ("  远距离 ×%d" % int(k)) if k > 1.0 else "", money], UiKit.GOLD, 2.5)
+		Sfx.play("coin", -2.0)

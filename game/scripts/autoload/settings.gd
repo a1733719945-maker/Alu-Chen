@@ -21,6 +21,7 @@ var max_fps := 0                   # 0 = 不限
 var server_url := DEFAULT_SERVER
 var show_fps := false
 var quality := 2                   # 画质：0 低 / 1 中 / 2 高（草和植被密度下次进地图生效）
+var save_slot := 1                # 用哪个存档位（1~3）
 var scope_zoom := 6.0              # 狙击镜倍率（开镜时滚轮调，4~12 倍，记住上次的）
 
 
@@ -51,6 +52,8 @@ func _register_inputs() -> void:
 		"bait": [KEY_B],
 		"map": [KEY_M],
 		"wuhun_panel": [KEY_K],
+		"holster": [KEY_X],
+		"inspect": [KEY_V],
 		"achievements": [KEY_J],
 		"weapon_1": [KEY_1],
 		"weapon_2": [KEY_2],
@@ -98,6 +101,7 @@ func load_settings() -> void:
 		return
 	player_name = cfg.get_value("player", "name", player_name)
 	wuhun = int(cfg.get_value("player", "wuhun", wuhun))
+	save_slot = clampi(int(cfg.get_value("player", "slot", save_slot)), 1, 3)
 	sensitivity = float(cfg.get_value("input", "sensitivity", sensitivity))
 	scope_zoom = clampf(float(cfg.get_value("input", "scope_zoom", scope_zoom)), 4.0, 12.0)
 	ads_sensitivity = float(cfg.get_value("input", "ads_sensitivity", ads_sensitivity))
@@ -117,6 +121,7 @@ func save_settings() -> void:
 	var cfg := ConfigFile.new()
 	cfg.set_value("player", "name", player_name)
 	cfg.set_value("player", "wuhun", wuhun)
+	cfg.set_value("player", "slot", save_slot)
 	cfg.set_value("input", "sensitivity", sensitivity)
 	cfg.set_value("input", "scope_zoom", scope_zoom)
 	cfg.set_value("input", "ads_sensitivity", ads_sensitivity)

@@ -217,6 +217,10 @@ func _process(dt: float) -> void:
 			_run_boss()
 		"boat":
 			_run_boat()
+		"events":
+			_run_events()
+		"bossshot":
+			_run_bossshot()
 		"tour", "tour1", "tour2":
 			_run_tour()
 		"host":
@@ -597,7 +601,7 @@ func _run_shop() -> void:
 			w.hud._shop._tab = "attach"
 			w.hud._shop.refresh()
 			_note("买了 4 把暗器和 2 个升级，花了 %d 金魂币" % (before - Profile.money))
-			if not _check(p.guns.size() == 5, "暗器数量不对：%d" % p.guns.size()):
+			if not _check(p.guns.size() == 6, "暗器数量不对（5 把 + 空手）：%d" % p.guns.size()):
 				return
 			var dmg := float(Profile.weapon_stats("zhuge")["damage"])
 			if not _check(dmg > float(Data.WEAPONS["zhuge"]["damage"]), "伤害升级没生效"):
@@ -941,6 +945,82 @@ func _run_boss() -> void:
 					_shot("boss_defeated")
 					return
 				_next_phase()
+
+
+## 只看 Boss 长什么样（换了自定义模型以后用）：召唤出来，站在岸边看着它拍几张
+func _run_bossshot() -> void:
+	var w := _ready_world()
+	if not w:
+		return
+	var p := w.player
+	match _step:
+		0:
+			w._host_spawn_boss()
+			_next(1)
+		1:
+			if _step_t < 4.0 or not w.boss:
+				return
+			var c := w.boss.center()
+			var dir := Vector3(-c.x, 0, -c.z).normalized()
+			var st := Vector3(c.x, 0, c.z)
+			for i in 200:
+				st += dir
+				if w.island.is_land(st.x, st.z):
+					break
+			st += dir * 3.0
+			st.y = w.island.height_at(st.x, st.z) + 0.3
+			p.teleport(st)
+			p.hp = 99999.0
+			_aim(p, c)
+			_next(2)
+		2:
+			p.hp = 99999.0
+			if w.boss:
+				_aim(p, w.boss.center())
+			if _step_t > 1.5 and not _mem.has("b1"):
+				_mem["b1"] = true
+				await _shot("boss_a")
+			elif _step_t > 4.0 and not _mem.has("b2"):
+				_mem["b2"] = true
+				await _shot("boss_b")
+			elif _step_t > 7.0 and not _mem.has("b3"):
+				_mem["b3"] = true
+				await _shot("boss_c")
+			elif _step_t > 8.0:
+				_next_phase()
+
+
+## 奇遇 + 海鸥群 + 魂兽独门招式（平时自动测试里关着，这里专门跑一遍）
+func _run_events() -> void:
+	var w := _ready_world()
+	if not w:
+		return
+	var p := w.player
+	match _step:
+		0:
+			for k in 3:
+				w.loot._add_flock_gull([900 + k, Vector3.ZERO, 30.0 + k * 10.0, 28.0, k * 2.0, 0.25, 0.0])
+			w._on_tide([w.chapter])
+			var ev: Dictionary = Data.CH_EVENTS[w.chapter]
+			w._host_tide_spawn(ev)
+			w._host_tide_king(ev)
+			# 一只凶暴的魂兽放独门招式
+			var b := w._host_spawn(1, p.global_position + Vector3(4, 0.5, 0), "bird", 0, p.global_position, "fierce", "grass")
+			if b:
+				b._sk_cd = 0.0
+			_next(1)
+		1:
+			if _step_t < 4.0:
+				return
+			w.loot._host_flock_hit(900, Net.my_id)
+			_next(2)
+		2:
+			if _step_t < 1.0:
+				return
+			if not _check(not w.loot._flock.has(900) or w.loot._flock[900]["dead"], "海鸥打不下来"):
+				return
+			_note("奇遇、王、海鸥群、魂兽招式都跑过了，没有报错")
+			_next_phase()
 
 
 func _run_boat() -> void:

@@ -28,8 +28,8 @@ const JUMP_VELOCITY := 7.8
 const COYOTE_TIME := 0.1
 const JUMP_BUFFER := 0.12
 const FIRE_BUFFER := 0.09
-const REGEN_DELAY := 4.0
-const REGEN_RATE := 8.0
+const REGEN_DELAY := 6.0
+const REGEN_RATE := 5.0
 const BREATH := 10.0             # 水下憋气秒数（魂骨能加）
 const SWIM_SPEED := 3.4
 const DROWN_DPS := 12.0
@@ -110,7 +110,7 @@ var _cs: CollisionShape3D
 var lost_guns: Array = []
 var borrowed := {}
 # 物品栏（数字键）：1 主暗器（再按 1 换别的主暗器）/ 2 袖箭 / 3 佛怒唐莲 / 4 回血丹 / 5 没装上的魂骨
-const SLOT_NAMES := ["主暗器", "袖箭", "佛怒唐莲", "回血丹", "魂骨"]
+const SLOT_NAMES := ["主暗器", "袖箭", "佛怒唐莲", "回血丹 / 烤肉", "魂骨"]
 var slot := 1
 var _last_gun_slot := 1
 var _spare_idx := 0
@@ -185,8 +185,7 @@ func rebuild_guns() -> void:
 	guns.clear()
 	# 暗器都是存档里真有的；没有袖箭就用空手（一把都没有也是空手）
 	var ids: Array = Profile.loadout.duplicate()
-	if not "xiujian" in ids:
-		ids.append("fist")
+	ids.append("fist")     # 空手一直都在：按 X 收起暗器，跑得快
 	for id in ids:
 		var stats := Profile.weapon_stats(id)
 		if old.has(id):
@@ -237,7 +236,7 @@ func buff(stat: String) -> float:
 
 
 func damage_mult() -> float:
-	return (1.0 + buff("dmg")) * (1.0 + giant_k * 0.2) * Data.level_damage(Profile.level)
+	return (1.0 + buff("dmg")) * (1.0 + giant_k * 0.2) * Data.level_damage(Profile.level) * Profile.rebirth_power()
 
 
 ## 魂兽和 Boss 不打你：刚复活、隐身、被海鸥叼着
@@ -500,6 +499,8 @@ func _physics_process(dt: float) -> void:
 		max_speed = CROUCH_SPEED
 	max_speed *= lerpf(1.0, float(gun.d["ads_move"]), ads)
 	max_speed *= 1.0 + buff("speed") + Profile.bone_bonus("speed") + giant_k * 0.25
+	if slot < 2:
+		max_speed *= float(Data.MOVE_K.get(gun.id, 1.0))
 	max_speed = maxf(max_speed, 1.0)
 	_update_status(dt)
 	if slow_t > 0.0:
@@ -863,13 +864,23 @@ func _update_weapons(dt: float) -> void:
 	if want_ads and ads <= 0.0:
 		Sfx.play("ads_in", -6.0, 0.05)
 	ads = move_toward(ads, 1.0 if want_ads else 0.0, dt / float(gun.d["ads_time"]))
-	scoped = bool(gun.d.get("scope", false)) and ads > 0.92
+	scoped = bool(gun.d.get("scope", false)) and ads > 0.6
 
 	if not active:
 		return
 	for i in 5:
 		if Input.is_action_just_pressed("weapon_%d" % (i + 1)):
 			select_slot(i)
+	if Input.is_action_just_pressed("holster"):
+		# X：收起暗器空手跑（快），再按一下拿回刚才的暗器
+		if gun.id == "fist":
+			var back := _gun_index(_holster_from)
+			switch_weapon(back if back >= 0 else 0)
+		else:
+			_holster_from = gun.id
+			switch_weapon(_gun_index("fist"))
+	if Input.is_action_just_pressed("inspect") and slot < 2 and gun.id != "fist":
+		viewmodel.inspect()
 	if scoped and bool(gun.d.get("variable", false)):
 		# 狙击镜开着：滚轮调倍率（往上放大），松开右键再开镜还是这个倍率
 		var z := Settings.scope_zoom
@@ -924,6 +935,9 @@ func switch_weapon(i: int) -> void:
 	if i < 0 or i >= guns.size() or (i == gun_idx and slot < 2):
 		return
 	gun.cancel_reload()
+	# 切枪取消拉栓（狙完马上切走再切回来，栓已经拉好了）
+	if gun.cycling > 0.0:
+		gun.cycling = 0.0
 	gun_idx = i
 	gun = guns[i]
 	slot = 1 if gun.id in ["xiujian", "fist"] else 0
@@ -949,6 +963,7 @@ func primaries() -> Array:
 
 ## 出拳：左右手轮流，打中前面 3 米内的魂兽（能把小魂兽揍飞），伤害跟等级涨
 var _punch_side := 1.0
+var _holster_from := "xiujian"
 
 
 func _melee() -> void:

@@ -3,7 +3,7 @@ extends CanvasLayer
 ## 游戏内界面。
 ##   左上：金魂币、任务追踪          上中：Boss 血条、提示        右上：击杀信息
 ##   左下：体力 / 护盾 / 魂力 / 修为、道具
-##   下中：当前魂技（轻按 Q 放，按住 Q 弹出魂技轮盘）、引魂索提示、交互提示
+##   下中：三个魂技槽（Q / E / F）、引魂索提示、交互提示
 ##   右下：暗器、弹药、暗器栏
 ##   准星、命中标记、击杀奖励、任务目标标记、狙击镜、受伤红屏、倒地倒计时
 ##   面板：暂停、暗器铺、武魂（K）、魂技二选一、魂师榜（Tab）
@@ -434,7 +434,11 @@ func _update_hotbar(p: Player) -> void:
 			2:
 				nm = "唐莲×%d" % Profile.item_count("grenade") if Profile.item_count("grenade") > 0 else ""
 			3:
-				nm = "回血丹×%d" % Profile.item_count("pill") if Profile.item_count("pill") > 0 else ""
+				# 4 号位：手上拿的是烤肉就显示烤肉
+				var k4 := str(p._slot4)
+				if Profile.item_count(k4) <= 0:
+					k4 = "pill" if Profile.item_count("pill") > 0 else "meat"
+				nm = ("%s×%d" % ["烤肉" if k4 == "meat" else "回血丹", Profile.item_count(k4)]) if Profile.item_count(k4) > 0 else ""
 			4:
 				nm = "魂骨×%d" % p.spare_bones().size() if not p.spare_bones().is_empty() else ""
 		if nm == "":
@@ -926,7 +930,7 @@ func _build_pause() -> void:
 	var quit := UiKit.button("返回主菜单", 22)
 	quit.pressed.connect(func(): world.leave())
 	_pause_menu.add_child(quit)
-	var keys := UiKit.label("WASD 移动 · 空格 跳 · Shift 冲刺（开镜时屏息）· Ctrl 蹲 / 轻点翻滚\n左键 射击 / 出拳 · 右键 瞄准 · R 换弹 · 1-5 / 滚轮 物品栏\nQ / E / F 三个魂技（K 面板里换）· F 也是交互，按住 F 救队友\nG 或鼠标中键 引魂索 · B 换鱼饵 · T 丢出手上的东西 · H 回血丹\nK 武魂和魂骨 · J 成就 · M 地图 · Tab 魂师榜", 15, UiKit.MIST)
+	var keys := UiKit.label("WASD 移动 · 空格 跳 · Shift 冲刺（开镜时屏息）· Ctrl 蹲 / 轻点翻滚\n左键 射击 / 出拳 · 右键 瞄准 · R 换弹 · 1-5 / 滚轮 物品栏 · X 收起暗器（跑得快）· V 检视暗器\nQ / E / F 三个魂技（K 面板里换）· F 也是交互，按住 F 救队友\nG 或鼠标中键 引魂索 · B 换鱼饵 · T 丢出手上的东西 · H 回血丹\nK 武魂和魂骨 · J 成就 · M 地图 · Tab 魂师榜", 15, UiKit.MIST)
 	_pause_menu.add_child(keys)
 	_settings = SettingsPanel.new()
 	_settings.visible = false
@@ -1344,7 +1348,7 @@ func _process(dt: float) -> void:
 	if p.scoped:
 		_scope.kind = "scope" if bool(p.gun.d.get("variable", false)) else "x2"
 		_scope.zoom = Settings.scope_zoom if bool(p.gun.d.get("variable", false)) else float(p.gun.d.get("zoom", 2.0))
-		_scope.fade = clampf((p.ads - 0.92) / 0.08, 0.0, 1.0)
+		_scope.fade = clampf((p.ads - 0.6) / 0.15, 0.0, 1.0)
 	crosshair.visible = not p.scoped and (p.ads < 0.7 or p.gun.d["mode"] == "melee")
 
 	var it: Dictionary = world.nearest_interactable() if not p.dead else {}
@@ -1434,17 +1438,17 @@ func _update_lure_ui(p: Player) -> void:
 			_prompt.add_theme_font_size_override("font_size", 20)
 			_prompt.modulate = Color(1, 1, 1, 0.8)
 			if lure.habitat == "":
-				_prompt.text = "这里没有魂兽 · 按 E 收回"
+				_prompt.text = "这里没有魂兽 · 按 G 收回"
 			else:
-				_prompt.text = "等魂兽咬住…（%s）· 按 E 收回" % Data.HABITATS[lure.habitat]["name"]
+				_prompt.text = "等魂兽咬住…（%s）· 按 G 收回" % Data.HABITATS[lure.habitat]["name"]
 		Lure.S.BITE:
-			_prompt.text = "咬住了！按 E 拽！"
+			_prompt.text = "咬住了！按 G 拽！"
 			_prompt.add_theme_font_size_override("font_size", 34)
 			var flash := 0.75 + 0.25 * sin(t * 25.0)
 			var c := Data.age_color(lure.age) if lure.age > 0 else Color(1.0, 0.9, 0.35)
 			_prompt.modulate = Color(c.r, c.g, c.b, flash)
 		Lure.S.REELING:
-			_prompt.text = "按住 E 拉！拉力变红就松开"
+			_prompt.text = "按住 G 拉！拉力变红就松开"
 			_prompt.add_theme_font_size_override("font_size", 26)
 			_prompt.modulate = Color(0.85, 0.65, 1.0)
 			_bar_box.visible = true
