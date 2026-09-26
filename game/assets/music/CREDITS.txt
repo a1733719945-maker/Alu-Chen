@@ -1,0 +1,4 @@
+﻿explore.ogg  <-  Freesound - Solemn Asian String Melody Loop (Wind, Water, Wood) by CVLTIV8R  https://freesound.org/s/840945/  (CC0)
+battle.ogg  <-  Freesound - Battle Music (Village) by Migfus20  https://freesound.org/s/683261/  (CC0)
+boss.ogg  <-  Freesound - Uplifting Dramatic Soundtrack - War Around Us by MusicByMisterbates  https://freesound.org/s/608811/  (CC0)
+event.ogg  <-  Freesound - Epic Heroic Soundtrack - Above The Sky by MusicByMisterbates  https://freesound.org/s/716385/  (CC0)
