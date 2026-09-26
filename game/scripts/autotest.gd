@@ -46,7 +46,7 @@ func _ready() -> void:
 		"solo":
 			main.start_solo()
 			_plan = ["phys", "hunt:burrow,meadow,flowers,water,reel", "shop", "recoil", "sniper", "ring", "boss", "boat", "hunt:den,swamp,mud", "boss", "boat",
-				"hunt:glade,roost,thicket,nest,bog", "boss", "boat",
+				"pond", "hunt:glade,roost,thicket,nest,bog", "boss", "boat",
 				"hunt:snowden,frostgrove,icefield,icecave,icelake", "boss", "boat",
 				"hunt:beach,cliff,reef,deep,abyss", "boss", "done"]
 		"shots":
@@ -201,6 +201,8 @@ func _process(dt: float) -> void:
 				_next_phase()
 		"hunt":
 			_run_hunt()
+		"pond":
+			_run_pond()
 		"phys":
 			_run_phys()
 		"hudshot":
@@ -287,6 +289,53 @@ func _run_hudshot() -> void:
 ## 1) 拽出来的魂兽：飞多高、多久落地
 ## 2) 空中一直用全自动打（只推不扣血）：最后一定会掉下来
 ## 3) 在最高点打死：尸体摔到地上再消失
+## 掉进水塘：只按 W 往岸边走（不按空格），每个水塘 4 个方向都要能自己走上岸
+func _run_pond() -> void:
+	var w := _ready_world()
+	if not w:
+		return
+	var p := w.player
+	var ponds: Array = w.island.ponds
+	var i: int = _mem.get("pond_i", 0)
+	var dir: int = _mem.get("pond_dir", 0)
+	if i >= ponds.size():
+		Input.action_release("move_forward")
+		_next_phase()
+		return
+	match _step:
+		0:
+			if _step_t < 0.5:
+				return
+			var c: Vector2 = ponds[i]["center"]
+			p.teleport(Vector3(c.x, Island.WATER_Y - 0.3, c.y))
+			p.yaw = TAU * dir / 4.0 + 0.4
+			p.pitch = 0.0
+			p.hp = Profile.max_hp()
+			_mem["pond_stuck"] = 0.0
+			Input.action_press("move_forward")
+			_next(1)
+		1:
+			p.pitch = 0.0
+			p.hp = Profile.max_hp()
+			var hv := Vector2(p.velocity.x, p.velocity.z).length()
+			# 撞到树之类的就稍微转一下
+			_mem["pond_stuck"] = float(_mem["pond_stuck"]) + get_process_delta_time() if hv < 0.5 else 0.0
+			if float(_mem["pond_stuck"]) > 1.5:
+				p.yaw += 0.6
+				_mem["pond_stuck"] = 0.0
+			if p.is_on_floor() and p.global_position.y > Island.WATER_Y + 1.0:
+				Input.action_release("move_forward")
+				_note("水塘 %d 方向 %d：%.1f 秒自己走上岸，到了 %s" % [i, dir, _step_t, p.global_position])
+				_mem["pond_dir"] = dir + 1
+				if dir + 1 >= 4:
+					_mem["pond_dir"] = 0
+					_mem["pond_i"] = i + 1
+				_next(0)
+			elif _step_t > 25.0:
+				Input.action_release("move_forward")
+				_fail("水塘 %d 方向 %d：25 秒没走上岸，卡在 %s（地面 %.1f，坡 %.2f）" % [i, dir, p.global_position, w.island.height_at(p.global_position.x, p.global_position.z), w.island.slope_at(p.global_position.x, p.global_position.z)])
+
+
 func _run_phys() -> void:
 	var w := _ready_world()
 	if not w:
