@@ -4,10 +4,10 @@ extends Node
 ##
 ## 放技能的人：扣魂力、算目标、处理自己身上的效果（增益、冲刺、跳跃），把"对魂兽的效果"发给房主。
 ## 房主：对魂兽 / Boss 生效（炸飞、定身、易伤、牵引、光束……），再广播特效。
-## 威力 = 魂环年份倍率（十年 1.0 / 百年 1.3 / 千年 1.7 / 万年 2.2）× (1 + 等级 × 1%)
+## 威力 = 魂环年份倍率（十年 1.0 / 百年 1.3 / 千年 1.7 / 万年 2.3 / 十万年 3.2）× (1 + 等级 × 2%)
 
 var world: Node
-var cooldowns := [0.0, 0.0, 0.0, 0.0, 0.0]
+var cooldowns := [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
 var current := 0                # 当前魂技是第几个魂环的
 var _leap := {}                  # 凤翼天翔 / 天使之翼 落地时触发
 var _projectiles: Array = []     # 本地模拟的飞弹 {sid, pos, vel, power, caster, life, mi}
@@ -22,7 +22,7 @@ func slot_skill(slot: int) -> String:
 
 func slot_power(slot: int) -> float:
 	var r: Dictionary = Profile.rings[slot]
-	return float(Data.AGES[int(r["age"])]["ring_power"]) * (1.0 + Profile.level * 0.01)
+	return float(Data.AGES[int(r["age"])]["ring_power"]) * (1.0 + Profile.level * 0.02)
 
 
 func _process(dt: float) -> void:
@@ -34,7 +34,28 @@ func _process(dt: float) -> void:
 		_update_rains(dt)
 
 
-# ------------------------------------------------------------------ 按类别放魂技（不用选）
+# ------------------------------------------------------------------ 魂技槽：Q / E / F 放的是哪个魂环的魂技（Profile.skill_slots，K 面板里换）
+
+func slot_ring(k: int) -> int:
+	if k < 0 or k >= Profile.skill_slots.size():
+		return -1
+	var r := int(Profile.skill_slots[k])
+	return r if r >= 0 and r < Profile.rings.size() else -1
+
+
+func cast_slot(k: int) -> void:
+	var r := slot_ring(k)
+	if r < 0:
+		if Profile.rings.is_empty():
+			world.hud.toast("还没有魂技。到 10 级瓶颈后吸收魂环就能获得", Color(0.9, 0.9, 0.9))
+		else:
+			world.hud.toast("这个魂技槽空着：按 K 打开武魂面板，把魂技装到 Q / E / F", Color(0.9, 0.9, 0.9))
+		return
+	current = r
+	cast(r)
+
+
+# ------------------------------------------------------------------ 按类别放魂技（旧版，留着兼容）
 # Q 攻击 / F 辅助 / 双击 Shift 位移。同一类有好几个：放冷却好、魂力够、魂环最高的那个，连按就轮着放
 const CATS := {
 	"attack": ["launch", "beam", "projectile", "rain", "root", "mark", "pull"],
@@ -94,6 +115,10 @@ func cast(slot: int) -> void:
 		world.hud.toast("还没有魂技。到 10 级瓶颈后吸收魂环就能获得", Color(0.9, 0.9, 0.9))
 		return
 	var s: Dictionary = Data.SKILLS[sid]
+	if p.silence_t > 0.0:
+		world.hud.toast("被电麻了，%.1f 秒内放不了魂技" % p.silence_t, Color(0.5, 0.8, 1.0), 1.0)
+		Sfx.play("dry", -8.0)
+		return
 	if cooldowns[slot] > 0.0:
 		Sfx.play("dry", -8.0)
 		return
@@ -266,7 +291,7 @@ func host_apply(sid: String, power: float, center: Vector3, dir: Vector3, caster
 	var s: Dictionary = Data.SKILLS.get(sid, {})
 	if s.is_empty():
 		return
-	power = clampf(power, 0.5, 3.0)
+	power = clampf(power, 0.5, 12.0)
 	var dmg := float(s.get("damage", 0.0)) * power
 	match str(s["type"]):
 		"launch":
@@ -319,7 +344,7 @@ func host_projectile_hit(sid: String, power: float, at: Vector3, caster: int) ->
 	var s: Dictionary = Data.SKILLS.get(sid, {})
 	if s.is_empty():
 		return
-	power = clampf(power, 0.5, 3.0)
+	power = clampf(power, 0.5, 12.0)
 	_launch(at, float(s["radius"]), float(s["damage"]) * power, float(s.get("impulse", 6.0)), caster, float(s.get("burn", 0.0)) * power)
 
 

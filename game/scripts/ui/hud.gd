@@ -50,6 +50,7 @@ var _sk_name: Label
 var _sk_sub: Label
 var _sk_pips: Array = []
 var _sk_shown := ""
+var _sk_boxes: Array = []
 var _wheel: Control
 var _wheel_items: Control
 var _wheel_name: Label
@@ -69,7 +70,7 @@ var _hurt_dirs: Array = []
 var _hurt_layer: Control
 var _death: ColorRect
 var _death_text: Label
-var _scope: Control
+var _scope: ScopeOverlay
 var _marker: Control
 var _absorb: Label
 var _absorb_t := 0.0
@@ -151,11 +152,12 @@ func _ready() -> void:
 	UiKit.place(_popup, Vector4(0.5, 0.5, 0.5, 0.5), Vector4(-320, 56, 320, 300))
 	_root.add_child(_popup)
 
-	_callout = UiKit.title("", 56, UiKit.GOLD)
+	# 放魂技时的招式名：在技能栏上方，不和屏幕中间的大字叠在一起
+	_callout = UiKit.title("", 40, UiKit.GOLD)
 	_callout.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_callout.add_theme_constant_override("outline_size", 12)
+	_callout.add_theme_constant_override("outline_size", 10)
 	_callout.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.7))
-	UiKit.place(_callout, Vector4(0.5, 0.5, 0.5, 0.5), Vector4(-500, -230, 500, -150))
+	UiKit.place(_callout, Vector4(0.5, 1, 0.5, 1), Vector4(-500, -250, 500, -195))
 	_root.add_child(_callout)
 
 	_banner = VBoxContainer.new()
@@ -309,6 +311,105 @@ func update_bounties() -> void:
 		_bounty.add_child(UiKit.label(world.bounty_text(b), 15, UiKit.MOON, 4))
 
 
+## 成就解锁：屏幕上方一条金色横幅
+func achievement(title: String, desc: String, reward: int) -> void:
+	var p := PanelContainer.new()
+	var st := StyleBoxFlat.new()
+	st.bg_color = Color(0.1, 0.07, 0.02, 0.85)
+	st.border_color = UiKit.GOLD
+	st.set_border_width_all(2)
+	st.set_corner_radius_all(6)
+	st.content_margin_left = 18
+	st.content_margin_right = 18
+	st.content_margin_top = 8
+	st.content_margin_bottom = 8
+	p.add_theme_stylebox_override("panel", st)
+	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var v := VBoxContainer.new()
+	p.add_child(v)
+	v.add_child(UiKit.bold("成就解锁 · %s" % title, 22, UiKit.GOLD, 6))
+	v.add_child(UiKit.label("%s    +%d 金魂币" % [desc, reward], 15, UiKit.MOON, 4))
+	# 放在左边悬赏下面，不和屏幕中间的大字叠在一起
+	UiKit.place(p, Vector4(0, 0, 0, 0), Vector4(24, 440, 560, 510))
+	_root.add_child(p)
+	p.modulate.a = 0.0
+	var tw := p.create_tween()
+	tw.tween_property(p, "modulate:a", 1.0, 0.25)
+	tw.tween_interval(3.5)
+	tw.tween_property(p, "modulate:a", 0.0, 0.6)
+	tw.tween_callback(p.queue_free)
+
+
+## 被月光蛾 / 彩鳞鱼晃瞎：全屏发白，慢慢褪掉
+func blind(dur: float, c: Color) -> void:
+	var r := ColorRect.new()
+	r.color = Color(c.r, c.g, c.b, 0.93)
+	r.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_root.add_child(r)
+	UiKit.fill(r)
+	var tw := r.create_tween()
+	tw.tween_interval(dur * 0.45)
+	tw.tween_property(r, "color:a", 0.0, dur * 0.55).set_ease(Tween.EASE_IN)
+	tw.tween_callback(r.queue_free)
+
+
+## 全屏闪一下（魂环突破）
+func flash(c: Color) -> void:
+	var r := ColorRect.new()
+	r.color = Color(c.r, c.g, c.b, 0.55)
+	r.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_root.add_child(r)
+	UiKit.fill(r)
+	var tw := r.create_tween()
+	tw.tween_property(r, "color:a", 0.0, 0.9).set_ease(Tween.EASE_OUT)
+	tw.tween_callback(r.queue_free)
+
+
+## 渡船：选目的地
+var _boat_picker: Control
+
+
+func open_boat_picker(dests: Array) -> void:
+	if _boat_picker and is_instance_valid(_boat_picker):
+		_boat_picker.queue_free()
+	var bg := ColorRect.new()
+	bg.color = Color(0, 0, 0, 0.5)
+	add_child(bg)
+	UiKit.fill(bg)
+	_boat_picker = bg
+	var c := CenterContainer.new()
+	bg.add_child(c)
+	UiKit.fill(c)
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", UiKit.panel_style())
+	c.add_child(panel)
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 10)
+	panel.add_child(v)
+	v.add_child(UiKit.title("渡船 · 去哪里", 34, UiKit.GOLD))
+	v.add_child(UiKit.label("所有人都在船边选了同一个地方，人齐了一起出发", 15, UiKit.MIST))
+	for ch in dests:
+		var d: Dictionary = Data.CHAPTERS[int(ch)]
+		var lv: Array = d.get("levels", [1, 20])
+		var b := UiKit.button("%s（%d~%d 级）" % [d["name"], int(lv[0]), int(lv[1])], 20, int(ch) > world.chapter)
+		b.custom_minimum_size = Vector2(420, 48)
+		b.pressed.connect(func():
+			world.board(int(ch))
+			_close_boat_picker())
+		v.add_child(b)
+	var cancel := UiKit.button("不走了", 18)
+	cancel.pressed.connect(_close_boat_picker)
+	v.add_child(cancel)
+	world.set_ui_open(true)
+
+
+func _close_boat_picker() -> void:
+	if _boat_picker and is_instance_valid(_boat_picker):
+		_boat_picker.queue_free()
+	_boat_picker = null
+	world.set_ui_open(false)
+
+
 func revive_progress(k: float) -> void:
 	_revive.visible = k >= 0.0
 	if k >= 0.0:
@@ -329,7 +430,7 @@ func _update_hotbar(p: Player) -> void:
 				if p.primaries().size() > 1:
 					nm += "…"
 			1:
-				nm = "袖箭"
+				nm = "袖箭" if Profile.has_weapon("xiujian") else "空手"
 			2:
 				nm = "唐莲×%d" % Profile.item_count("grenade") if Profile.item_count("grenade") > 0 else ""
 			3:
@@ -482,7 +583,7 @@ func _build_bottom_left() -> void:
 	var ir := HBoxContainer.new()
 	ir.add_theme_constant_override("separation", 8)
 	bl.add_child(ir)
-	ir.add_child(UiKit.keycap("G"))
+	ir.add_child(UiKit.keycap("3"))
 	ir.add_child(UiKit.icon("grenade", 22, Color(1.0, 0.75, 0.45)))
 	_item_g = UiKit.num("0", 20, UiKit.MOON, 4)
 	ir.add_child(_item_g)
@@ -582,62 +683,57 @@ func _build_bottom_center() -> void:
 	_prompt = UiKit.label("", 22, UiKit.MOON, 8)
 	_prompt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	bc.add_child(_prompt)
+	# 魂技栏：Q / E / F 三个槽，每个一个图标、名字、冷却遮罩、键帽
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.add_theme_constant_override("separation", 10)
 	bc.add_child(row)
-	var panel := PanelContainer.new()
-	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_sk_style = StyleBoxFlat.new()
-	_sk_style.bg_color = Color(0.02, 0.03, 0.05, 0.55)
-	_sk_style.border_width_bottom = 2
-	_sk_style.border_color = Color(1, 1, 1, 0.2)
-	_sk_style.set_corner_radius_all(4)
-	_sk_style.content_margin_left = 8
-	_sk_style.content_margin_right = 14
-	_sk_style.content_margin_top = 6
-	_sk_style.content_margin_bottom = 6
-	panel.add_theme_stylebox_override("panel", _sk_style)
-	row.add_child(panel)
-	var h := HBoxContainer.new()
-	h.add_theme_constant_override("separation", 10)
-	panel.add_child(h)
-	var ib := Control.new()
-	ib.custom_minimum_size = Vector2(48, 48)
-	ib.clip_contents = true
-	h.add_child(ib)
-	_sk_icon = UiKit.icon("lock", 48, UiKit.MIST)
-	ib.add_child(_sk_icon)
-	UiKit.fill(_sk_icon)
-	_sk_mask = ColorRect.new()
-	_sk_mask.color = Color(0, 0, 0, 0.6)
-	_sk_mask.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	ib.add_child(_sk_mask)
-	_sk_cd = UiKit.num("", 22, Color.WHITE, 4)
-	_sk_cd.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_sk_cd.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	ib.add_child(_sk_cd)
-	UiKit.fill(_sk_cd)
-	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", 2)
-	v.alignment = BoxContainer.ALIGNMENT_CENTER
-	h.add_child(v)
-	var top := HBoxContainer.new()
-	top.add_theme_constant_override("separation", 8)
-	v.add_child(top)
-	top.add_child(UiKit.keycap("Q"))
-	_sk_name = UiKit.bold("", 18, Color.WHITE, 4)
-	top.add_child(_sk_name)
-	_sk_sub = UiKit.label("", 13, UiKit.MIST, 4)
-	v.add_child(_sk_sub)
-	var pips := HBoxContainer.new()
-	pips.add_theme_constant_override("separation", 4)
-	v.add_child(pips)
-	for i in Data.SKILL_SLOTS:
-		var d := ColorRect.new()
-		d.custom_minimum_size = Vector2(14, 3)
-		d.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		pips.add_child(d)
-		_sk_pips.append(d)
+	for k in 3:
+		var panel := PanelContainer.new()
+		panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var st := StyleBoxFlat.new()
+		st.bg_color = Color(0.02, 0.03, 0.05, 0.6)
+		st.border_width_bottom = 3
+		st.border_color = Color(1, 1, 1, 0.2)
+		st.set_corner_radius_all(4)
+		st.content_margin_left = 6
+		st.content_margin_right = 10
+		st.content_margin_top = 5
+		st.content_margin_bottom = 5
+		panel.add_theme_stylebox_override("panel", st)
+		row.add_child(panel)
+		var h := HBoxContainer.new()
+		h.add_theme_constant_override("separation", 8)
+		panel.add_child(h)
+		var ib := Control.new()
+		ib.custom_minimum_size = Vector2(46, 46)
+		ib.clip_contents = true
+		h.add_child(ib)
+		var icon := UiKit.icon("lock", 46, UiKit.MIST)
+		ib.add_child(icon)
+		UiKit.fill(icon)
+		var mask := ColorRect.new()
+		mask.color = Color(0, 0, 0, 0.62)
+		mask.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		ib.add_child(mask)
+		var cd := UiKit.num("", 22, Color.WHITE, 4)
+		cd.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		cd.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		ib.add_child(cd)
+		UiKit.fill(cd)
+		var v := VBoxContainer.new()
+		v.add_theme_constant_override("separation", 1)
+		v.alignment = BoxContainer.ALIGNMENT_CENTER
+		h.add_child(v)
+		var top := HBoxContainer.new()
+		top.add_theme_constant_override("separation", 6)
+		v.add_child(top)
+		top.add_child(UiKit.keycap(["Q", "E", "F"][k]))
+		var nm := UiKit.bold("", 16, Color.WHITE, 4)
+		top.add_child(nm)
+		var sub := UiKit.label("", 12, UiKit.MIST, 4)
+		v.add_child(sub)
+		_sk_boxes.append({"style": st, "icon": icon, "mask": mask, "cd": cd, "name": nm, "sub": sub, "shown": ""})
 	_build_wheel()
 
 
@@ -821,13 +917,16 @@ func _build_pause() -> void:
 	var wh := UiKit.button("武魂与魂环（K）", 22)
 	wh.pressed.connect(func(): world.set_paused(false); toggle_wuhun())
 	_pause_menu.add_child(wh)
+	var ach := UiKit.button("成就（J）", 22)
+	ach.pressed.connect(func(): world.set_paused(false); toggle_achievements())
+	_pause_menu.add_child(ach)
 	var settings := UiKit.button("设置", 22)
 	settings.pressed.connect(func(): _pause_menu.visible = false; _settings.visible = true)
 	_pause_menu.add_child(settings)
 	var quit := UiKit.button("返回主菜单", 22)
 	quit.pressed.connect(func(): world.leave())
 	_pause_menu.add_child(quit)
-	var keys := UiKit.label("WASD 移动 · 空格 跳 · Shift 冲刺（开镜时屏息）· Ctrl 蹲\n左键 射击 · 右键 瞄准 · R 换弹 · 1-5 / 滚轮 换暗器\nE 引魂索 · Q 魂技（按住切换）· T 丢出手上的东西（按住 T 滚轮拿背包里的）\nG 佛怒唐莲 · H 回血丹 · F 交互 / 按住 F 救队友 · K 武魂和魂骨 · Tab 魂师榜", 15, UiKit.MIST)
+	var keys := UiKit.label("WASD 移动 · 空格 跳 · Shift 冲刺（开镜时屏息）· Ctrl 蹲 / 轻点翻滚\n左键 射击 / 出拳 · 右键 瞄准 · R 换弹 · 1-5 / 滚轮 物品栏\nQ / E / F 三个魂技（K 面板里换）· F 也是交互，按住 F 救队友\nG 或鼠标中键 引魂索 · B 换鱼饵 · T 丢出手上的东西 · H 回血丹\nK 武魂和魂骨 · J 成就 · M 地图 · Tab 魂师榜", 15, UiKit.MIST)
 	_pause_menu.add_child(keys)
 	_settings = SettingsPanel.new()
 	_settings.visible = false
@@ -867,9 +966,80 @@ func toggle_wuhun() -> void:
 		world.set_ui_open(true)
 
 
+## 成就面板（J）：完成的金色，没完成的显示进度
+var _ach_panel: Control
+
+
+func toggle_achievements() -> void:
+	if _ach_panel and is_instance_valid(_ach_panel):
+		_ach_panel.queue_free()
+		_ach_panel = null
+		world.set_ui_open(false)
+		return
+	if world.ui_open:
+		return
+	var bg := ColorRect.new()
+	bg.color = Color(0, 0, 0, 0.6)
+	add_child(bg)
+	UiKit.fill(bg)
+	_ach_panel = bg
+	var c := CenterContainer.new()
+	bg.add_child(c)
+	UiKit.fill(c)
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", UiKit.panel_style())
+	panel.custom_minimum_size = Vector2(900, 620)
+	c.add_child(panel)
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 8)
+	panel.add_child(v)
+	var head := HBoxContainer.new()
+	v.add_child(head)
+	var done := 0
+	for a in Data.ACHIEVEMENTS:
+		if Profile.achieved.has(a["id"]):
+			done += 1
+	var t := UiKit.title("成就  %d / %d" % [done, Data.ACHIEVEMENTS.size()], 40, UiKit.GOLD)
+	t.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	head.add_child(t)
+	var close := UiKit.button("关闭（J / Esc）", 18)
+	close.pressed.connect(toggle_achievements)
+	head.add_child(close)
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	v.add_child(scroll)
+	var grid := GridContainer.new()
+	grid.columns = 2
+	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	grid.add_theme_constant_override("h_separation", 10)
+	grid.add_theme_constant_override("v_separation", 8)
+	scroll.add_child(grid)
+	for a in Data.ACHIEVEMENTS:
+		var got := Profile.achieved.has(a["id"])
+		var row := PanelContainer.new()
+		row.custom_minimum_size.x = 430
+		row.add_theme_stylebox_override("panel", UiKit.row_style(UiKit.GOLD if got else Color(1, 1, 1, 0.1)))
+		grid.add_child(row)
+		var rv := VBoxContainer.new()
+		row.add_child(rv)
+		rv.add_child(UiKit.bold(("✔ " if got else "") + str(a["name"]), 19, UiKit.GOLD if got else UiKit.MOON))
+		var prog := ""
+		if not got and a.has("stat"):
+			prog = "   %d / %d" % [mini(Profile.stat(str(a["stat"])), int(a["n"])), int(a["n"])]
+		rv.add_child(UiKit.label("%s%s   奖励 %d 金魂币" % [a["desc"], prog, int(a["reward"])], 14, UiKit.MIST))
+	world.set_ui_open(true)
+
+
 func close_panels() -> void:
 	if _choice and is_instance_valid(_choice):
 		return   # 魂技必须选一个
+	if _ach_panel and is_instance_valid(_ach_panel):
+		toggle_achievements()
+		return
+	if _boat_picker and is_instance_valid(_boat_picker):
+		_close_boat_picker()
+		return
 	_shop.visible = false
 	_wuhun.visible = false
 	world.set_ui_open(false)
@@ -1009,7 +1179,7 @@ func level_up(level: int) -> void:
 
 
 func quest_done(text: String, reward: int) -> void:
-	toast("任务完成：%s%s" % [text, ("   +%d 金魂币" % reward) if reward > 0 else ""], Color(0.6, 1.0, 0.7), 4.0)
+	toast("目标达成：%s%s" % [text, ("   +%d 金魂币" % reward) if reward > 0 else ""], Color(0.6, 1.0, 0.7), 4.0)
 	update_quest()
 
 
@@ -1059,9 +1229,9 @@ func update_quest() -> void:
 	var ch: int = world.chapter
 	var qs: Array = Data.CHAPTERS[ch]["quests"]
 	var q: Dictionary = Data.quest(ch, world.quest_idx)
-	_quest_title.text = "%s · 任务 %d/%d" % [Data.CHAPTERS[ch]["name"], mini(world.quest_idx + 1, qs.size()), qs.size()]
-	if q.is_empty():
-		_quest_text.text = "本章任务全部完成"
+	_quest_title.text = "%s · 当前目标" % Data.CHAPTERS[ch]["name"]
+	if q.is_empty() or qs.is_empty():
+		_quest_text.text = "这张图的 Boss 已经打赢了"
 		_quest_prog.text = ""
 		return
 	_quest_text.text = str(q["text"])
@@ -1072,6 +1242,8 @@ func update_quest() -> void:
 			_quest_prog.text = "你的等级 %d / %d" % [Profile.level, int(q["n"])]
 		"rings":
 			_quest_prog.text = "你的魂环 %d / %d" % [Profile.rings.size(), int(q["n"])]
+		"god":
+			_quest_prog.text = "等级 %d / 100 · 魂环 %d / 10" % [Profile.level, Profile.rings.size()]
 		_:
 			_quest_prog.text = ""
 
@@ -1123,8 +1295,6 @@ func _process(dt: float) -> void:
 		_reload.text = "拉栓…"
 	elif g.ammo == 0:
 		_reload.text = "按 R 换弹"
-	elif p.scoped:
-		_reload.text = "%.1f 倍 · 滚轮调倍率 · 按住 Shift 屏息" % Settings.scope_zoom
 	else:
 		_reload.text = ""
 
@@ -1158,8 +1328,24 @@ func _process(dt: float) -> void:
 
 	if world.boss:
 		_boss_bar.value = world.boss.hp / world.boss.max_hp
-	_scope.visible = false
-	crosshair.visible = not p.scoped and p.ads < 0.7
+	# 魂兽招式带来的负面状态
+	var st := []
+	if p.root_t > 0.0:
+		st.append("定身 %.1f（连按空格挣脱）" % p.root_t)
+	if p.slow_t > 0.0:
+		st.append("减速 %.1f" % p.slow_t)
+	if p.silence_t > 0.0:
+		st.append("封魂技 %.1f" % p.silence_t)
+	if p.vuln_t > 0.0:
+		st.append("易伤 %.1f" % p.vuln_t)
+	if not st.is_empty():
+		_reload.text = "  ·  ".join(st)
+	_scope.visible = p.scoped
+	if p.scoped:
+		_scope.kind = "scope" if bool(p.gun.d.get("variable", false)) else "x2"
+		_scope.zoom = Settings.scope_zoom if bool(p.gun.d.get("variable", false)) else float(p.gun.d.get("zoom", 2.0))
+		_scope.fade = clampf((p.ads - 0.92) / 0.08, 0.0, 1.0)
+	crosshair.visible = not p.scoped and (p.ads < 0.7 or p.gun.d["mode"] == "melee")
 
 	var it: Dictionary = world.nearest_interactable() if not p.dead else {}
 	_interact.text = str(it.get("text", ""))
@@ -1178,51 +1364,56 @@ func _process(dt: float) -> void:
 
 
 func _update_skill_slot(p: Player) -> void:
-	var cur: int = world.skills.current
-	var sid: String = world.skills.slot_skill(cur)
-	if sid == "":
-		if _sk_shown != "-":
-			_sk_shown = "-"
-			_sk_icon.texture = load(UiKit.ICONS + "lock.svg")
-			_sk_icon.modulate = UiKit.MIST
-			_sk_name.text = "魂技"
-			_sk_sub.text = "10 级吸收第一魂环后解锁"
-			_sk_style.border_color = Color(1, 1, 1, 0.2)
-			_sk_mask.size = Vector2.ZERO
-			_sk_cd.text = ""
-		return
-	var s: Dictionary = Data.SKILLS[sid]
-	var age := int(Profile.rings[cur]["age"])
-	if _sk_shown != sid:
-		_sk_shown = sid
-		_sk_icon.texture = load(UiKit.ICONS + UiKit.skill_icon(sid) + ".svg")
-		_sk_name.text = str(s["name"])
-		_sk_style.border_color = Data.age_color(age)
-	var cd: float = world.skills.cooldowns[cur]
-	var cost := int(s["cost"])
-	var full := maxf(float(s.get("cd", 1.0)), 0.1)
-	if cd > 0.0:
-		var k := clampf(cd / full, 0.0, 1.0)
-		_sk_mask.position = Vector2(0, 48.0 * (1.0 - k))
-		_sk_mask.size = Vector2(48, 48.0 * k)
-		_sk_cd.text = "%d" % ceili(cd)
-		_sk_icon.modulate = Color(0.6, 0.6, 0.6)
-	else:
-		_sk_mask.size = Vector2.ZERO
-		_sk_cd.text = ""
-		_sk_icon.modulate = Color.WHITE if p.soul >= cost else Color(0.45, 0.6, 1.0)
-	var more := "  ·  按住 Q 切换" if Profile.rings.size() > 1 else ""
-	_sk_sub.text = "魂力 %d%s" % [cost, more]
-	for i in _sk_pips.size():
-		var d: ColorRect = _sk_pips[i]
-		d.custom_minimum_size.y = 5.0 if i == cur else 3.0
-	if _wheel.visible:
-		_wheel.queue_redraw()
-		var boxes := _wheel_items.get_children()
-		for i in boxes.size():
-			var c: float = world.skills.cooldowns[i] if i < 5 else 0.0
-			(boxes[i].get_node("Cd") as Label).text = ("%.1f" % c) if c > 0.0 else ""
-
+	for k in _sk_boxes.size():
+		var box: Dictionary = _sk_boxes[k]
+		var r: int = world.skills.slot_ring(k)
+		var icon: TextureRect = box["icon"]
+		var mask: ColorRect = box["mask"]
+		var cdl: Label = box["cd"]
+		if r < 0:
+			var nr := Profile.rings.size()
+			var spare := false
+			for i in nr:
+				if not i in Profile.skill_slots:
+					spare = true
+			var key := "-%d%s" % [nr, spare]
+			if box["shown"] != key:
+				box["shown"] = key
+				icon.texture = load(UiKit.ICONS + "lock.svg")
+				icon.modulate = UiKit.MIST
+				(box["name"] as Label).text = "空"
+				if spare:
+					(box["sub"] as Label).text = "按 K 装魂技"
+				elif nr < Data.MAX_RINGS:
+					(box["sub"] as Label).text = "%d 级吸收第%s魂环" % [(nr + 1) * 10, Data.RING_NAMES[nr]]
+				else:
+					(box["sub"] as Label).text = ""
+				(box["style"] as StyleBoxFlat).border_color = Color(1, 1, 1, 0.2)
+				mask.size = Vector2.ZERO
+				cdl.text = ""
+			continue
+		var sid: String = world.skills.slot_skill(r)
+		var s: Dictionary = Data.SKILLS[sid]
+		var age := int(Profile.rings[r]["age"])
+		if box["shown"] != sid:
+			box["shown"] = sid
+			icon.texture = load(UiKit.ICONS + UiKit.skill_icon(sid) + ".svg")
+			(box["name"] as Label).text = str(s["name"])
+			(box["style"] as StyleBoxFlat).border_color = Data.AGES[age]["glow"]
+		var cd: float = world.skills.cooldowns[r]
+		var cost := int(s["cost"])
+		var full := maxf(float(s.get("cd", 1.0)), 0.1)
+		if cd > 0.0:
+			var kk := clampf(cd / full, 0.0, 1.0)
+			mask.position = Vector2(0, 46.0 * (1.0 - kk))
+			mask.size = Vector2(46, 46.0 * kk)
+			cdl.text = "%d" % ceili(cd)
+			icon.modulate = Color(0.55, 0.55, 0.55)
+		else:
+			mask.size = Vector2.ZERO
+			cdl.text = ""
+			icon.modulate = Color.WHITE if p.soul >= cost else Color(0.45, 0.6, 1.0)
+		(box["sub"] as Label).text = "第%s魂环 · 魂力 %d" % [Data.RING_NAMES[r], cost]
 
 func _update_lure_ui(p: Player) -> void:
 	var lure := p.lure
@@ -1230,7 +1421,7 @@ func _update_lure_ui(p: Player) -> void:
 	var t := Time.get_ticks_msec() / 1000.0
 	match lure.state:
 		Lure.S.IDLE:
-			_prompt.text = "按住 E 蓄力 · 松开甩出引魂索      B 鱼饵：%s" % p.bait_text()
+			_prompt.text = "按住 G（或鼠标中键）蓄力 · 松开甩出引魂索      B 鱼饵：%s" % p.bait_text()
 			_prompt.add_theme_font_size_override("font_size", 17)
 			_prompt.modulate = Color(1, 1, 1, 0.5)
 		Lure.S.CHARGING:

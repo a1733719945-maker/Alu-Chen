@@ -339,7 +339,7 @@ func poof(pos: Vector3) -> void:
 
 # ------------------------------------------------------------------ 箭插在树上 / 地上 / 魂兽身上
 
-var _arrows: Array[Node3D] = []
+var _arrows: Array = []
 
 
 func stick_arrow(pos: Vector3, dir: Vector3, on: Node3D) -> void:
@@ -353,9 +353,9 @@ func stick_arrow(pos: Vector3, dir: Vector3, on: Node3D) -> void:
 	# look_at 让 -Z 朝前：箭杆在 +Z 那边，正好露在外面
 	_arrows.append(a)
 	if _arrows.size() > 70:
-		var old: Node3D = _arrows.pop_front()
+		var old: Variant = _arrows.pop_front()
 		if is_instance_valid(old):
-			old.queue_free()
+			(old as Node).queue_free()
 	# 箭可能插在魂兽身上，魂兽先没了箭也跟着没了：用弱引用，别抓着已经释放的节点
 	var wr: WeakRef = weakref(a)
 	get_tree().create_timer(12.0).timeout.connect(func():
@@ -669,3 +669,138 @@ func heal_burst(pos: Vector3) -> void:
 
 func trail(from: Vector3, to: Vector3, color: Color) -> void:
 	_burst(to, (from - to).normalized(), Color(color.r, color.g, color.b, 0.8), 3, 1.0, 0.35, 1.2, true, 0.0, 20.0)
+
+
+# ------------------------------------------------------------------ 成长的"爽感"：升级、魂环突破、高阶魂技的额外层次
+
+## 从地面往上飘的光点（环形发射）
+func _rise(pos: Vector3, color: Color, amount: int, radius: float, speed: float, life: float, size := 1.6) -> void:
+	var p := CPUParticles3D.new()
+	p.one_shot = true
+	p.amount = amount
+	p.lifetime = life
+	p.explosiveness = 0.6
+	p.mesh = _spark_mesh
+	p.material_override = _particle_mat(true)
+	p.emission_shape = CPUParticles3D.EMISSION_SHAPE_RING
+	p.emission_ring_axis = Vector3.UP
+	p.emission_ring_radius = radius
+	p.emission_ring_inner_radius = radius * 0.3
+	p.emission_ring_height = 0.2
+	p.direction = Vector3.UP
+	p.spread = 12.0
+	p.initial_velocity_min = speed * 0.5
+	p.initial_velocity_max = speed
+	p.tangential_accel_min = 2.0
+	p.tangential_accel_max = 5.0
+	p.gravity = Vector3.ZERO
+	p.damping_min = 0.5
+	p.damping_max = 1.5
+	p.scale_amount_min = size * 0.5
+	p.scale_amount_max = size
+	var g := Gradient.new()
+	g.set_color(0, Color(color.r, color.g, color.b, 1.0))
+	g.set_color(1, Color(color.r, color.g, color.b, 0.0))
+	p.color_ramp = g
+	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(p)
+	p.global_position = pos
+	p.emitting = true
+	get_tree().create_timer(life + 0.3).timeout.connect(p.queue_free)
+
+
+## 一根从天上打下来的光柱：先细后粗，再收成一条线消失。
+## 镜头在光柱里面的话（自己身上的魂环突破、魂技）：光柱从头顶上方开始，不然整个屏幕都是白的
+func _pillar(pos: Vector3, color: Color, radius: float, height: float, dur: float) -> void:
+	if _cam and is_instance_valid(_cam):
+		var c := _cam.global_position
+		if Vector2(c.x - pos.x, c.z - pos.z).length() < radius + 1.0:
+			var lift := maxf(c.y - pos.y + 3.0, 0.0)
+			pos.y += lift
+			height = maxf(height - lift, 10.0)
+			radius = minf(radius, 1.2)
+	var n := Node3D.new()
+	add_child(n)
+	n.global_position = pos
+	var outer := U.part(n, U.cyl(radius, radius, height, 24), U.glow(color, 1.2, true), Vector3(0, height * 0.5, 0), Vector3.ZERO, Vector3(0.05, 1, 0.05), false)
+	var core := U.part(n, U.cyl(radius * 0.3, radius * 0.3, height, 12), U.glow(Color(1, 1, 1), 4.0, true), Vector3(0, height * 0.5, 0), Vector3.ZERO, Vector3(0.05, 1, 0.05), false)
+	var light := OmniLight3D.new()
+	light.light_color = color
+	light.light_energy = 0.0
+	light.omni_range = radius * 6.0 + 6.0
+	light.position = Vector3(0, 2, 0)
+	n.add_child(light)
+	var tw := create_tween()
+	tw.tween_property(outer, "scale", Vector3.ONE, 0.12).set_ease(Tween.EASE_OUT)
+	tw.parallel().tween_property(core, "scale", Vector3.ONE, 0.08)
+	tw.parallel().tween_property(light, "light_energy", 4.0, 0.1)
+	tw.tween_interval(dur)
+	tw.tween_property(outer, "scale", Vector3(0.01, 1, 0.01), 0.35).set_ease(Tween.EASE_IN)
+	tw.parallel().tween_property(core, "scale", Vector3(0.01, 1, 0.01), 0.25)
+	tw.parallel().tween_property(light, "light_energy", 0.0, 0.35)
+	tw.tween_callback(n.queue_free)
+
+
+## 一圈光环从 from 高度升到 to 高度，同时变大变淡
+func _ring_rise(pos: Vector3, color: Color, r: float, from: float, to: float, dur: float, delay := 0.0) -> void:
+	var ring := MeshInstance3D.new()
+	ring.mesh = U.torus(r * 0.9, r, 48, 6)
+	ring.material_override = U.glow(color, 4.0, true)
+	ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(ring)
+	ring.global_position = pos + Vector3(0, from, 0)
+	ring.scale = Vector3(0.6, 1, 0.6)
+	ring.visible = delay <= 0.0
+	var tw := create_tween()
+	if delay > 0.0:
+		tw.tween_interval(delay)
+		tw.tween_callback(func(): ring.visible = true)
+	tw.tween_property(ring, "global_position:y", pos.y + to, dur).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	tw.parallel().tween_property(ring, "scale", Vector3(1.4, 1, 1.4), dur)
+	tw.parallel().tween_property(ring, "transparency", 1.0, dur).set_ease(Tween.EASE_IN)
+	tw.tween_callback(ring.queue_free)
+
+
+## 升级（小爽）：金色光点螺旋上升 + 脚下光环，魂环越多越华丽
+func level_up_burst(pos: Vector3, rings: int) -> void:
+	var gold := Color(1.0, 0.82, 0.35)
+	_rise(pos, gold, 40 + rings * 8, 1.2, 5.0 + rings * 0.4, 1.4, 1.4)
+	_ring_rise(pos, gold, 1.3, 0.1, 2.6, 0.9)
+	_ring_rise(pos, Color(1.0, 0.95, 0.8), 0.9, 0.1, 3.2, 1.1, 0.15)
+	shockwave(pos, 5.0 + rings * 0.4, gold)
+
+
+## 魂环突破（大爽）：天上打下光柱，身上所有魂环一个接一个升起来，最后一圈冲击波把附近照亮
+func ring_breakthrough(pos: Vector3, color: Color, rings: int) -> void:
+	_pillar(pos, color, 1.8, 60.0, 1.6)
+	_rise(pos, color, 160, 3.0, 9.0, 2.2, 2.2)
+	_rise(pos, Color(1, 1, 1), 60, 1.0, 12.0, 1.6, 1.2)
+	for i in rings:
+		var c: Color = Data.age_color(int(Profile.rings[i]["age"])) if i < Profile.rings.size() else color
+		_ring_rise(pos, c, 1.1 + i * 0.12, 0.2, 1.0 + i * 0.35, 1.8, 0.12 * i)
+	get_tree().create_timer(0.6).timeout.connect(func():
+		shockwave(pos, 14.0, color)
+		_burst(pos + Vector3.UP, Vector3.UP, color, 120, 16.0, 1.4, 2.6, true, -2.0, 180.0))
+
+
+## 高阶魂技的额外层次：tier 0~1 普通，2~3 加法阵和光点，4 加光柱，5（万年）黑红魂火，6（神技）金色神光
+func skill_flourish(center: Vector3, color: Color, tier: int, radius: float) -> void:
+	if tier >= 2:
+		sigil(center, maxf(radius, 3.0), color)
+		_rise(center, color, 30 + tier * 15, maxf(radius * 0.6, 1.5), 4.0 + tier, 1.2, 1.6)
+	if tier >= 4:
+		_pillar(center, color, maxf(radius * 0.25, 1.0), 40.0, 0.5)
+	if tier == 5:
+		var dark := Color(0.55, 0.02, 0.04)
+		_rise(center, dark, 90, maxf(radius, 3.0), 7.0, 1.6, 2.6)
+		_burst(center + Vector3.UP * 0.5, Vector3.UP, Color(0.08, 0.0, 0.02, 0.9), 50, 6.0, 1.2, 3.0, false, 1.0, 180.0)
+		shockwave(center, maxf(radius, 4.0) * 1.3, dark)
+	if tier >= 6:
+		var holy := Color(1.0, 0.86, 0.45)
+		for k in 6:
+			var a := TAU * k / 6.0
+			var p := center + Vector3(cos(a), 0, sin(a)) * maxf(radius, 4.0) * 0.8
+			get_tree().create_timer(0.07 * k).timeout.connect(func(): _pillar(p, holy, 0.6, 50.0, 0.4))
+		_ring_rise(center, holy, maxf(radius, 4.0), 12.0, 16.0, 1.6)
+		_rise(center, holy, 200, maxf(radius, 4.0), 12.0, 2.0, 2.4)
+		get_tree().create_timer(0.45).timeout.connect(func(): shockwave(center, maxf(radius, 5.0) * 1.6, holy))

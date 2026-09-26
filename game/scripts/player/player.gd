@@ -63,6 +63,12 @@ var soul := 60.0
 var dead := false
 var busy_t := 0.0                # 吸收魂环时不能开枪
 var buffs := {}                  # stat -> [amount, 剩余秒]
+# 魂兽招式带来的负面状态（Data.BEAST_SKILLS）
+var root_t := 0.0                # 定身（连按空格挣脱）
+var slow_t := 0.0
+var slow_k := 0.0
+var vuln_t := 0.0                # 受到伤害 +30%
+var silence_t := 0.0             # 放不了魂技
 var _since_hurt := 99.0
 
 var _coyote := 0.0
@@ -177,15 +183,10 @@ func rebuild_guns() -> void:
 		old[g.id] = g
 	var keep_id := gun.id if gun else ""
 	guns.clear()
-	var ids: Array = []
-	for id in Profile.loadout:
-		if not id in lost_guns:
-			ids.append(id)
-	for id in borrowed:
-		if not id in ids:
-			ids.append(id)
-	if ids.is_empty():
-		ids = ["xiujian"]
+	# 暗器都是存档里真有的；没有袖箭就用空手（一把都没有也是空手）
+	var ids: Array = Profile.loadout.duplicate()
+	if not "xiujian" in ids:
+		ids.append("fist")
 	for id in ids:
 		var stats := Profile.weapon_stats(id)
 		if old.has(id):
@@ -201,7 +202,7 @@ func rebuild_guns() -> void:
 	if slot >= 2 and slot_ready(slot):
 		_show_slot_item()
 	else:
-		slot = 1 if gun.id == "xiujian" else 0
+		slot = 1 if gun.id in ["xiujian", "fist"] else 0
 		viewmodel.set_weapon(gun.id, true)
 	weapon_changed.emit(gun)
 	ammo_changed.emit(gun)
@@ -236,7 +237,7 @@ func buff(stat: String) -> float:
 
 
 func damage_mult() -> float:
-	return (1.0 + buff("dmg")) * (1.0 + giant_k * 0.2)
+	return (1.0 + buff("dmg")) * (1.0 + giant_k * 0.2) * Data.level_damage(Profile.level)
 
 
 ## 魂兽和 Boss 不打你：刚复活、隐身、被海鸥叼着
@@ -253,6 +254,22 @@ func add_shield(amount: float, dur: float) -> void:
 	shield_t = dur
 
 
+func root(dur: float) -> void:
+	root_t = maxf(root_t, dur)
+
+
+func slow(k: float, dur: float) -> void:
+	slow_k = maxf(slow_k if slow_t > 0.0 else 0.0, k)
+	slow_t = maxf(slow_t, dur)
+
+
+func _update_status(dt: float) -> void:
+	root_t = maxf(root_t - dt, 0.0)
+	slow_t = maxf(slow_t - dt, 0.0)
+	vuln_t = maxf(vuln_t - dt, 0.0)
+	silence_t = maxf(silence_t - dt, 0.0)
+
+
 func heal(amount: float) -> void:
 	if dead:
 		return
@@ -264,6 +281,8 @@ func take_damage(amount: float, from_pos: Vector3) -> void:
 		return
 	# 减伤：魂技（金刚变、浴火、防御增幅）+ 魂骨，最多减 80%
 	amount *= 1.0 - clampf(buff("dr") + Profile.bone_bonus("dr"), 0.0, 0.8)
+	if vuln_t > 0.0:
+		amount *= 1.3
 	var left := amount
 	if shield > 0.0:
 		var s := minf(shield, left)
@@ -326,44 +345,30 @@ func on_bones_changed() -> void:
 
 # ------------------------------------------------------------------ 暗器掉落 / 捡起
 
-## 倒地时掉出去的暗器：[[id, 主人], ...]（袖箭不掉）
+## 倒地时手里的暗器掉在地上（空手不掉）：这把就不是你的了，谁捡到归谁，也可以自己捡回来
 func drop_guns_on_death() -> Array:
 	var out: Array = []
-	if gun.id != "xiujian":
-		out.append([gun.id, int(borrowed.get(gun.id, Net.my_id))])
-	for id in borrowed.keys():
-		if id != gun.id:
-			out.append([id, int(borrowed[id])])
-	for e in out:
-		_remove_gun(str(e[0]))
-	if not out.is_empty():
+	if gun.id != "fist" and slot < 2:
+		out.append([gun.id, Net.my_id])
+		_remove_gun(gun.id)
 		rebuild_guns()
 	return out
 
 
 func _remove_gun(id: String) -> void:
-	if borrowed.has(id):
-		borrowed.erase(id)
-	elif not id in lost_guns:
-		lost_guns.append(id)
+	Profile.remove_weapon(id)
 
 
 func can_pick_gun(id: String, _owner: int) -> bool:
-	if id in lost_guns:
-		return true
-	for g in guns:
-		if g.id == id:
-			return false
-	return true
+	return not Profile.has_weapon(id)
 
 
 func pick_gun(id: String, owner: int) -> void:
-	if id in lost_guns:
-		lost_guns.erase(id)
-		world.hud.toast("捡回了你的%s" % Data.WEAPONS[id]["name"], Color(0.6, 0.9, 1.0))
+	Profile.add_weapon(id)
+	if owner == Net.my_id:
+		world.hud.toast("捡回了%s" % Data.WEAPONS[id]["name"], Color(0.6, 0.9, 1.0))
 	else:
-		borrowed[id] = owner
-		world.hud.toast("捡到 %s 的%s（按 T 可以丢还给他）" % [world.peer_name(owner), Data.WEAPONS[id]["name"]], Color(0.6, 0.9, 1.0), 4.0)
+		world.hud.toast("捡到了%s（%s 的，按 T 可以丢还给他）" % [Data.WEAPONS[id]["name"], world.peer_name(owner)], Color(0.6, 0.9, 1.0), 4.0)
 	rebuild_guns()
 	for i in guns.size():
 		if guns[i].id == id:
@@ -405,24 +410,6 @@ func start_fly(dur: float) -> void:
 	velocity.y = maxf(velocity.y, 5.0)
 
 
-## 从水里爬上岸：旁边 4.5 米内最近的陆地（不比现在高出 4 米）
-func _climb_out() -> void:
-	var best := Vector3.INF
-	for r in [1.5, 3.0, 4.5]:
-		for k in 12:
-			var a := TAU * k / 12.0
-			var q := global_position + Vector3(cos(a) * r, 0, sin(a) * r)
-			if world.island.is_land(q.x, q.z):
-				var qy: float = world.island.height_at(q.x, q.z)
-				if qy < global_position.y + 4.0 and (best == Vector3.INF or q.distance_to(global_position) < best.distance_to(global_position)):
-					best = Vector3(q.x, qy + 0.3, q.z)
-		if best != Vector3.INF:
-			break
-	if best != Vector3.INF:
-		teleport(best)
-		Sfx.play("splash_small", -4.0)
-
-
 # ------------------------------------------------------------------ 视角
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -441,17 +428,25 @@ func _unhandled_input(event: InputEvent) -> void:
 		viewmodel.add_sway(d)
 
 
+## 开镜时视野缩成多少：全屏瞄准镜按倍率，其他按瞄具
+func ads_zoom_mult() -> float:
+	if bool(gun.d.get("scope", false)):
+		var z := Settings.scope_zoom if bool(gun.d.get("variable", false)) else float(gun.d.get("zoom", 2.0))
+		return 1.0 / maxf(z, 1.0)
+	return float(gun.d["ads_fov"])
+
+
+func hud_flash(c: Color) -> void:
+	world.hud.flash(c)
+
+
 func _ads_sens_factor() -> float:
 	if ads <= 0.01:
 		return 1.0
 	# 开镜后按视野缩放，保证"屏幕上移动同样距离需要的鼠标距离"一致
 	var cur := deg_to_rad(cam.fov) * 0.5
 	var hip := deg_to_rad(_hip_vfov) * 0.5
-	var k := tan(cur) / tan(hip) * lerpf(1.0, Settings.ads_sensitivity, ads)
-	if scoped:
-		# 狙击镜是画中画，主画面没怎么放大：按倍率降灵敏度，镜子里瞄得住
-		k *= clampf(2.2 / Settings.scope_zoom, 0.15, 1.0)
-	return k
+	return tan(cur) / tan(hip) * lerpf(1.0, Settings.ads_sensitivity, ads)
 
 
 ## 狙击镜的晃动（度）：按住 Shift 屏息 4 秒会稳住
@@ -463,7 +458,7 @@ func _scope_sway() -> Vector2:
 	var hold := input_enabled and Input.is_action_pressed("sprint") and _breath > 0.0 and _breath_tired <= 0.0
 	var hv := Vector3(velocity.x, 0, velocity.z).length()
 	var k := 0.12 if hold else (1.6 if _breath_tired > 0.0 else 1.0)
-	return s * k * (1.0 + hv * 0.4)
+	return s * k * 0.45 * (1.0 + hv * 0.4)
 
 
 func aim_basis() -> Basis:
@@ -506,13 +501,21 @@ func _physics_process(dt: float) -> void:
 	max_speed *= lerpf(1.0, float(gun.d["ads_move"]), ads)
 	max_speed *= 1.0 + buff("speed") + Profile.bone_bonus("speed") + giant_k * 0.25
 	max_speed = maxf(max_speed, 1.0)
+	_update_status(dt)
+	if slow_t > 0.0:
+		max_speed *= 1.0 - slow_k
+	if root_t > 0.0:
+		max_speed = 0.0
+		if can_move and Input.is_action_just_pressed("jump"):
+			root_t = maxf(root_t - 0.3, 0.0)
+			trauma = minf(trauma + 0.1, 1.0)
 
 	var wish := Basis(Vector3.UP, yaw) * Vector3(input.x, 0, input.y)
 	if wish.length() > 1.0:
 		wish = wish.normalized()
 	var hv := Vector3(velocity.x, 0, velocity.z)
 	var jump_held := can_move and Input.is_action_pressed("jump")
-	var jump_pressed := can_move and Input.is_action_just_pressed("jump")
+	var jump_pressed := can_move and Input.is_action_just_pressed("jump") and root_t <= 0.0
 	# 翻滚：移动中轻点 Ctrl。翻滚的前 0.36 秒无敌（躲 Boss 的重击、横扫、冲击环）
 	_roll_cd -= dt
 	if can_move and Input.is_action_just_pressed("crouch"):
@@ -581,7 +584,20 @@ func _physics_process(dt: float) -> void:
 		var pushing := is_on_wall() and (jump_held or (wish.length() > 0.1 and wish.dot(get_wall_normal()) < -0.3))
 		# 水里按空格：旁边 5 米内有岸就直接爬上去（沼泽、陡岸都能出来）
 		if jump_pressed:
-			_climb_out()
+			var best := Vector3.INF
+			for r in [1.5, 3.0, 4.5]:
+				for k in 12:
+					var a := TAU * k / 12.0
+					var q := global_position + Vector3(cos(a) * r, 0, sin(a) * r)
+					if world.island.is_land(q.x, q.z):
+						var qy: float = world.island.height_at(q.x, q.z)
+						if qy < global_position.y + 4.0 and (best == Vector3.INF or q.distance_to(global_position) < best.distance_to(global_position)):
+							best = Vector3(q.x, qy + 0.3, q.z)
+				if best != Vector3.INF:
+					break
+			if best != Vector3.INF:
+				teleport(best)
+				Sfx.play("splash_small", -4.0)
 		if pushing:
 			_climb_t = 0.7
 			velocity.y = 5.5
@@ -608,9 +624,6 @@ func _physics_process(dt: float) -> void:
 		if jump_held and velocity.y < -2.0 and Profile.bone_bonus("glide") > 0.0:
 			velocity.y = move_toward(velocity.y, -2.0, 60.0 * dt)
 			hv = hv.move_toward(wish * max_speed * 1.25, AIR_ACCEL * 1.5 * dt)
-	# 浅水里踩在陡坡上站不住（往下滑）：按空格也能直接爬上岸
-	if not swimming and wet and jump_pressed and not is_on_floor() and fly_t <= 0.0:
-		_climb_out()
 	if _roll_t > 0.0:
 		_roll_t -= dt
 		hv = _roll_dir * lerpf(6.0, 12.5, _roll_t / 0.42)
@@ -686,8 +699,6 @@ func _process(dt: float) -> void:
 	viewmodel.pull_anim(1.0 if lure.state == Lure.S.REELING and lp else 0.0)
 	if active:
 		_skill_input(dt)
-		if Input.is_action_just_pressed("grenade"):
-			_throw_grenade()
 		if Input.is_action_just_pressed("pill"):
 			_use_pill()
 		if Input.is_action_just_pressed("throw"):
@@ -695,33 +706,23 @@ func _process(dt: float) -> void:
 		if Input.is_action_just_pressed("bait"):
 			cycle_bait()
 	if input_enabled and not dead and Input.is_action_just_pressed("interact"):
-		# F：旁边有能交互的（店、祭坛、魂环、救人）就交互，没有就放辅助魂技
-		if not world.nearest_interactable().is_empty():
+		# F：旁边有真的能交互的（店、祭坛、渡船、能吸收的魂环、救人）就交互，没有就放第三个魂技
+		var it: Dictionary = world.nearest_interactable()
+		if bool(it.get("act", false)):
 			world.interact()
 		elif active:
-			world.skills.cast_cat("support")
+			world.skills.cast_slot(2)
 	if not active and world.hud.wheel_open():
 		world.hud.close_wheel()
 		_q_t = -1.0
 
 
-## 魂技：Q 攻击魂技，双击 Shift 位移魂技（F 辅助魂技在交互那里）。不用选，自动放能放的
-var _shift_t := -9.0
-
-
+## 魂技：Q / E / F 三个魂技槽（K 武魂面板里选装哪三个），按哪个放哪个，清清楚楚
 func _skill_input(_dt: float) -> void:
-	var now := Time.get_ticks_msec() / 1000.0
-	if Input.is_action_just_pressed("skill"):
-		world.skills.cast_cat("attack")
-	if Input.is_action_just_pressed("sprint"):
-		if now - _shift_t < 0.3:
-			world.skills.cast_cat("move")
-			_shift_t = -9.0
-		else:
-			_shift_t = now
-	var a: int = world.skills.pick("attack")
-	if a >= 0:
-		world.skills.current = a
+	if Input.is_action_just_pressed("skill_1"):
+		world.skills.cast_slot(0)
+	if Input.is_action_just_pressed("skill_2"):
+		world.skills.cast_slot(1)
 
 
 func _update_stats(dt: float) -> void:
@@ -831,8 +832,8 @@ func _update_camera(dt: float) -> void:
 	cam.global_position = body + Vector3(0, eye + bob - _land_dip * 0.12, 0)
 	var punch := Basis.from_euler(Vector3(deg_to_rad(_punch.x), deg_to_rad(_punch.y), deg_to_rad(_punch.z)))
 	cam.global_basis = aim_basis() * punch * Basis.from_euler(shake_rot)
-	# 视野：开镜缩小（狙击镜 4 倍）、冲刺略微放大、开火微缩
-	var mult := lerpf(1.0, float(gun.d["ads_fov"]), ads)
+	# 视野：开镜缩小（瞄具、2 倍镜、狙击镜 4~12 倍）、冲刺略微放大、开火微缩
+	var mult := lerpf(1.0, ads_zoom_mult(), ads)
 	var target_fov := rad_to_deg(2.0 * atan(tan(deg_to_rad(_hip_vfov) * 0.5) * mult))
 	target_fov += sprint_k * 4.0 - _fov_punch
 	cam.fov = target_fov
@@ -858,7 +859,7 @@ func _update_weapons(dt: float) -> void:
 	fire_buffer -= dt
 	switch_t -= dt
 	var active := input_enabled and not dead and busy_t <= 0.0
-	var want_ads := active and Input.is_action_pressed("aim") and switch_t <= 0.0 and not gun.reloading and slot < 2
+	var want_ads: bool = active and Input.is_action_pressed("aim") and switch_t <= 0.0 and not gun.reloading and slot < 2 and gun.d["mode"] != "melee"
 	if want_ads and ads <= 0.0:
 		Sfx.play("ads_in", -6.0, 0.05)
 	ads = move_toward(ads, 1.0 if want_ads else 0.0, dt / float(gun.d["ads_time"]))
@@ -869,7 +870,7 @@ func _update_weapons(dt: float) -> void:
 	for i in 5:
 		if Input.is_action_just_pressed("weapon_%d" % (i + 1)):
 			select_slot(i)
-	if scoped:
+	if scoped and bool(gun.d.get("variable", false)):
 		# 狙击镜开着：滚轮调倍率（往上放大），松开右键再开镜还是这个倍率
 		var z := Settings.scope_zoom
 		if Input.is_action_just_pressed("weapon_prev"):
@@ -891,6 +892,13 @@ func _update_weapons(dt: float) -> void:
 			select_slot(_last_gun_slot)
 		elif Input.is_action_just_pressed("fire") and switch_t <= 0.0:
 			_use_slot_item()
+		return
+
+	if gun.d["mode"] == "melee":
+		# 空手：左键出拳（按住连着打）
+		if Input.is_action_pressed("fire") and gun.fire_cd <= 0.0 and switch_t <= 0.0:
+			sprint_k = 0.0
+			_melee()
 		return
 
 	if Input.is_action_just_pressed("reload"):
@@ -918,7 +926,7 @@ func switch_weapon(i: int) -> void:
 	gun.cancel_reload()
 	gun_idx = i
 	gun = guns[i]
-	slot = 1 if gun.id == "xiujian" else 0
+	slot = 1 if gun.id in ["xiujian", "fist"] else 0
 	_last_gun_slot = slot
 	switch_t = 0.3
 	ads = 0.0
@@ -930,13 +938,39 @@ func switch_weapon(i: int) -> void:
 
 # ------------------------------------------------------------------ 物品栏
 
-## 主暗器（袖箭以外的）：拥有的 + 捡来的队友的
+## 主暗器（袖箭、空手以外的）
 func primaries() -> Array:
 	var out: Array = []
 	for g in guns:
-		if g.id != "xiujian":
+		if not g.id in ["xiujian", "fist"]:
 			out.append(g.id)
 	return out
+
+
+## 出拳：左右手轮流，打中前面 3 米内的魂兽（能把小魂兽揍飞），伤害跟等级涨
+var _punch_side := 1.0
+
+
+func _melee() -> void:
+	var d := gun.d
+	gun.fire_cd = 60.0 / float(d["rpm"])
+	_punch_side = -_punch_side
+	viewmodel.punch(_punch_side)
+	Sfx.play("skill_dash", -12.0, 0.1, 1.6)
+	var origin := cam.global_position
+	var dir := aim_dir()
+	var hit: Dictionary = world.raycast(origin, origin + dir * float(d["range"]), U.LAYER_WORLD | U.LAYER_BEAST, [get_rid()])
+	if hit.is_empty():
+		# 没正中：看看前面一点有没有魂兽（拳头判定宽一点）
+		for b: Beast in world.beasts.values():
+			if b.alive() and b.global_position.distance_to(origin + dir * 1.8) < 1.6:
+				hit = {"collider": b, "position": b.global_position, "normal": -dir, "shape": 0}
+				break
+	if hit.is_empty():
+		return
+	world.local_melee(gun, origin, dir, hit)
+	_punch_v += Vector3(-6.0, _punch_side * 8.0, _punch_side * 10.0)
+	trauma = minf(trauma + 0.15, 1.0)
 
 
 func spare_bones() -> Array:
@@ -989,7 +1023,7 @@ func select_slot(i: int) -> void:
 				var want := _primary_pick if _primary_pick in ps else str(ps[0])
 				switch_weapon(_gun_index(want))
 		1:
-			switch_weapon(_gun_index("xiujian"))
+			switch_weapon(_gun_index("xiujian") if _gun_index("xiujian") >= 0 else _gun_index("fist"))
 		_:
 			if i == 4 and slot == 4:
 				_spare_idx = (_spare_idx + 1) % maxi(spare_bones().size(), 1)
@@ -1146,16 +1180,17 @@ func _use_slot_item() -> void:
 func _drop_current() -> void:
 	var e := {}
 	match slot:
-		0:
+		0, 1:
+			# 暗器也能丢（丢给队友、丢进收购箱卖一半价钱）；丢了就不是你的了，想要再买
 			var id := gun.id
-			e = {"kind": "gun", "key": id, "owner": int(borrowed.get(id, Net.my_id))}
+			if id == "fist":
+				world.hud.toast("手上什么都没拿", Color(0.9, 0.9, 0.9), 1.2)
+				return
+			e = {"kind": "gun", "key": id, "owner": Net.my_id}
 			_remove_gun(id)
 			rebuild_guns()
 			var ps := primaries()
-			switch_weapon(_gun_index(str(ps[0]) if not ps.is_empty() else "xiujian"))
-		1:
-			world.hud.toast("袖箭是随身的暗器，不能丢", Color(0.9, 0.9, 0.9), 1.6)
-			return
+			switch_weapon(_gun_index(str(ps[0]) if not ps.is_empty() else ("xiujian" if Profile.has_weapon("xiujian") else "fist")))
 		2, 3:
 			var key := "grenade" if slot == 2 else _slot4
 			if not Profile.use_item(key):
@@ -1223,6 +1258,8 @@ func _fire() -> void:
 	# 手里的暗器往后顶、往上跳（开镜时小一些，但不会没有）
 	viewmodel.kick(back * (1.0 - ads * 0.35), deg_to_rad(float(d["view_punch"]) * 4.2) * (1.0 - ads * 0.45), lever)
 	Sfx.play(d["sound"], 0.0, 0.04, 1.0 + randf_range(-0.03, 0.03))
+	# 低频的"咚"叠在枪声下面，让每一发更有分量
+	Sfx.play("thud", -9.0 if n == 1 else -4.0, 0.05, 1.6 if gun.id in ["xiujian", "zhuge"] else 1.1)
 	# 抛壳
 	var ej := viewmodel.model().get_node_or_null("Eject") as Node3D
 	if ej and not scoped:
@@ -1259,6 +1296,10 @@ func _use_pill() -> void:
 		return
 	heal(60.0)
 	_poison_t = 0.0
+	root_t = 0.0
+	slow_t = 0.0
+	vuln_t = 0.0
+	silence_t = 0.0
 	Sfx.play("heal", -4.0)
 	world.fx.heal_burst(global_position)
 

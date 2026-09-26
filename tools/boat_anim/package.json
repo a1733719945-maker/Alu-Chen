@@ -2,9 +2,9 @@
   "name": "douluo-boat-anim",
   "private": true,
   "version": "1.0.0",
-  "description": "开船过场动画（Remotion 渲染成图片序列，放进 game/assets/cutscene/voyage）",
+  "description": "过场动画（Remotion）：开船 Voyage、成神结局 Ending。渲染成 mp4，再用 ffmpeg 转成 Ogg Theora 放进 game/assets/cutscene",
   "scripts": {
-    "render": "remotion render src/index.ts Voyage out --sequence --image-format=jpeg --jpeg-quality=88"
+    "render": "remotion render src/index.ts Voyage out/voyage.mp4 --codec=h264 --crf=14 && remotion render src/index.ts Ending out/ending.mp4 --codec=h264 --crf=14"
   },
   "dependencies": {
     "@remotion/cli": "4.0.290",

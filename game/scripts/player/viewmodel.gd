@@ -10,40 +10,10 @@ const HIP := {
 	"kongque": Vector3(0.15, -0.165, -0.36),
 	"baoyu": Vector3(0.17, -0.17, -0.37),
 	"zhuihun": Vector3(0.15, -0.175, -0.36),
+	"fist": Vector3.ZERO,
 }
 # 开镜时照门离眼睛多远
-const ADS_DIST := {"xiujian": 0.22, "zhuge": 0.15, "kongque": 0.14, "baoyu": 0.2, "zhuihun": 0.075}
-# 狙击镜是"画中画"（像 How to Fish）：另一台相机按倍率拍一张放大的画面，贴在镜片上；镜片外面还是正常视野。
-# 手里的东西放在单独的渲染层，镜子里的相机不拍它们。
-const VM_LAYER := 1 << 9
-const LENS_R := 0.022
-const LENS_SHADER := """shader_type spatial;
-render_mode unshaded, cull_back, shadows_disabled;
-uniform sampler2D view : source_color, filter_linear;
-uniform float active = 0.0;
-void fragment() {
-	vec2 p = (UV - 0.5) * 2.0;
-	float r = length(p);
-	if (r > 1.0) {
-		discard;
-	}
-	vec3 glass = vec3(0.03, 0.05, 0.08) + vec3(0.3, 0.4, 0.5) * pow(max(1.0 - r, 0.0), 3.0) * 0.3;
-	vec3 col = mix(glass, texture(view, UV).rgb, active);
-	float thin = 0.0045;
-	float crs = (step(abs(p.y), thin) + step(abs(p.x), thin)) * step(0.05, max(abs(p.x), abs(p.y)));
-	float thick = step(abs(p.y), 0.02) * step(0.62, abs(p.x)) + step(abs(p.x), 0.02) * step(0.62, p.y);
-	float mil = 0.0;
-	for (int i = 1; i <= 4; i++) {
-		float d = float(i) * 0.12;
-		mil += smoothstep(0.017, 0.01, length(vec2(abs(p.x) - d, p.y)));
-		mil += smoothstep(0.017, 0.01, length(vec2(p.x, abs(p.y) - d)));
-	}
-	col = mix(col, vec3(0.0), clamp(crs + thick + mil, 0.0, 1.0) * active);
-	col = mix(col, vec3(1.6, 0.12, 0.06), smoothstep(0.02, 0.008, r) * active);
-	col *= mix(1.0, smoothstep(1.0, 0.7, r), active);
-	ALBEDO = col;
-}
-"""
+const ADS_DIST := {"xiujian": 0.22, "zhuge": 0.15, "kongque": 0.14, "baoyu": 0.2, "zhuihun": 0.09, "fist": 0.0}
 const SPRING_K := 300.0
 const SPRING_C := 22.0
 
@@ -73,28 +43,25 @@ var _lever_t := 0.0
 var _lever_len := 0.0
 var _idle_t := 0.0
 var _item: Node3D                # 手上拿的道具（唐莲、回血丹、魂骨），拿着时暗器收起来
-var _scope_vp: SubViewport
-var _scope_cam: Camera3D
-var _lens_mat: ShaderMaterial
+var _punch_t := 0.0              # 出拳进度（1 → 0）
+var _punch_side := 1.0
 
 
 func _ready() -> void:
 	_build_models()
 	_build_left_arm()
-	_setup_scope()
-	_set_layers(self)
 	set_weapon("xiujian", true)
 
 
 func _build_models() -> void:
-	for id in Data.WEAPON_ORDER:
+	for id in Data.WEAPON_ORDER + ["fist"]:
 		var m := WeaponModels.build(id)
 		m.visible = false
 		add_child(m)
 		models[id] = m
 
 
-## 换了暗器皮肤 / 装扮：重建手里的模型
+## 换了暗器皮肤 / 装扮 / 配件：重建手里的模型
 func apply_look() -> void:
 	for k in models:
 		(models[k] as Node).queue_free()
@@ -102,10 +69,6 @@ func apply_look() -> void:
 	left_arm.queue_free()
 	_build_models()
 	_build_left_arm()
-	var lens := models["zhuihun"].find_child("ScopeLens", true, false) as MeshInstance3D
-	if lens:
-		lens.material_override = _lens_mat
-	_set_layers(self)
 	for k in models:
 		models[k].visible = k == cur and _item == null
 
@@ -126,49 +89,6 @@ func _build_left_arm() -> void:
 	left_arm.add_child(left_hand)
 
 
-func _set_layers(n: Node) -> void:
-	for gi in n.find_children("*", "GeometryInstance3D", true, false):
-		(gi as GeometryInstance3D).layers = VM_LAYER
-
-
-func _setup_scope() -> void:
-	_scope_vp = SubViewport.new()
-	_scope_vp.size = Vector2i(720, 720)
-	_scope_vp.render_target_update_mode = SubViewport.UPDATE_DISABLED
-	_scope_vp.msaa_3d = Viewport.MSAA_2X
-	add_child(_scope_vp)
-	_scope_cam = Camera3D.new()
-	_scope_cam.cull_mask = 0xFFFFF & ~VM_LAYER
-	_scope_cam.near = 0.2
-	_scope_cam.far = 1500.0
-	_scope_vp.add_child(_scope_cam)
-	_scope_cam.current = true
-	_lens_mat = ShaderMaterial.new()
-	var sh := Shader.new()
-	sh.code = LENS_SHADER
-	_lens_mat.shader = sh
-	_lens_mat.set_shader_parameter("view", _scope_vp.get_texture())
-	var lens := models["zhuihun"].find_child("ScopeLens", true, false) as MeshInstance3D
-	if lens:
-		lens.material_override = _lens_mat
-
-
-## 狙击镜画中画：开镜时每帧把镜子相机对准准星方向，视野按倍率缩小
-func _update_scope(ads: float) -> void:
-	var sniper := cur == "zhuihun" and _item == null
-	var on := sniper and ads > 0.25
-	var mode := SubViewport.UPDATE_ALWAYS if on else SubViewport.UPDATE_DISABLED
-	if _scope_vp.render_target_update_mode != mode:
-		_scope_vp.render_target_update_mode = mode
-	if on:
-		var cam := get_parent() as Camera3D
-		if cam:
-			_scope_cam.global_transform = cam.global_transform
-		var alpha := atan(LENS_R / float(ADS_DIST["zhuihun"]))
-		_scope_cam.fov = rad_to_deg(2.0 * alpha / maxf(Settings.scope_zoom, 1.0))
-	_lens_mat.set_shader_parameter("active", smoothstep(0.25, 0.8, ads) if sniper else 0.0)
-
-
 ## 手上换成一个道具（物品栏 3、4、5 号位）
 func show_item(kind: String, key: String) -> void:
 	if _item:
@@ -178,7 +98,6 @@ func show_item(kind: String, key: String) -> void:
 	_item.scale = Vector3.ONE * (0.5 if kind == "bone" else 0.7)
 	for n in _item.find_children("*", "GeometryInstance3D", true, false):
 		(n as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		(n as GeometryInstance3D).layers = VM_LAYER
 	for k in models:
 		models[k].visible = false
 	_switch = 1.0
@@ -210,7 +129,13 @@ func hand_global() -> Vector3:
 
 
 func two_handed() -> bool:
-	return cur != "xiujian" and _item == null
+	return not cur in ["xiujian", "fist"] and _item == null
+
+
+## 空手出拳：side 1 右拳、-1 左拳
+func punch(side: float) -> void:
+	_punch_t = 1.0
+	_punch_side = side
 
 
 func add_sway(mouse_delta: Vector2) -> void:
@@ -275,7 +200,9 @@ func update(dt: float, ads: float, speed_k: float, grounded: bool, reload_k: flo
 	else:
 		_bob_amt = U.damp(_bob_amt, 0.0, 6.0, dt)
 
-	_update_scope(ads)
+	_punch_t = move_toward(_punch_t, 0.0, dt / 0.26)
+	# 全屏瞄准镜开着时手里的东西藏起来（像 CS 的狙击镜）
+	visible = not scoped
 	var m := model()
 	m.visible = _item == null
 	if _item:
@@ -306,6 +233,8 @@ func update(dt: float, ads: float, speed_k: float, grounded: bool, reload_k: flo
 		-_sway.x * 1.8 + _kr.z + rs * 0.55 + _move_tilt * calm)
 
 	_animate_parts(m, reload_k, per_shell)
+	if cur == "fist":
+		_animate_fists(m, sprint)
 
 	# 左手：单手暗器时一直在左下角；双手暗器平时托着暗器，甩引魂索时才伸出来
 	# 左手平时收着，只有甩引魂索、扔东西时伸出来（双手暗器由模型里的左手托着）
@@ -325,6 +254,21 @@ func update(dt: float, ads: float, speed_k: float, grounded: bool, reload_k: flo
 	left_arm.rotation = Vector3(0.15 + 0.2 * sin(_left_throw * PI) - _left_pull * 0.3, -0.2, 0.25)
 	left_arm.visible = _left_show > 0.02
 	coil.rotation.y += dt * 2.0
+
+
+## 两只拳头：出拳的那只快速往前打再收回，另一只护在脸前
+func _animate_fists(m: Node3D, sprint: float) -> void:
+	var k := sin(_punch_t * PI) if _punch_t > 0.0 else 0.0
+	k = k * k * (3.0 - 2.0 * k)
+	for side in [1.0, -1.0]:
+		var n := m.get_node_or_null("FistR" if side > 0 else "LeftHand") as Node3D
+		if n == null:
+			continue
+		var base := Vector3(0.16 * side, -0.17, -0.33)
+		var hit := k if side == _punch_side else 0.0
+		var guard := (k * 0.3) if side != _punch_side else 0.0
+		n.position = base + Vector3(-0.12 * side * hit, 0.07 * hit, -0.24 * hit) + Vector3(0, -0.05 * sprint, 0.04 * guard)
+		n.rotation = Vector3(-0.35 * hit - sprint * 0.3, 0.3 * side * hit, 0.25 * side * hit)
 
 
 func _animate_parts(m: Node3D, reload_k: float, per_shell: bool) -> void:

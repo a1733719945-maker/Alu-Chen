@@ -5,7 +5,7 @@ extends Node
 signal changed
 
 var path := "user://profile.json"   # 自动测试会换成别的文件，不碰玩家的存档
-const VERSION := 2
+const VERSION := 3          # 3：没有清单任务了（旧存档的任务进度清零），100 级，魂技槽，配件
 
 var money := 0
 var xp := 0
@@ -25,6 +25,13 @@ var skin := "default"
 var outfits: Array = ["default"]    # 拥有的装扮
 var outfit := "default"
 var codex := {}                     # 猎魂录：魂兽 -> {"k": 杀了几只, "s": 星星（位：1 杀 5 只 / 2 带词缀 / 4 千年或精英）}
+var skill_slots: Array = [-1, -1, -1]   # Q / E / F 三个魂技槽装的是第几个魂环的魂技（-1 空）
+var attach_owned := {}              # 暗器 -> [买过的配件]
+var attach_on := {}                 # 暗器 -> {部位: 配件}
+var stats := {}                     # 成就用的计数
+var achieved := {}                  # 已完成的成就 id -> true
+var god := false                    # 成神了（通关）
+var max_chapter := 1                # 去过的最远一章（渡船能回以前的岛）
 var chapter := 1
 var quest := 0              # 当前章节的任务进度
 var quest_count := 0        # 当前任务的计数（击杀数等）
@@ -85,6 +92,14 @@ func load_profile() -> void:
 	if not "default" in outfits:
 		outfits.append("default")
 	codex = d.get("codex", {})
+	skill_slots = d.get("skill_slots", [-1, -1, -1])
+	while skill_slots.size() < 3:
+		skill_slots.append(-1)
+	attach_owned = d.get("attach_owned", {})
+	attach_on = d.get("attach_on", {})
+	stats = d.get("stats", {})
+	achieved = d.get("achieved", {})
+	god = bool(d.get("god", false))
 	skin = str(d.get("skin", "default"))
 	outfit = str(d.get("outfit", "default"))
 	if not skin in skins:
@@ -92,14 +107,20 @@ func load_profile() -> void:
 	if not outfit in outfits:
 		outfit = "default"
 	chapter = int(d.get("chapter", 1))
+	max_chapter = maxi(int(d.get("max_chapter", chapter)), chapter)
 	quest = int(d.get("quest", 0))
 	quest_count = int(d.get("quest_count", 0))
+	if int(d.get("version", 1)) < 3:
+		# 旧存档：任务表换了，任务进度从头算（修炼到 X 级的任务，等级够了会马上完成）
+		quest = 0
+		quest_count = 0
+		for i in rings.size():
+			if i < 3 and int(skill_slots[i]) < 0:
+				skill_slots[i] = i
 	kills = int(d.get("kills", 0))
 	loadout = d.get("loadout", weapons.duplicate())
 	# 旧存档里可能有已经删掉的暗器
-	weapons = weapons.filter(func(w): return Data.WEAPONS.has(w))
-	if weapons.is_empty():
-		weapons = ["xiujian"]
+	weapons = weapons.filter(func(w): return Data.WEAPONS.has(w) and w != "fist")
 	_fix_loadout()
 	if not Data.CHAPTERS.has(chapter):
 		chapter = 1
@@ -112,6 +133,7 @@ func save_profile() -> void:
 	var d := {
 		"version": VERSION, "money": money, "xp": xp, "level": level, "weapons": weapons,
 		"upgrades": upgrades, "items": items, "rings": rings, "bones": bones, "equipped": equipped, "bag": bag, "food": food, "bait": bait, "bounties": bounties, "skins": skins, "skin": skin, "outfits": outfits, "outfit": outfit, "codex": codex,
+		"skill_slots": skill_slots, "attach_owned": attach_owned, "attach_on": attach_on, "stats": stats, "achieved": achieved, "god": god, "max_chapter": max_chapter,
 		"chapter": chapter, "quest": quest, "quest_count": quest_count, "kills": kills, "loadout": loadout,
 	}
 	var f := FileAccess.open(path, FileAccess.WRITE)
@@ -143,6 +165,13 @@ func reset() -> void:
 	outfits = ["default"]
 	outfit = "default"
 	codex = {}
+	skill_slots = [-1, -1, -1]
+	attach_owned = {}
+	attach_on = {}
+	stats = {}
+	achieved = {}
+	god = false
+	max_chapter = 1
 	chapter = 1
 	quest = 0
 	quest_count = 0
@@ -181,13 +210,95 @@ func has_weapon(id: String) -> bool:
 	return id in weapons
 
 
+## 暗器是真的东西：买了才有；卖了、丢了、倒地掉了就没了，可以再买（升级和配件记在存档里，不会丢）
 func buy_weapon(id: String) -> bool:
 	if has_weapon(id) or not spend(int(Data.WEAPONS[id]["price"])):
 		return false
+	add_weapon(id)
+	return true
+
+
+func add_weapon(id: String) -> void:
+	if id == "fist" or has_weapon(id):
+		return
 	weapons.append(id)
 	_fix_loadout()
 	mark_dirty()
+
+
+func remove_weapon(id: String) -> void:
+	weapons.erase(id)
+	_fix_loadout()
+	mark_dirty()
+
+
+func sell_price(id: String) -> int:
+	return int(Data.WEAPONS[id]["price"]) / 2
+
+
+func sell_weapon(id: String) -> bool:
+	if not has_weapon(id):
+		return false
+	remove_weapon(id)
+	add_money(sell_price(id))
+	count("sold")
 	return true
+
+
+# ------------------------------------------------------------------ 配件
+
+func has_attach(w: String, a: String) -> bool:
+	return a in (attach_owned.get(w, []) as Array)
+
+
+func attach_of(w: String, slot: String) -> String:
+	return str((attach_on.get(w, {}) as Dictionary).get(slot, ""))
+
+
+func buy_attach(w: String, a: String) -> bool:
+	if has_attach(w, a) or not spend(Data.attach_price(w, a)):
+		return false
+	var owned: Array = attach_owned.get(w, [])
+	owned.append(a)
+	attach_owned[w] = owned
+	toggle_attach(w, a)
+	return true
+
+
+## 装上 / 卸下（同一个部位只能装一个）
+func toggle_attach(w: String, a: String) -> void:
+	if not has_attach(w, a):
+		return
+	var on: Dictionary = attach_on.get(w, {})
+	var slot := str(Data.ATTACH[a]["slot"])
+	if str(on.get(slot, "")) == a:
+		on.erase(slot)
+	else:
+		on[slot] = a
+	attach_on[w] = on
+	mark_dirty()
+
+
+## 把第 ring 个魂环的魂技装到第 k 个键（Q/E/F）；已经装在别的键上就两个键互换
+func set_skill_slot(k: int, ring: int) -> void:
+	var old := int(skill_slots[k])
+	for j in skill_slots.size():
+		if j != k and int(skill_slots[j]) == ring:
+			skill_slots[j] = old
+	skill_slots[k] = ring
+	mark_dirty()
+
+
+# ------------------------------------------------------------------ 成就计数
+
+func count(key: String, n := 1) -> int:
+	stats[key] = int(stats.get(key, 0)) + n
+	mark_dirty()
+	return int(stats[key])
+
+
+func stat(key: String) -> int:
+	return int(stats.get(key, 0))
 
 
 func upgrade_level(id: String, key: String) -> int:
@@ -209,6 +320,7 @@ func buy_upgrade(id: String, key: String) -> bool:
 
 func weapon_stats(id: String) -> Dictionary:
 	var d := Data.weapon_stats(id, upgrades.get(id, {}))
+	d = Data.apply_attach(d, attach_on.get(id, {}))
 	# 魂骨：爆头加成、伤害加成
 	d["headshot"] = d["headshot"] * (1.0 + bone_bonus("headshot"))
 	d["damage"] = d["damage"] * (1.0 + bone_bonus("dmg") + codex_stars() * 0.005)
@@ -229,13 +341,13 @@ func buy_item(id: String) -> bool:
 	var it: Dictionary = Data.ITEMS[id]
 	if id == "lure_gold":
 		# 引兽香：一包管 5 次咬钩
-		if item_count("gold_bites") >= 15 or not spend(int(it["price"])):
+		if item_count("gold_bites") >= 15 or not spend(Data.item_price(id)):
 			return false
 		items["gold_bites"] = item_count("gold_bites") + 5
 		mark_dirty()
 		return true
 	var n := int(it.get("bundle", 1))
-	if item_count(id) + n > int(it["max"]) or not spend(int(it["price"])):
+	if item_count(id) + n > int(it["max"]) or not spend(Data.item_price(id)):
 		return false
 	items[id] = item_count(id) + n
 	mark_dirty()
@@ -258,7 +370,7 @@ func level_cap() -> int:
 
 
 func max_rings() -> int:
-	return (Data.SKILL_TREE["lyc"] as Array).size()
+	return Data.MAX_RINGS
 
 
 ## 卡在瓶颈：到了下一个魂环要求的等级，还没吸收那个魂环
@@ -289,7 +401,7 @@ func next_ring_index() -> int:
 func can_absorb(age: int) -> String:
 	## 返回空字符串表示可以；否则返回原因
 	if rings.size() >= max_rings():
-		return "这一版最多 %d 个魂环" % max_rings()
+		return "已经有 %d 个魂环了" % max_rings()
 	if not at_bottleneck():
 		return "要修炼到 %d 级瓶颈才能吸收魂环" % level_cap()
 	var min_age: int = Data.RING_MIN_AGE[rings.size()]
@@ -300,6 +412,11 @@ func can_absorb(age: int) -> String:
 
 func add_ring(age: int, skill: String, beast: String) -> void:
 	rings.append({"age": age, "skill": skill, "beast": beast})
+	# 魂技槽有空就自动装上
+	for i in skill_slots.size():
+		if int(skill_slots[i]) < 0:
+			skill_slots[i] = rings.size() - 1
+			break
 	mark_dirty()
 
 
@@ -337,7 +454,7 @@ func codex_kill(sp: String, age: int, has_affix: bool, elite: bool) -> int:
 
 
 func max_hp() -> float:
-	return 100.0 + (level - 1) * 3.0 + bone_bonus("hp") + codex_stars() * 2.0
+	return 100.0 + (level - 1) * 5.0 + bone_bonus("hp") * (1.0 + level * 0.02) + codex_stars() * 3.0
 
 
 func max_soul() -> float:

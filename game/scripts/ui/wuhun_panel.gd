@@ -75,31 +75,54 @@ func open() -> void:
 	mid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	mid.add_theme_constant_override("separation", 10)
 	_body.add_child(mid)
-	mid.add_child(UiKit.label("魂环与魂技（Q 攻击 · F 辅助 · 双击 Shift 位移）", 18, UiKit.JADE))
-	var tree: Array = Data.SKILL_TREE[w["id"]]
-	for i in tree.size():
+	mid.add_child(UiKit.label("魂环与魂技：点 Q / E / F 把魂技装到那个键上（同一时间最多带三个）", 18, UiKit.JADE))
+	var scroll0 := ScrollContainer.new()
+	scroll0.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll0.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	mid.add_child(scroll0)
+	var list0 := VBoxContainer.new()
+	list0.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	list0.add_theme_constant_override("separation", 8)
+	scroll0.add_child(list0)
+	for i in Data.MAX_RINGS:
 		var row := PanelContainer.new()
 		var have := i < Profile.rings.size()
-		var st := UiKit.row_style(Data.age_color(int(Profile.rings[i]["age"])) if have else Color(1, 1, 1, 0.15))
+		var st := UiKit.row_style(Data.AGES[int(Profile.rings[i]["age"])]["glow"] if have else Color(1, 1, 1, 0.15))
 		row.add_theme_stylebox_override("panel", st)
-		mid.add_child(row)
+		list0.add_child(row)
+		var rh := HBoxContainer.new()
+		rh.add_theme_constant_override("separation", 10)
+		row.add_child(rh)
 		var rv := VBoxContainer.new()
-		row.add_child(rv)
+		rv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		rh.add_child(rv)
 		var head := "第%s魂环" % Data.RING_NAMES[i]
 		if have:
 			var r: Dictionary = Profile.rings[i]
 			var s: Dictionary = Data.SKILLS[r["skill"]]
-			rv.add_child(UiKit.label("%s · %s魂环（%s）" % [head, Data.age_name(int(r["age"])), Data.BEASTS.get(r["beast"], {"name": "?"})["name"]], 17, Data.age_color(int(r["age"]))))
-			rv.add_child(UiKit.title(str(s["name"]), 30, UiKit.GOLD))
-			var d := UiKit.label("%s   （魂力 %d · 冷却 %d 秒）" % [s["desc"], int(s["cost"]), int(s["cd"])], 16)
+			rv.add_child(UiKit.label("%s · %s魂环（%s）" % [head, Data.age_name(int(r["age"])), Data.BEASTS.get(r["beast"], {"name": "?"})["name"]], 16, Data.AGES[int(r["age"])]["glow"]))
+			rv.add_child(UiKit.title(str(s["name"]), 26, UiKit.GOLD))
+			var d := UiKit.label("%s   （魂力 %d · 冷却 %d 秒）" % [s["desc"], int(s["cost"]), int(s["cd"])], 14)
 			d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			rv.add_child(d)
+			var ring_i := i
+			for k in Data.SKILL_SLOTS:
+				var key: String = ["Q", "E", "F"][k]
+				var on := int(Profile.skill_slots[k]) == i
+				var b := UiKit.button(key, 20, on)
+				b.custom_minimum_size = Vector2(46, 46)
+				b.tooltip_text = "装到 %s 键" % key
+				var slot_k := k
+				b.pressed.connect(func():
+					Profile.set_skill_slot(slot_k, ring_i)
+					Sfx.play("switch", -4.0)
+					open())
+				rh.add_child(b)
 		else:
-			rv.add_child(UiKit.label("%s · %d 级后吸收，至少%s" % [head, (i + 1) * 10, Data.age_name(Data.RING_MIN_AGE[i])], 17, UiKit.MIST))
-			var d := UiKit.label("会得到什么魂技，吸收了才知道：同一种魂兽总给同一个魂技，年份越高越强", 15, UiKit.MOON)
+			rv.add_child(UiKit.label("%s · %d 级后吸收，至少%s" % [head, (i + 1) * 10, Data.age_name(Data.RING_MIN_AGE[i])], 16, UiKit.MIST))
+			var d := UiKit.label("会得到什么魂技，吸收了才知道：同一种魂兽总给同一个魂技，年份越高越强", 13, UiKit.MOON)
 			d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-			rv.add_child(d)
-	# 右：魂骨（六个部位，点"装上"换）
+			rv.add_child(d)	# 右：魂骨（六个部位，点"装上"换）
 	var right := VBoxContainer.new()
 	right.custom_minimum_size.x = 330
 	right.add_theme_constant_override("separation", 3)

@@ -133,7 +133,11 @@ func _raw_height(x: float, z: float) -> float:
 		var k := smoothstep(h["radius"] + 10.0, h["radius"] - 2.0, d)
 		land = lerpf(land, h["flat"] + _detail.get_noise_2d(x, z) * 0.25, k)
 	for p in ponds:
-		land = _pond_shape(land, x, z, p)
+		# 水塘（碧磷沼、毒沼）：岸边是一大片缓坡浅滩，走着就能上岸，不会掉进去爬不出来
+		var d := Vector2(x, z).distance_to(p["center"])
+		var k := smoothstep(p["radius"] + 9.0, p["radius"] - 5.0, d)
+		var bed := -float(p["depth"]) * smoothstep(p["radius"] + 1.0, p["radius"] - 7.0, d)
+		land = lerpf(land, bed + _detail.get_noise_2d(x, z) * 0.3, k)
 	var t := smoothstep(R + 8.0, R - 16.0, r)
 	var deep := 9.0 if map_id == "sea" else 6.0
 	var lake_floor := -6.5 - clampf((r - R) * 0.05, 0.0, deep)
@@ -141,30 +145,6 @@ func _raw_height(x: float, z: float) -> float:
 		# 近海是一段缓坡浅滩，再往外才突然变深
 		lake_floor = lerpf(-1.2, -14.0, smoothstep(R - 4.0, R + 40.0, r))
 	return lerpf(lake_floor, land, t)
-
-
-## 水塘：碗形塘底，岸边是能走上去的缓坡。塘边的地再高也会被削成缓坡，掉进去一定走得出来
-## （以前是 10 米内从地面直接降到塘底，挨着山的地方坡有 60–70°，角色最多爬 50°）
-const POND_BANK := 0.42          # 岸坡：每走 1 米升高多少（约 23°）
-
-
-func _pond_shape(land: float, x: float, z: float, p: Dictionary) -> float:
-	var d := Vector2(x, z).distance_to(p["center"])
-	var r: float = p["radius"]
-	var depth: float = p["depth"]
-	if d < r:
-		# 塘里：中间平、往岸边慢慢变浅，岸线在水面下一点
-		var k := smoothstep(r * 0.3, r, d)
-		return lerpf(-depth, -0.35, k) + _detail.get_noise_2d(x, z) * 0.3 * (1.0 - k)
-	# 岸上：从岸线往外按固定坡度升高，碰到原来的地面就接上（平滑过渡）
-	var bank := -0.35 + (d - r) * POND_BANK
-	return _smin(land, bank, 1.5)
-
-
-## 平滑的 min：两个面交界的地方不会有折角
-static func _smin(a: float, b: float, k: float) -> float:
-	var h := clampf(0.5 + 0.5 * (b - a) / k, 0.0, 1.0)
-	return lerpf(b, a, h) - k * h * (1.0 - h)
 
 
 func _generate() -> void:

@@ -108,6 +108,10 @@ func shoot(ads: float) -> Vector2:
 	var k: float = float(d.get("recoil_mult", 1.0)) * lerpf(1.0, float(d["ads_recoil"]), ads)
 	var j: float = float(d["jitter"])
 	step = step * k + Vector2(randf_range(-j, j), randf_range(-j * 0.3, j)) * k
+	# 连射放大（冲锋、步枪），配件：制退器压上跳、握把压左右
+	step *= float(d.get("recoil_scale", 1.0))
+	step.x *= float(d.get("recoil_h", 1.0))
+	step.y *= float(d.get("recoil_v", 1.0))
 	recoil += step
 	spray += 1.0
 	bloom = minf(bloom + float(d["bloom"]), float(d["bloom_max"]))

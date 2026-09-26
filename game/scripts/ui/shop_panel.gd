@@ -1,6 +1,7 @@
 class_name ShopPanel
 extends ColorRect
-## 唐门暗器铺：买暗器、升级、买道具和鱼饵、买外观（暗器皮肤、装扮）。
+## 唐门暗器铺：买 / 卖暗器、买配件、升级、买道具和鱼饵、买外观（暗器皮肤、装扮）。
+## 暗器卖了、丢了、送人了都能再买；升级和买过的配件记在存档里，买回来还在。
 
 signal closed
 
@@ -37,7 +38,7 @@ func _ready() -> void:
 	var tabs := HBoxContainer.new()
 	tabs.add_theme_constant_override("separation", 8)
 	v.add_child(tabs)
-	for t in [["weapons", "暗器"], ["upgrades", "升级"], ["items", "道具 · 鱼饵"], ["looks", "外观"]]:
+	for t in [["weapons", "暗器"], ["attach", "配件"], ["upgrades", "升级"], ["items", "道具 · 鱼饵"], ["looks", "外观"]]:
 		var b := UiKit.button(t[1], 20)
 		b.custom_minimum_size.x = 130
 		b.pressed.connect(func(): _tab = t[0]; refresh())
@@ -69,7 +70,14 @@ func refresh() -> void:
 		"weapons":
 			for id in Data.WEAPON_ORDER:
 				_weapon_row(id)
+		"attach":
+			if Profile.loadout.is_empty():
+				_list.add_child(UiKit.label("身上没有暗器。先买一把", 18, UiKit.MIST))
+			for id in Profile.loadout:
+				_attach_block(id)
 		"upgrades":
+			if Profile.loadout.is_empty():
+				_list.add_child(UiKit.label("身上没有暗器。先买一把", 18, UiKit.MIST))
 			for id in Profile.loadout:
 				_upgrade_block(id)
 		"items":
@@ -111,8 +119,17 @@ func _weapon_row(id: String) -> void:
 	v.add_child(UiKit.label("伤害 %s · 射速 %d/分 · 弹匣 %d · 爆头 ×%.1f" % [dmg, int(w["rpm"]), int(w["mag"]), float(w["headshot"])], 15, UiKit.MOON))
 	var unlock := int(Data.WEAPON_UNLOCK.get(id, 1))
 	if Profile.has_weapon(id):
-		h.add_child(UiKit.label("已拥有", 20, UiKit.JADE))
-	elif int(world.chapter) < unlock:
+		var sp := Profile.sell_price(id)
+		var sb := UiKit.button("卖出 +%d" % sp, 18)
+		sb.pressed.connect(func():
+			if Profile.sell_weapon(id):
+				Sfx.play("sell", -2.0)
+				world.on_sold_weapon(id)
+				world.hud.toast("卖掉了%s，得到 %d 金魂币（想要可以再买）" % [w["name"], sp], UiKit.GOLD)
+			refresh())
+		h.add_child(UiKit.label("在身上", 18, UiKit.JADE))
+		h.add_child(sb)
+	elif int(Profile.max_chapter) < unlock and int(world.chapter) < unlock:
 		h.add_child(UiKit.label("第%s章开放" % Data.RING_NAMES[unlock - 1], 18, UiKit.MIST))
 	else:
 		var b := UiKit.button("%d 金魂币 购买" % int(w["price"]), 20, true)
@@ -125,6 +142,42 @@ func _weapon_row(id: String) -> void:
 			refresh())
 		h.add_child(b)
 
+
+## 配件：每把暗器能装的配件，买一次永久有（卖了暗器再买回来还在）；同一个部位只能装一个
+func _attach_block(id: String) -> void:
+	var w: Dictionary = Data.WEAPONS[id]
+	_list.add_child(UiKit.title(str(w["name"]), 30, UiKit.GOLD))
+	for a in Data.ATTACH_OK.get(id, []):
+		var at: Dictionary = Data.ATTACH[a]
+		var h := _row()
+		var v := VBoxContainer.new()
+		v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		h.add_child(v)
+		var slot_name: String = {"sight": "瞄具", "muzzle": "枪口", "under": "枪管下"}.get(str(at["slot"]), "")
+		v.add_child(UiKit.label("%s   · %s" % [at["name"], slot_name], 20, UiKit.MOON))
+		v.add_child(UiKit.label(str(at["desc"]), 15, UiKit.MIST))
+		var on: bool = Profile.attach_of(id, str(at["slot"])) == a
+		if Profile.has_attach(id, a):
+			var b := UiKit.button("卸下" if on else "装上", 18, not on)
+			b.pressed.connect(func():
+				Profile.toggle_attach(id, a)
+				Sfx.play("switch", -4.0)
+				world.on_attach_changed()
+				refresh())
+			if on:
+				h.add_child(UiKit.label("装着", 18, UiKit.JADE))
+			h.add_child(b)
+		else:
+			var price := Data.attach_price(id, a)
+			var b2 := UiKit.button("%d 金魂币" % price, 18, true)
+			b2.disabled = Profile.money < price
+			b2.pressed.connect(func():
+				if Profile.buy_attach(id, a):
+					Sfx.play("coin", -2.0)
+					world.on_attach_changed()
+					world.hud.toast("装上了%s" % at["name"], UiKit.GOLD)
+				refresh())
+			h.add_child(b2)
 
 func _upgrade_block(id: String) -> void:
 	var w: Dictionary = Data.WEAPONS[id]
@@ -209,8 +262,9 @@ func _item_row(id: String) -> void:
 	var d := UiKit.label(str(it["desc"]), 15, UiKit.MIST)
 	d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	v.add_child(d)
-	var b := UiKit.button("%d 金魂币" % int(it["price"]), 18, true)
-	b.disabled = Profile.money < int(it["price"])
+	var price := Data.item_price(id)
+	var b := UiKit.button("%d 金魂币" % price, 18, true)
+	b.disabled = Profile.money < price
 	b.pressed.connect(func():
 		if Profile.buy_item(id):
 			Sfx.play("coin", -2.0)

@@ -41,16 +41,17 @@ func _register_inputs() -> void:
 		"jump": [KEY_SPACE],
 		"sprint": [KEY_SHIFT],
 		"crouch": [KEY_CTRL],
-		"lure": [KEY_E],
+		"lure": [KEY_G],
 		"interact": [KEY_F],
 		"reload": [KEY_R],
-		"skill": [KEY_Q],
-		"grenade": [KEY_G],
+		"skill_1": [KEY_Q],
+		"skill_2": [KEY_E],
 		"pill": [KEY_H],
 		"throw": [KEY_T],
 		"bait": [KEY_B],
 		"map": [KEY_M],
 		"wuhun_panel": [KEY_K],
+		"achievements": [KEY_J],
 		"weapon_1": [KEY_1],
 		"weapon_2": [KEY_2],
 		"weapon_3": [KEY_3],
@@ -80,14 +81,15 @@ func _register_inputs() -> void:
 		var mb := InputEventMouseButton.new()
 		mb.button_index = mouse[action]
 		InputMap.action_add_event(action, mb)
-	# 鼠标侧键也能甩引魂索
-	var side := InputEventMouseButton.new()
-	side.button_index = MOUSE_BUTTON_XBUTTON1
-	InputMap.action_add_event("lure", side)
-	# 另一个侧键放攻击魂技
+	# 引魂索：G、鼠标中键、鼠标侧键都行（按住蓄力，松开甩出去）
+	for b in [MOUSE_BUTTON_MIDDLE, MOUSE_BUTTON_XBUTTON1]:
+		var side := InputEventMouseButton.new()
+		side.button_index = b
+		InputMap.action_add_event("lure", side)
+	# 另一个侧键放第一个魂技
 	var side2 := InputEventMouseButton.new()
 	side2.button_index = MOUSE_BUTTON_XBUTTON2
-	InputMap.action_add_event("skill", side2)
+	InputMap.action_add_event("skill_1", side2)
 
 
 func load_settings() -> void:

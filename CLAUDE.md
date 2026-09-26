@@ -15,11 +15,11 @@
 |---|---|
 | 不喜欢中式古风 / 毛笔字体 | 思源黑体（Noto Sans SC，裁剪过）+ Barlow Condensed 数字 |
 | UI 太山寨 | game-icons.net 剪影图标、半透明底板、斜切血条、少文字；菜单 / 暗器铺 / 武魂面板还可以继续现代化 |
-| 技能键太多，WASD 时按不到 Z/C/V | 魂技只用 **Q**：轻按放当前魂技，按住 Q 弹出轮盘用鼠标选（`Player._skill_input`、`Hud.open_wheel`） |
+| 技能键太多；Q 轮盘"一坨屎"；自动选技能没有操作感 | **Q / E / F 三个魂技槽**，K 面板里自己选装哪个；不要轮盘 |
 | 魂兽在天上掉不下来 | 空中分段重力、连击上推力递减有上限、尸体摔到地上再消失（`beast.gd` 顶部常量） |
 | 要像 CoD / CS 的枪感 | 每把暗器有后坐图案、随机散布、第一发精准、开镜、镜头冲击（`gun.gd`、`data.gd` 的 WEAPONS） |
 | 要好看的 3D 模型 | Quaternius CC0 动画模型（`assets/models/creatures`） |
-| 至少 4 小时流程，和朋友玩 | 五章、50 级、五个魂环；联机时"猎杀 N 只"按人数加量（`Data.quest_target`） |
+| 至少 4 小时流程，和朋友玩；指向性清单任务不好玩、会卡关 | 五章、100 级成神、十个魂环；没有清单任务，只有等级 → Boss → 渡船 |
 | 画面要好 | Poly Haven HDR 天空、CC0 地面贴图、程序树、草、体积雾，画质 低/中/高 |
 | 魂兽太容易逃、没多样性 | 四种性格（凶暴的追着打不逃、狡猾装死、魂骨兽必掉魂骨），逃跑时间 24 秒 |
 | 要 How to Fish 那样丢出去卖 | T 丢出手上的东西，丢进暗器铺旁的收购箱卖钱；放久了海鸥叼走 |
@@ -28,11 +28,14 @@
 | 魂技要有位移、减伤、变大、加速 | 飞索、瞬移、变大、飞行、隐身、减伤 |
 | 队友互动 | 丢东西给队友、倒地掉暗器队友能捡、按住 F 救人、海鸥叼走倒地的人 |
 | 枪没配件、没手感 | 全息 / 光学瞄具、夜光照门、激光、制退器、抛壳、新枪声、更狠的后坐；**用户还想要更好的枪感，下一轮继续** |
-| 第三章碧磷沼掉进去爬不出来（坡太陡） | 水塘岸坡固定约 23°（`Island._pond_shape`、`POND_BANK`，塘边太高的地被削成缓坡）；浅水陡坡上按空格也能上岸（`Player._climb_out`）；自动测试 `pond` 阶段检查每个水塘 4 个方向都能只按 W 走上岸 |
 | 在水上飘很怪 | 深水会沉，要游、要憋气，憋不住掉血；魂环落水沉底或冲上岸 |
 | Boss 太卡通 | 着色器流光 + 魂环 + 光轮 + 光柱 + 出场字幕 |
 | 验证很费 token | 改完先打包、告诉用户怎么更新，**等用户说要验证再跑全流程**；只做语法检查和一两段短测 |
 | Boss 太卡通、要更好的素材 | 还没解决：需要写实的怪物模型，免费 CC0 里没有合适的，要用户提供 Sketchfab 账号 / 付费素材，或者接受现在的着色器方案 |
+| 狙击镜画中画看着头晕；红点镜一圈蓝光 | 全屏瞄准镜；镜片几乎透明 |
+| 配件要买、东西都能卖、卖了能再买、没暗器用拳头 | 第五版已做 |
+| 魂兽没差异 | 每种魂兽一个有前摇、能躲的独门招式 |
+| 短时间小爽、中时间大爽 | 升级 / 配件 / 连杀是小爽；魂环突破、新魂技档次特效、Boss、新岛是大爽 |
 | 要有投入、紧迫感、耐玩 | 鱼饵、饱食度、词缀、悬赏、兽潮、精英、外观、每章更难 |
 
 ## 仓库和发布
@@ -80,6 +83,33 @@
    - 开船动画最后转成了一个 Ogg Theora 视频 `assets/cutscene/voyage.ogv`（ffmpeg：`-c:v libtheora -q:v 8`），`ui/voyage.gd` 用 VideoStreamPlayer 播。原因：GitHub 网页上传一次最多 100 个文件，150 帧图片传不上去
    - **教训**：PowerShell 批量替换时，单个 `@(@(a,b))` 会被拆开，把整个文件的某个字母全换掉了（出过一次事故，从备份恢复）。现在用 `Rep 文件 旧 新` 一对一替换；函数别叫 `R`（是内置别名）
 
+7. 第五版（2026-09-26，成神之路，按用户 15 条反馈大改，本机做的补丁包）：
+   - **没有清单任务**：`Data.CHAPTERS` 每章只有 等级 → 祭坛 → Boss → 渡船（第五章是 god）；祭坛按 `boss_level`（15/35/55/75/95）开放，
+     打赢后 3 分钟可再召唤（`World._can_summon`、`_altar_cd`）；渡船 `World.boat_destinations()` 能去下一章和去过的岛，按 F 弹 `Hud.open_boat_picker`
+   - **100 级、十个魂环**：`Data.MAX_LEVEL / MAX_RINGS / RING_MIN_AGE`，`AGES` 五档带 glow（万年黑环暗红光，十万年红）；成神 `World._check_god` 播 `assets/cutscene/ending.ogv`
+   - 魂环掉落：瓶颈的人优先；其他按年份概率掉、30 秒散掉，按 F 炼化精华涨修为（`World._gain_essence`）
+   - **魂技槽**：Q / E / F 三个槽（`Profile.skill_slots`、`set_skill_slot`，K 面板点按钮装），`SkillSystem.cast_slot`；左下角三个技能框（`Hud._sk_boxes`）
+   - 引魂索改成 G / 鼠标中键；E 是第二魂技；F 是交互或第三魂技
+   - 数值（`data.gd` 的"数值"一节）：`SPECIES_CH / CH_REF_LEVEL / CH_MONEY / CH_PRICE / CH_HP`，`kill_xp / kill_money / item_price / beast_max_hp / level_damage`；
+     魂技威力 = 年份倍率 × (1 + 等级 × 2%)（房主上限 12）；唐莲伤害按章节涨
+   - 暗器：`WEAPONS` 重做（后坐更大、`recoil_scale`），`fist` 空手（`Player._melee`、`ViewModel.punch`、`World.local_melee`）；
+     所有暗器能卖（`Profile.sell_weapon`，暗器铺"卖出"），卖了能再买；**配件要买**（`Data.ATTACH / ATTACH_OK / apply_attach`，`Profile.attach_owned / attach_on`，暗器铺"配件"页），
+     模型按装的配件搭（`WeaponModels.build(id, skin, outfit, on)`、`_iron / _optic`）
+   - 狙击镜 / 2 倍镜：**全屏瞄准镜**（`ScopeOverlay`，开镜时 ViewModel 整个藏起来），去掉了画中画（用户说头晕）；红点 / 全息玻璃去掉蓝边
+   - 枪声换成 freesound CC0 真实录音（`tools/fetch_sfx_freesound.ps1`，署名在 `assets/sfx/CREDITS_freesound.txt`），每发叠一层低频 thud
+   - **魂兽独门招式** `Data.BEAST_SKILLS`（23 种）：凶暴 / 精英魂兽 `Beast._special_tick` 前摇 → `World.beast_telegraph`（地上出圈、头顶招式名）→ `host_beast_special` → `_apply_beast_special`；
+     玩家负面状态 `Player.root_t / slow / vuln_t / silence_t`（翻滚无敌能躲；定身连按空格挣脱），`Hud.blind`
+   - 成就 `Data.ACHIEVEMENTS`（`World._ach_check`，J 面板 `Hud.toggle_achievements`）；连杀奖励（`World._streak`）
+   - 爽感特效：`Fx.level_up_burst`（升级）、`ring_breakthrough`（魂环突破 + `Hud.flash`）、`skill_flourish`（魂技按档次 `Data.skill_tier` 加法阵 / 光柱 / 万年黑红魂火 / 神技金光）、Boss 死亡神光
+   - 过场：`tools/boat_anim` 重做成 1280×720 三镜头开船（6 秒）+ 成神结局 `Ending.tsx`（10 秒），渲染 mp4 再 ffmpeg 转 ogv（`-c:v libtheora -q:v 8`）
+   - 碧磷沼 / 毒沼：`Island._raw_height` 水塘改成大片缓坡浅滩
+   - 字体：裁剪过的思源黑体缺字时用系统字体补（`Data._init` 里的 SystemFont fallback）；本机没有 Python 跑 `subset_fonts.py`，新字尽量用常用字
+
+## 还没做 / 可以继续
+
+- Boss 写实模型：免费 CC0 里没有合适的，要用户提供素材；现在靠着色器 + 光环 + 死亡神光
+- 数值是按公式估的（见 data.gd 注释），没有真人从 1 级玩到 100 级；等用户反馈再调 `CH_HP / CH_MONEY / KILLS_PER_LEVEL`
+- 菜单、设置面板还是旧样式
 ## 技术概要
 
 - Godot **4.7.2**，GDScript，Forward+，Jolt 物理。项目在 `game/`。

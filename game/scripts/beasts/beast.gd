@@ -80,6 +80,10 @@ var _roam := false               # 陆地魂兽跑回老家以后就在附近转
 var _roam_to := Vector3.ZERO
 var _roam_t := 0.0
 var _far_t := 0.0
+var _sk_cd := 3.0                # 独门本事的冷却（Data.BEAST_SKILLS）
+var _sk_wind := 0.0              # 前摇剩余时间
+var _sk_at := Vector3.ZERO       # 前摇开始时瞄准的位置
+var enrage_t := 0.0              # 被狼嚎鼓舞：更快更狠
 
 # 魂技效果（房主算）
 var root_t := 0.0
@@ -172,11 +176,46 @@ func _spd() -> float:
 	var k := 1.6 if "swift" in affixes else 1.0
 	if _frenzy_on:
 		k *= 1.45
+	if enrage_t > 0.0:
+		k *= 1.35
 	return k
 
 
 func _dmgk() -> float:
-	return 1.6 if _frenzy_on else 1.0
+	return (1.6 if _frenzy_on else 1.0) * (1.3 if enrage_t > 0.0 else 1.0)
+
+
+## 独门本事：冷却好了、人在射程里就开始前摇（站住、发光、地上出圈），前摇完了才生效。返回 true 表示这一帧在放招
+func _special_tick(delta: float, tpos: Vector3, dist: float, touching: bool) -> bool:
+	enrage_t = maxf(enrage_t - delta, 0.0)
+	var sk: Dictionary = Data.BEAST_SKILLS.get(species, {})
+	if sk.is_empty() or proxy or state == State.AIR:
+		return false
+	if _sk_wind > 0.0:
+		_sk_wind -= delta
+		var to := tpos - global_position
+		_face(Vector3(to.x, 0, to.z).normalized(), 0.3)
+		if touching:
+			linear_velocity = Vector3(0, minf(linear_velocity.y, 0.5), 0)
+			angular_velocity = Vector3.ZERO
+		elif motion() in ["fly", "flutter"]:
+			gravity_scale = 0.0
+			linear_velocity = linear_velocity.lerp(Vector3.ZERO, 1.0 - exp(-5.0 * delta))
+		if _sk_wind <= 0.0:
+			world.host_beast_special(self, sk, _sk_at)
+			if bool(sk.get("leap", false)):
+				var d := _sk_at - global_position
+				linear_velocity = Vector3(d.x, 0, d.z) * 1.6 + Vector3.UP * 5.0
+			_atk_cd = maxf(_atk_cd, 0.6)
+		return true
+	_sk_cd -= delta
+	if _sk_cd <= 0.0 and dist <= float(sk["range"]) * size_k and dist >= float(sk.get("min", 0.0)):
+		_sk_cd = float(sk["cd"]) * randf_range(0.85, 1.2) * (0.7 if temper == "elite" else 1.0)
+		_sk_wind = float(sk["wind"])
+		_sk_at = tpos
+		world.beast_telegraph(self, sk, tpos)
+		return true
+	return false
 
 
 static func _scaled_shape(sh: Shape3D, k: float) -> Shape3D:
@@ -352,7 +391,8 @@ func _physics_process(delta: float) -> void:
 		# 凶暴的掉进水里也不逃，游过来咬人；陆地魂兽往岸上游。浮在水面上，打得到
 		_swim(delta)
 		return
-	elif over_water and global_position.y < Island.WATER_Y - 0.2 and not swimmer:
+	elif over_water and global_position.y < Island.WATER_Y - 0.2 and not swimmer and world.island.height_at(global_position.x, global_position.z) < Island.WATER_Y - 1.0:
+		# 只有进了深一点的水才算逃掉（沼泽边的浅滩还能打）
 		if m != "fly" or state != State.AIR:
 			world.beast_escaped(self, "splash")
 			return
@@ -644,6 +684,8 @@ func _fierce(delta: float, m: String, touching: bool) -> void:
 	var to := tpos - global_position
 	var flat := Vector3(to.x, 0, to.z)
 	var dist := flat.length()
+	if _special_tick(delta, tpos, dist, touching):
+		return
 	var dir := flat.normalized() if dist > 0.01 else -global_basis.z
 	var s: float = Data.AGES[age]["scale"]
 	var reach: float = 1.3 + BeastModels.body_size(species).z * s * 0.45

@@ -217,7 +217,7 @@ func _process(dt: float) -> void:
 		if it["taken"]:
 			continue
 		# 自己丢的东西掉进收购箱：卖掉
-		if int(it["thrower"]) == Net.my_id and it["kind"] != "gun" and _in_box(it["pos"]):
+		if int(it["thrower"]) == Net.my_id and _in_box(it["pos"]):
 			it["taken"] = true
 			var msg := [iid, Net.my_id, 1]
 			Net.send(0, "gigone", msg)

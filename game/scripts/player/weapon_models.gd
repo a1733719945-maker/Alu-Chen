@@ -129,11 +129,31 @@ static func _bow(root: Node3D, m: Dictionary, front: Vector3, span: float, thick
 		s.basis = Basis.looking_at((b - a).normalized(), Vector3.UP) * Basis(Vector3.RIGHT, PI / 2)
 
 
-static func build(id: String, skin := "", outfit := "") -> Node3D:
+## on：装着的配件 {"sight": "red", "muzzle": "brake", "under": "grip"}；null = 用自己存档里装的
+static func build(id: String, skin := "", outfit := "", on: Variant = null) -> Node3D:
 	var root := Node3D.new()
 	root.name = id
 	var m := _mats(skin, outfit)
+	var att: Dictionary = (on as Dictionary) if on is Dictionary else (Profile.attach_on.get(id, {}) as Dictionary)
+	var sight := str(att.get("sight", ""))
 	match id:
+		"fist":
+			# 空手：两只拳头，出拳时往前打（ViewModel.punch）
+			var r := Node3D.new()
+			r.name = "FistR"
+			r.position = Vector3(0.16, -0.17, -0.33)
+			root.add_child(r)
+			fist(r, m, Vector3.ZERO, Vector3(0.9, 0.15, -0.2), 1.0)
+			sleeve(r, m, Vector3(0.014, -0.03, 0.045), Vector3(0.3, -0.55, 0.78))
+			var l := Node3D.new()
+			l.name = "LeftHand"
+			l.position = Vector3(-0.16, -0.17, -0.33)
+			root.add_child(l)
+			fist(l, m, Vector3.ZERO, Vector3(0.9, -0.15, 0.2), -1.0)
+			sleeve(l, m, Vector3(-0.014, -0.03, 0.045), Vector3(-0.3, -0.55, 0.78))
+			_marker(root, "Muzzle", Vector3(0.16, -0.14, -0.4))
+			_marker(root, "Sight", Vector3(0, 0, -0.3))
+			return root
 		"xiujian":
 			_arm_right(root, m, Vector3(0, -0.035, -0.06))
 			_p(root, U.cyl(0.014, 0.017, 0.26, 12), m["bronze"], Vector3(0.0, 0.025, -0.02), Vector3(PI / 2, 0, 0))
@@ -142,13 +162,14 @@ static func build(id: String, skin := "", outfit := "") -> Node3D:
 			_p(root, U.cyl(0.019, 0.019, 0.02, 12), m["gold"], Vector3(0.0, 0.025, 0.09), Vector3(PI / 2, 0, 0))
 			for zz in [0.0, 0.07]:
 				_p(root, U.box(Vector3(0.1, 0.012, 0.022)), m["black"], Vector3(0.0, -0.005, zz))
-			_p(root, U.box(Vector3(0.006, 0.012, 0.006)), m["gold"], Vector3(0.0, 0.047, -0.135))
-			var notch := _p(root, U.box(Vector3(0.02, 0.008, 0.006)), m["gold"], Vector3(0.0, 0.045, 0.085))
-			notch.name = "Notch"
 			var mag := _marker(root, "Mag", Vector3(0.0, 0.025, 0.12))
 			_p(mag, U.cyl(0.012, 0.012, 0.05, 8), m["iron"], Vector3.ZERO, Vector3(PI / 2, 0, 0))
 			_marker(root, "Muzzle", Vector3(0.0, 0.025, -0.19))
-			_marker(root, "Sight", Vector3(0.0, 0.047, 0.09))
+			if sight == "red":
+				_reddot(root, m, Vector3(0, 0.068, 0.03), 0.04)
+			else:
+				_iron(root, m, Vector3(0, 0.047, -0.135), Vector3(0, 0.047, 0.085), 0.018)
+			_marker(root, "Eject", Vector3(0.015, 0.035, 0.02))
 		"zhuge":
 			_arm_right(root, m, Vector3(0, -0.07, 0.1))
 			_p(root, U.box(Vector3(0.05, 0.055, 0.36)), m["wood"], Vector3(0, 0, 0.0))
@@ -163,11 +184,14 @@ static func build(id: String, skin := "", outfit := "") -> Node3D:
 			_p(lever, U.box(Vector3(0.012, 0.012, 0.24)), m["bronze"], Vector3(0, 0.0, 0.12), Vector3(0.12, 0, 0))
 			_p(lever, U.cyl(0.012, 0.012, 0.06, 8), m["bronze"], Vector3(0, -0.01, 0.235), Vector3(0, 0, PI / 2))
 			_bow(root, m, Vector3(0, 0.005, -0.17), 0.21, 0.016, 0.03)
-			_p(root, U.box(Vector3(0.006, 0.02, 0.006)), m["gold"], Vector3(0, 0.11, -0.125))
-			_p(root, U.box(Vector3(0.024, 0.012, 0.006)), m["gold"], Vector3(0, 0.106, 0.07))
+			for k in 8:
+				_p(root, U.box(Vector3(0.05, 0.005, 0.008)), m["iron"], Vector3(0, 0.1, -0.06 + k * 0.016))
 			_arm_left(root, m, Vector3(-0.005, -0.045, -0.11))
 			_marker(root, "Muzzle", Vector3(0, 0.02, -0.26))
-			_holo(root, m, Vector3(0, 0.128, 0.02))
+			_optic(root, m, sight, Vector3(0, 0.128, 0.02), 0.103)
+			if sight == "":
+				_iron(root, m, Vector3(0, 0.118, -0.125), Vector3(0, 0.118, 0.075), 0.022)
+			_marker(root, "Eject", Vector3(0.03, 0.04, 0.0))
 		"kongque":
 			_arm_right(root, m, Vector3(0, -0.075, 0.14))
 			_p(root, U.box(Vector3(0.046, 0.06, 0.56)), m["lacquer"], Vector3(0, 0, 0.02))
@@ -186,12 +210,18 @@ static func build(id: String, skin := "", outfit := "") -> Node3D:
 			var mag := _marker(root, "Mag", Vector3(0, -0.07, -0.02))
 			_p(mag, U.box(Vector3(0.03, 0.1, 0.06)), m["jade"], Vector3(0, -0.02, 0), Vector3(0.15, 0, 0))
 			_bow(root, m, Vector3(0, 0.0, -0.2), 0.14, 0.014, 0.1)
-			var ring := _p(root, U.torus(0.008, 0.013, 16, 6), m["gold"], Vector3(0, 0.058, 0.17), Vector3(PI / 2, 0, 0))
-			ring.name = "Aperture"
-			_p(root, U.box(Vector3(0.004, 0.028, 0.004)), m["gold"], Vector3(0, 0.046, -0.44))
 			_arm_left(root, m, Vector3(-0.005, -0.04, -0.2))
 			_marker(root, "Muzzle", Vector3(0, 0.01, -0.51))
-			_reddot(root, m, Vector3(0, 0.125, 0.06))
+			_optic(root, m, sight, Vector3(0, 0.13, 0.06), 0.037)
+			if sight == "":
+				var ring := _p(root, U.torus(0.008, 0.013, 16, 6), m["gold"], Vector3(0, 0.058, 0.17), Vector3(PI / 2, 0, 0))
+				ring.name = "Aperture"
+				_p(root, U.box(Vector3(0.004, 0.028, 0.004)), m["gold"], Vector3(0, 0.046, -0.44))
+				_marker(root, "Sight", Vector3(0, 0.058, 0.17))
+			# 枪管下战术手电
+			_p(root, U.cyl(0.013, 0.013, 0.07, 12), m["black"], Vector3(0.028, -0.01, -0.3), Vector3(PI / 2, 0, 0))
+			_p(root, U.cyl(0.011, 0.011, 0.002, 12), U.glow(Color(1.0, 0.97, 0.85), 3.0), Vector3(0.028, -0.01, -0.336), Vector3(PI / 2, 0, 0))
+			_marker(root, "Eject", Vector3(0.03, 0.03, 0.05))
 		"baoyu":
 			_arm_right(root, m, Vector3(0, -0.06, 0.07))
 			_p(root, U.box(Vector3(0.1, 0.085, 0.22)), m["lacquer"], Vector3(0, 0, -0.03))
@@ -203,23 +233,27 @@ static func build(id: String, skin := "", outfit := "") -> Node3D:
 					_p(root, U.sphere(0.0055, 5, 3), m["gold"], Vector3(-0.03 + ix * 0.02, -0.02 + iy * 0.02, -0.146))
 			var pump := _marker(root, "Lever", Vector3(0, -0.058, -0.06))
 			_p(pump, U.box(Vector3(0.07, 0.03, 0.1)), m["wood"])
-			_p(root, U.sphere(0.014, 8, 6), m["jade"], Vector3(0, 0.05, 0.03))
 			_p(root, U.box(Vector3(0.02, 0.006, 0.12)), m["gold"], Vector3(0, 0.05, -0.05))
 			var mag := _marker(root, "Mag", Vector3(0.0, 0.02, 0.09))
 			_p(mag, U.box(Vector3(0.05, 0.03, 0.03)), m["bronze"])
 			_arm_left(root, m, Vector3(-0.06, -0.06, -0.07))
 			_marker(root, "Muzzle", Vector3(0, 0, -0.16))
-			_marker(root, "Sight", Vector3(0, 0.056, 0.05))
+			_optic(root, m, sight, Vector3(0, 0.09, 0.0), 0.05)
+			if sight == "":
+				# 鬼环照门 + 夜光准星
+				_p(root, U.torus(0.007, 0.011, 16, 6), m["iron"], Vector3(0, 0.062, 0.04), Vector3(PI / 2, 0, 0))
+				_p(root, U.sphere(0.004, 6, 4), U.glow(Color(0.4, 1.0, 0.5), 3.0), Vector3(0, 0.062, -0.13))
+				_marker(root, "Sight", Vector3(0, 0.062, 0.05))
+			for k in 4:
+				_p(root, U.cyl(0.008, 0.008, 0.03, 8), U.mat(Color(0.75, 0.12, 0.1), 0.5), Vector3(-0.058, 0.0, -0.08 + k * 0.022), Vector3(0, 0, PI / 2))
+				_p(root, U.cyl(0.0085, 0.0085, 0.008, 8), m["gold"], Vector3(-0.07, 0.0, -0.08 + k * 0.022), Vector3(0, 0, PI / 2))
+			_marker(root, "Eject", Vector3(0.05, 0.02, 0.0))
 		"zhuihun":
 			_arm_right(root, m, Vector3(0, -0.08, 0.16))
 			_p(root, U.box(Vector3(0.05, 0.065, 0.66)), m["wood"], Vector3(0, 0, 0.0))
 			_p(root, U.box(Vector3(0.055, 0.11, 0.14)), m["wood"], Vector3(0, -0.025, 0.3))
 			_p(root, U.box(Vector3(0.056, 0.01, 0.67)), m["iron"], Vector3(0, 0.035, 0.0))
 			_p(root, U.box(Vector3(0.036, 0.09, 0.05)), m["black"], Vector3(0, -0.07, 0.16), Vector3(-0.3, 0, 0))
-			# 可变倍率狙击镜（镜片里是画中画放大画面，见 ViewModel）
-			_scope(root, m, Vector3(0, 0.085, 0.0))
-			for zz in [-0.04, 0.07]:
-				_p(root, U.box(Vector3(0.012, 0.04, 0.02)), m["iron"], Vector3(0, 0.055, zz))
 			var lever := _marker(root, "Lever", Vector3(0.035, 0.02, 0.1))
 			_p(lever, U.cyl(0.006, 0.006, 0.06, 6), m["iron"], Vector3(0.03, 0, 0), Vector3(0, 0, PI / 2))
 			_p(lever, U.sphere(0.013, 8, 6), m["bronze"], Vector3(0.062, 0, 0))
@@ -228,9 +262,45 @@ static func build(id: String, skin := "", outfit := "") -> Node3D:
 			_bow(root, m, Vector3(0, 0.0, -0.3), 0.3, 0.02, 0.12)
 			_arm_left(root, m, Vector3(-0.005, -0.045, -0.2))
 			_marker(root, "Muzzle", Vector3(0, 0.02, -0.34))
-	_attachments(root, m, id)
+			if sight == "scope":
+				for zz in [-0.04, 0.07]:
+					_p(root, U.box(Vector3(0.012, 0.04, 0.02)), m["iron"], Vector3(0, 0.055, zz))
+				_scope(root, m, Vector3(0, 0.085, 0.0))
+			else:
+				_optic(root, m, sight, Vector3(0, 0.1, 0.0), 0.04)
+				if sight == "":
+					_iron(root, m, Vector3(0, 0.068, -0.3), Vector3(0, 0.068, 0.12), 0.03)
+			# 两脚架（收起）
+			for s in [-1.0, 1.0]:
+				_p(root, U.cyl(0.005, 0.005, 0.16, 6), m["black"], Vector3(0.012 * s, -0.04, -0.2), Vector3(PI / 2, 0, 0))
+			_marker(root, "Eject", Vector3(0.035, 0.03, 0.08))
+	_attachments(root, m, id, att)
 	return root
 
+
+## 机械照门：前面一根准星柱、后面一个缺口。Sight 在缺口
+static func _iron(root: Node3D, m: Dictionary, front: Vector3, rear: Vector3, h: float) -> void:
+	var tritium := U.glow(Color(0.4, 1.0, 0.5), 3.0)
+	_p(root, U.box(Vector3(0.005, h, 0.006)), m["black"], front - Vector3(0, h * 0.5, 0))
+	_p(root, U.sphere(0.0026, 6, 4), tritium, front + Vector3(0, -0.002, 0.003))
+	for s in [-1.0, 1.0]:
+		_p(root, U.box(Vector3(0.007, h, 0.008)), m["black"], rear + Vector3(0.0065 * s, -h * 0.5 + 0.002, 0))
+		_p(root, U.sphere(0.0024, 6, 4), tritium, rear + Vector3(0.0065 * s, -0.003, 0.004))
+	_p(root, U.box(Vector3(0.02, 0.006, 0.01)), m["black"], rear + Vector3(0, -h + 0.003, 0))
+	_marker(root, "Sight", rear + Vector3(0, 0, 0.004))
+
+
+## 按装的瞄具放模型：red 红点、holo 全息、x2 2 倍镜、scope 狙击镜（开镜时是全屏瞄准镜）
+static func _optic(root: Node3D, m: Dictionary, sight: String, c: Vector3, base_y: float) -> void:
+	match sight:
+		"red":
+			_reddot(root, m, c, base_y)
+		"holo":
+			_holo(root, m, c)
+		"x2":
+			_acog(root, m, c)
+		"scope":
+			_scope(root, m, c)
 
 # ------------------------------------------------------------------ 配件：瞄具、枪口、激光、手电、弹壳
 
@@ -241,7 +311,7 @@ uniform int kind = 0;
 void fragment() {
 	vec2 p = (UV - 0.5) * 2.0;
 	float r = length(p);
-	float a = smoothstep(0.1, 0.035, r) * 1.6 + smoothstep(0.4, 0.0, r) * 0.18;
+	float a = smoothstep(0.1, 0.035, r) * 1.6 + smoothstep(0.16, 0.04, r) * 0.25;
 	if (kind == 1) {
 		a += smoothstep(0.05, 0.0, abs(r - 0.72)) * 1.2;
 	} else if (kind == 2) {
@@ -255,11 +325,16 @@ void fragment() {
 """
 const GLASS_SHADER := """shader_type spatial;
 render_mode unshaded, blend_mix, depth_draw_never, cull_disabled, shadows_disabled;
-uniform vec4 tint : source_color = vec4(0.45, 0.75, 0.9, 0.12);
+// 镜片：几乎透明，只有一点反光；不要一圈发蓝的边（用户说像劣质镀膜）
+uniform vec4 tint : source_color = vec4(0.8, 0.85, 0.9, 0.03);
 void fragment() {
-	float edge = smoothstep(0.35, 0.5, length(UV - 0.5));
+	float r = length(UV - 0.5) * 2.0;
+	if (r > 1.0) {
+		discard;
+	}
+	float glint = smoothstep(0.25, 0.0, abs(UV.x + UV.y - 0.62)) * 0.05;
 	ALBEDO = tint.rgb;
-	ALPHA = tint.a + edge * 0.25;
+	ALPHA = tint.a + glint;
 }
 """
 
@@ -284,14 +359,14 @@ static func _quad(parent: Node3D, size: float, mat: Material, pos: Vector3, name
 	return mi
 
 
-## 全息瞄具（诸葛神弩）：金属框 + 蓝色镀膜玻璃 + 红色"圈点"准星。Sight 在准星中心
+## 全息瞄具：金属框 + 透明玻璃 + 红色"圈点"准星。Sight 在准星中心
 static func _holo(root: Node3D, m: Dictionary, c: Vector3) -> void:
 	_p(root, U.box(Vector3(0.05, 0.016, 0.075)), m["black"], c + Vector3(0, -0.028, 0.0))
 	for s in [-1.0, 1.0]:
 		_p(root, U.box(Vector3(0.006, 0.05, 0.05)), m["black"], c + Vector3(0.025 * s, -0.002, -0.005))
 	_p(root, U.box(Vector3(0.056, 0.007, 0.05)), m["black"], c + Vector3(0, 0.026, -0.005))
 	_p(root, U.box(Vector3(0.02, 0.012, 0.02)), m["iron"], c + Vector3(0.02, -0.018, 0.03))
-	_quad(root, 0.046, _shader_mat(GLASS_SHADER, {"tint": Color(0.4, 0.7, 0.85, 0.1)}), c + Vector3(0, 0, -0.02))
+	_quad(root, 0.046, _shader_mat(GLASS_SHADER, {}), c + Vector3(0, 0, -0.02))
 	_quad(root, 0.03, _shader_mat(RETICLE_SHADER, {"color": Color(1.0, 0.12, 0.08), "kind": 1}), c + Vector3(0, 0, -0.022), "Reticle")
 	_marker(root, "Sight", c)
 
@@ -315,21 +390,20 @@ static func _dbl(mat: Material) -> Material:
 	return d
 
 
-## 红点瞄具（孔雀翎）：增高座 + 一截开口短镜筒 + 淡绿镀膜玻璃，玻璃上一颗红点。Sight 在镜筒后口
-static func _reddot(root: Node3D, m: Dictionary, c: Vector3) -> void:
-	var bot := 0.037
+## 红点瞄具：增高座（从 bot 高度垫到镜筒下面）+ 一截开口短镜筒 + 透明玻璃，玻璃上一颗红点。Sight 在镜筒后口
+static func _reddot(root: Node3D, m: Dictionary, c: Vector3, bot := 0.037) -> void:
 	var top := c.y - 0.017
 	_p(root, U.box(Vector3(0.03, top - bot, 0.045)), m["black"], Vector3(c.x, (bot + top) * 0.5, c.z))
 	_p(root, _open_tube(0.019, 0.02, 0.05), _dbl(m["black"]), c, Vector3(PI / 2, 0, 0))
 	_p(root, U.torus(0.019, 0.023, 24, 6), m["gold"], c + Vector3(0, 0, -0.025), Vector3(PI / 2, 0, 0))
 	_p(root, U.cyl(0.006, 0.006, 0.012, 10), m["black"], c + Vector3(0.024, 0, 0.005), Vector3(0, 0, PI / 2))
-	_quad(root, 0.036, _shader_mat(GLASS_SHADER, {"tint": Color(0.45, 0.75, 0.55, 0.07)}), c + Vector3(0, 0, -0.02))
+	_quad(root, 0.036, _shader_mat(GLASS_SHADER, {}), c + Vector3(0, 0, -0.02))
 	_quad(root, 0.018, _shader_mat(RETICLE_SHADER, {"color": Color(1.0, 0.1, 0.06), "kind": 0}), c + Vector3(0, 0, -0.021), "Reticle")
 	_marker(root, "Sight", c + Vector3(0, 0, 0.025))
 
 
 ## 狙击镜：主镜筒 + 粗物镜 + 目镜 + 调节旋钮，全部开口。
-## 后面的镜片 ScopeLens 由 ViewModel 贴上画中画材质（另一台相机拍的放大画面 + 十字线）
+## 开镜到底时画面换成全屏瞄准镜（HUD 的 ScopeOverlay），手里的模型藏起来
 static func _scope(root: Node3D, m: Dictionary, c: Vector3) -> void:
 	var tube := _dbl(m["black"])
 	_p(root, _open_tube(0.021, 0.021, 0.2), tube, c, Vector3(PI / 2, 0, 0))
@@ -341,7 +415,7 @@ static func _scope(root: Node3D, m: Dictionary, c: Vector3) -> void:
 	_p(root, U.cyl(0.012, 0.012, 0.004, 12), m["bronze"], c + Vector3(0, 0.042, 0.0))
 	_p(root, U.cyl(0.011, 0.011, 0.022, 12), m["black"], c + Vector3(0.03, 0, 0.0), Vector3(0, 0, PI / 2))
 	_p(root, U.cyl(0.013, 0.013, 0.02, 12), m["bronze"], c + Vector3(0, 0, 0.1), Vector3(PI / 2, 0, 0))
-	_quad(root, 0.058, _shader_mat(GLASS_SHADER, {"tint": Color(0.3, 0.5, 0.75, 0.1)}), c + Vector3(0, 0, -0.159))
+	_quad(root, 0.058, _shader_mat(GLASS_SHADER, {}), c + Vector3(0, 0, -0.159))
 	_quad(root, 0.044, U.mat(Color(0.03, 0.05, 0.08), 0.1), c + Vector3(0, 0, 0.138), "ScopeLens")
 	_marker(root, "Sight", c + Vector3(0, 0, 0.14))
 
@@ -356,60 +430,30 @@ static func _acog(root: Node3D, m: Dictionary, c: Vector3) -> void:
 	_p(root, U.torus(0.019, 0.025, 24, 6), m["gold"], c + Vector3(0, 0, 0.086), Vector3(PI / 2, 0, 0))
 	_p(root, U.torus(0.022, 0.028, 24, 6), m["gold"], c + Vector3(0, 0, -0.105), Vector3(PI / 2, 0, 0))
 	_p(root, U.box(Vector3(0.012, 0.014, 0.02)), m["gold"], c + Vector3(0, 0.024, -0.02))
-	_quad(root, 0.05, _shader_mat(GLASS_SHADER, {"tint": Color(0.6, 0.45, 0.2, 0.08)}), c + Vector3(0, 0, -0.106))
-	_quad(root, 0.04, _shader_mat(GLASS_SHADER, {"tint": Color(0.3, 0.5, 0.7, 0.06)}), c + Vector3(0, 0, 0.087))
+	_quad(root, 0.05, _shader_mat(GLASS_SHADER, {}), c + Vector3(0, 0, -0.106))
+	_quad(root, 0.04, _shader_mat(GLASS_SHADER, {}), c + Vector3(0, 0, 0.087))
 	_quad(root, 0.03, _shader_mat(RETICLE_SHADER, {"color": Color(1.0, 0.6, 0.1), "kind": 2}), c + Vector3(0, 0, 0.08), "Reticle")
 	_marker(root, "Sight", c + Vector3(0, 0, 0.087))
 
 
-## 其余配件：枪口制退器、夜光照门、激光、手电、抛壳口
-static func _attachments(root: Node3D, m: Dictionary, id: String) -> void:
+## 买来的配件：制退器（muzzle）、握把 / 激光（under）
+static func _attachments(root: Node3D, m: Dictionary, id: String, att: Dictionary) -> void:
 	var mz := root.get_node_or_null("Muzzle") as Node3D
-	var tritium := U.glow(Color(0.4, 1.0, 0.5), 3.0)
 	var laser := U.glow(Color(1.0, 0.1, 0.08), 6.0)
-	match id:
-		"xiujian":
-			# 夜光三点照门 + 枪管下激光 + 补偿器
-			_p(root, U.sphere(0.0028, 6, 4), tritium, Vector3(0.0, 0.054, -0.135))
-			for s in [-1.0, 1.0]:
-				_p(root, U.sphere(0.0028, 6, 4), tritium, Vector3(0.007 * s, 0.05, 0.085))
-			_p(root, U.box(Vector3(0.022, 0.018, 0.05)), m["black"], Vector3(0, 0.0, -0.13))
-			_p(root, U.cyl(0.003, 0.003, 0.004, 8), laser, Vector3(0.0, 0.0, -0.157), Vector3(PI / 2, 0, 0))
-			_p(root, U.cyl(0.017, 0.017, 0.03, 10), m["black"], Vector3(0.0, 0.025, -0.175), Vector3(PI / 2, 0, 0))
-			for k in 2:
-				_p(root, U.box(Vector3(0.036, 0.004, 0.005)), m["gold"], Vector3(0.0, 0.03, -0.168 - k * 0.012))
-			_marker(root, "Eject", Vector3(0.015, 0.035, 0.02))
-		"zhuge":
-			# 枪口制退器 + 竖握把 + 皮卡汀尼导轨
-			if mz:
-				_brake(root, m, mz.position + Vector3(0, 0, 0.03), 0.018)
-			_p(root, U.box(Vector3(0.024, 0.06, 0.026)), m["black"], Vector3(0, -0.06, -0.15))
-			for k in 8:
-				_p(root, U.box(Vector3(0.05, 0.005, 0.008)), m["iron"], Vector3(0, 0.1, -0.06 + k * 0.016))
-			_marker(root, "Eject", Vector3(0.03, 0.04, 0.0))
-		"kongque":
-			if mz:
-				_brake(root, m, mz.position + Vector3(0, 0, 0.035), 0.02)
-			# 枪管下战术手电
-			_p(root, U.cyl(0.013, 0.013, 0.07, 12), m["black"], Vector3(0.028, -0.01, -0.3), Vector3(PI / 2, 0, 0))
-			_p(root, U.cyl(0.011, 0.011, 0.002, 12), U.glow(Color(1.0, 0.97, 0.85), 3.0), Vector3(0.028, -0.01, -0.336), Vector3(PI / 2, 0, 0))
-			_marker(root, "Eject", Vector3(0.03, 0.03, 0.05))
-		"baoyu":
-			# 鬼环照门 + 夜光准星 + 侧挂弹壳
-			_p(root, U.torus(0.007, 0.011, 16, 6), m["iron"], Vector3(0, 0.062, 0.04), Vector3(PI / 2, 0, 0))
-			_p(root, U.sphere(0.004, 6, 4), tritium, Vector3(0, 0.058, -0.13))
-			for k in 4:
-				_p(root, U.cyl(0.008, 0.008, 0.03, 8), U.mat(Color(0.75, 0.12, 0.1), 0.5), Vector3(-0.058, 0.0, -0.08 + k * 0.022), Vector3(0, 0, PI / 2))
-				_p(root, U.cyl(0.0085, 0.0085, 0.008, 8), m["gold"], Vector3(-0.07, 0.0, -0.08 + k * 0.022), Vector3(0, 0, PI / 2))
-			_marker(root, "Eject", Vector3(0.05, 0.02, 0.0))
-		"zhuihun":
-			if mz:
-				_brake(root, m, mz.position + Vector3(0, 0, 0.04), 0.024)
-			# 两脚架（收起）
-			for s in [-1.0, 1.0]:
-				_p(root, U.cyl(0.005, 0.005, 0.16, 6), m["black"], Vector3(0.012 * s, -0.04, -0.2), Vector3(PI / 2, 0, 0))
-			_marker(root, "Eject", Vector3(0.035, 0.03, 0.08))
-
+	# 每把暗器枪管下 / 侧面能挂东西的位置
+	var under: Vector3 = {"xiujian": Vector3(0, -0.002, -0.12), "zhuge": Vector3(0, -0.06, -0.15), "kongque": Vector3(0, -0.055, -0.3),
+		"baoyu": Vector3(0, -0.09, -0.06), "zhuihun": Vector3(0, -0.05, -0.12)}.get(id, Vector3(0, -0.05, -0.1))
+	if str(att.get("muzzle", "")) == "brake" and mz:
+		_brake(root, m, mz.position + Vector3(0, 0, 0.03), 0.016 if id == "xiujian" else 0.02)
+		mz.position.z -= 0.035
+	match str(att.get("under", "")):
+		"grip":
+			_p(root, U.box(Vector3(0.024, 0.07, 0.028)), m["black"], under + Vector3(0, -0.02, 0))
+			_p(root, U.box(Vector3(0.028, 0.008, 0.032)), m["iron"], under + Vector3(0, 0.016, 0))
+		"laser":
+			var side := Vector3(0.03, 0.0, 0.0) if id != "xiujian" else Vector3.ZERO
+			_p(root, U.box(Vector3(0.022, 0.018, 0.05)), m["black"], under + side + Vector3(0, 0.012, 0))
+			_p(root, U.cyl(0.003, 0.003, 0.004, 8), laser, under + side + Vector3(0, 0.012, -0.027), Vector3(PI / 2, 0, 0))
 
 static func _brake(root: Node3D, m: Dictionary, pos: Vector3, r: float) -> void:
 	_p(root, U.cyl(r, r, 0.06, 12), m["black"], pos, Vector3(PI / 2, 0, 0))

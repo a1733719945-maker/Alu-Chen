@@ -78,6 +78,7 @@ func _init(p_chapter := 1) -> void:
 
 func _ready() -> void:
 	add_to_group("world")
+	Data.cur_chapter = chapter
 	rng.randomize()
 	var ch: Dictionary = Data.CHAPTERS[chapter]
 	island = Island.new(str(ch["map"]))
@@ -189,6 +190,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 	elif event.is_action_pressed("wuhun_panel") and not paused:
 		hud.toggle_wuhun()
+	elif event.is_action_pressed("achievements") and not paused:
+		hud.toggle_achievements()
 	elif event.is_action_pressed("fullscreen"):
 		Settings.toggle_fullscreen()
 	elif event.is_action_pressed("toggle_fps"):
@@ -223,6 +226,11 @@ func _process(dt: float) -> void:
 		_host_rings(dt)
 		_host_elites(dt)
 		_host_tide(dt)
+		_altar_cd = maxf(_altar_cd - dt, 0.0)
+	_ach_t += dt
+	if _ach_t > 3.0:
+		_ach_t = 0.0
+		_ach_check()
 	_update_hazards(dt)
 	_update_boss_moves(dt)
 	_update_grenades(dt)
@@ -421,6 +429,47 @@ func local_fire(g: Gun, origin: Vector3, dirs: Array[Vector3], muzzle: Vector3) 
 			Net.send(1, "bhit", [boss_dmg, boss_weak])
 
 
+## 空手出拳打中了东西
+func local_melee(g: Gun, _origin: Vector3, dir: Vector3, hit: Dictionary) -> void:
+	var w: Dictionary = g.d
+	var col: Object = hit["collider"]
+	var dmg := float(w["damage"]) * player.damage_mult()
+	var imp := dir * float(w["impulse"]) + Vector3.UP * float(w["impulse"]) * float(w["lift"])
+	var at: Vector3 = hit["position"]
+	Sfx.play("punch", 0.0, 0.08)
+	if col is Beast and (col as Beast).alive():
+		var b := col as Beast
+		var head := b.is_head(int(hit.get("shape", 0))) or player.crit_active()
+		if head:
+			dmg *= float(w["headshot"])
+		fx.impact_beast(at, hit["normal"], Data.age_color(b.age), head)
+		hud.hitmarker(head, false)
+		var local_pt := b.to_local(at)
+		if Net.is_host():
+			var before := b.alive()
+			var real := b.take_hit(dmg, imp, local_pt, head, Net.my_id, 2.0)
+			fx.damage_number(b.global_position + Vector3(0, 0.3, 0), real, head, before and b.hp <= 0.0)
+			if before and b.hp <= 0.0:
+				_host_kill(b)
+		else:
+			b.flinch(imp)
+			fx.damage_number(b.global_position + Vector3(0, 0.3, 0), dmg * b.armor_factor(head), head)
+			Net.send(1, "hit", [b.id, dmg, imp, local_pt, head, 2.0])
+	elif col is Node and (col as Node).has_meta("boss") and boss:
+		var weak := bool((col as Node).get_meta("weak")) or player.crit_active()
+		fx.impact_beast(at, hit["normal"], Color(0.8, 0.3, 1.0), weak)
+		hud.hitmarker(weak, false)
+		fx.damage_number(at, dmg * (1.7 if weak else 0.6), weak)
+		if Net.is_host():
+			host_boss_damage(dmg, weak, Net.my_id)
+		else:
+			Net.send(1, "bhit", [dmg, weak])
+	elif col is Node and (col as Node).has_meta("gull"):
+		Net.send_host("gullhit", [int((col as Node).get_meta("gull"))])
+	else:
+		fx.impact_world(at, hit["normal"])
+
+
 # ------------------------------------------------------------------ 引魂索拽出魂兽
 
 func request_yank(pos: Vector3, habitat: String, species: String, age: int, bait := "grass") -> void:
@@ -546,8 +595,8 @@ func _host_kill(b: Beast) -> void:
 	if not b.alive():
 		return
 	var killer := b.last_hitter
-	var base: float = float(Data.BEASTS[b.species]["reward"]) * float(Data.AGES[b.age]["reward"])
-	var xp: float = float(Data.BEASTS[b.species]["xp"]) * float(Data.AGES[b.age]["xp"])
+	var base: float = Data.kill_money(b.species, b.age)
+	var xp: float = Data.kill_xp(b.species, b.age)
 	var mult := 1.0
 	var tags: Array = []
 	var KB: Dictionary = Data.KILL_BONUS
@@ -605,6 +654,8 @@ func beast_escaped(b: Beast, reason: String) -> void:
 	if not Net.is_host() or not b.alive():
 		return
 	var msg := [b.id, reason, b.global_position]
+	if Data.autotest:
+		print("[autotest] 魂兽逃走：%s %s %s state=%d life=%.1f 地面 %.2f" % [b.species, reason, b.global_position, b.state, b.life, island.height_at(b.global_position.x, b.global_position.z)])
 	Net.send(0, "be", msg)
 	_on_escape(msg)
 
@@ -633,6 +684,102 @@ func _host_drop_loot(b: Beast) -> void:
 			hud.feed(msg, UiKit.GOLD)
 
 
+# ------------------------------------------------------------------ 成就
+
+var _ach_t := 0.0
+var _tide_until := 0.0
+
+
+func ach_count(key: String, n := 1) -> void:
+	Profile.count(key, n)
+	_ach_check()
+
+
+func _ach_check() -> void:
+	for a in Data.ACHIEVEMENTS:
+		var id := str(a["id"])
+		if Profile.achieved.has(id):
+			continue
+		var ok := false
+		if a.has("stat"):
+			ok = Profile.stat(str(a["stat"])) >= int(a["n"])
+		else:
+			ok = _ach_special(str(a["special"]))
+		if ok:
+			Profile.achieved[id] = true
+			Profile.add_money(int(a["reward"]))
+			hud.achievement(str(a["name"]), str(a["desc"]), int(a["reward"]))
+			Sfx.play("level_up", -3.0, 0.0, 1.2)
+
+
+func _ach_special(k: String) -> bool:
+	match k:
+		"bones6":
+			return Profile.equipped.size() >= 6
+		"rings1":
+			return Profile.rings.size() >= 1
+		"rings5":
+			return Profile.rings.size() >= 5
+		"wannian":
+			for r in Profile.rings:
+				if int(r["age"]) >= 3:
+					return true
+			return false
+		"lv20":
+			return Profile.level >= 20
+		"lv50":
+			return Profile.level >= 50
+		"lv80":
+			return Profile.level >= 80
+		"god":
+			return Profile.god
+		"arsenal":
+			return Profile.weapons.size() >= 5
+		"skins5":
+			return Profile.skins.size() >= 5
+	return false
+
+
+## 击杀成就：从击杀消息的加成标签里看空中、连击、爆头、远距离
+func _ach_kill(tags: Array, affixes: Array, elite: bool) -> void:
+	Profile.count("kills")
+	for t in tags:
+		var s := str(t)
+		if s.begins_with("空中击杀"):
+			Profile.count("air_kills")
+		elif s.begins_with("空中连击") and int(s.get_slice(" ", 1)) >= 8:
+			Profile.count("juggle8")
+		elif s.begins_with("爆头"):
+			Profile.count("head_kills")
+		elif s.begins_with("远距离") and int(s.get_slice(" ", 1)) >= 80:
+			Profile.count("far80")
+	if affixes.size() >= 2:
+		Profile.count("affix2")
+	if elite:
+		Profile.count("elites")
+	if Time.get_ticks_msec() / 1000.0 < _tide_until:
+		Profile.count("tide_kills")
+	_ach_check()
+
+
+## 成神：100 级 + 第十魂环。播结局动画，之后还能接着玩
+func _check_god() -> void:
+	if Profile.god or Profile.level < Data.MAX_LEVEL or Profile.rings.size() < Data.MAX_RINGS:
+		return
+	Profile.god = true
+	Profile.mark_dirty()
+	_ach_check()
+	Net.send(0, "feedall", ["%s 成神了！" % Settings.display_name()])
+	if Data.autotest:
+		return
+	var v := Voyage.new()
+	v.video = "res://assets/cutscene/ending.ogv"
+	v.length = 10.0
+	v.title = "成神 · %s" % Settings.display_name()
+	get_tree().root.add_child(v)
+	v.finished.connect(func(): hud._show_banner("成神！", "你已经是神了。还可以坐船回任何一个岛，继续猎魂、刷魂骨和外观。", UiKit.GOLD, 9.0))
+
+
 # ------------------------------------------------------------------ 猎魂录：每种魂兽三颗星，集齐一张图送专属皮肤
 
 func _codex_kill(species: String, age: int, affixes: Array, elite: bool) -> void:
@@ -657,6 +804,7 @@ func _codex_kill(species: String, age: int, affixes: Array, elite: bool) -> void
 			all3 = false
 	var skin := str(Data.CODEX_MAP_SKIN.get(island.map_id, ""))
 	if all3 and skin != "" and Profile.unlock_look("skin", skin):
+		Profile.count("codex_maps")
 		hud._show_banner("猎魂录 · %s 集齐！" % str(Data.CHAPTERS[chapter]["name"]), "解锁专属暗器皮肤【%s】（暗器铺 → 外观）" % Data.GUN_SKINS[skin]["name"], UiKit.GOLD, 6.0)
 
 
@@ -705,7 +853,7 @@ func _new_bounty() -> Dictionary:
 	if rng.randf() < 0.4:
 		var keys: Array = Data.AFFIXES.keys()
 		affix = str(keys[rng.randi() % keys.size()])
-	var base: float = float(Data.BEASTS[species]["reward"]) * float(Data.AGES[age]["reward"]) * 4.0 * (1.7 if affix != "" else 1.0)
+	var base: float = Data.kill_money(species, age) * 5.0 * (1.7 if affix != "" else 1.0)
 	return {"ch": chapter, "species": species, "age": age, "affix": affix, "reward": maxi(roundi(base / 10.0) * 10, 30)}
 
 
@@ -722,6 +870,7 @@ func _check_bounty(species: String, age: int, affixes: Array) -> void:
 		if str(b.get("affix", "")) != "" and not str(b["affix"]) in affixes:
 			continue
 		Profile.add_money(int(b["reward"]))
+		Profile.count("bounties")
 		hud.quest_done("悬赏完成：%s" % bounty_text(b), int(b["reward"]))
 		Sfx.play("sell", 0.0)
 		Profile.bounties[i] = _new_bounty()
@@ -753,6 +902,7 @@ func _host_tide(dt: float) -> void:
 
 
 func _on_tide() -> void:
+	_tide_until = Time.get_ticks_msec() / 1000.0 + 75.0
 	hud._show_banner("兽潮来了！", "一大波凶暴魂兽正从四面八方冲过来，守住！", Color(1.0, 0.4, 0.3), 4.5)
 	Sfx.play("boss_roar", 0.0, 0.0, 1.2)
 	player.trauma = minf(player.trauma + 0.5, 1.0)
@@ -865,7 +1015,7 @@ func _apply_trait(ch_trait: String, from: Vector3, dmg: float) -> void:
 		"poison":
 			player.poison(maxf(dmg * 0.25, 2.0), 4.0)
 		"frost":
-			player.add_buff("speed", -0.45, 2.5)
+			player.slow(0.45, 2.5)
 			hud.toast("被冻住了，走不快", Color(0.6, 0.85, 1.0), 1.5)
 		"drag":
 			var to := from - player.global_position
@@ -879,6 +1029,161 @@ func beast_throw_rock(b: Beast, target: Vector3) -> void:
 	var from := b.global_position + Vector3(0, 1.4 * Data.AGES[b.age]["scale"], 0)
 	var dmg: float = float(Data.BEASTS[b.species].get("hurt", 12.0)) * (1.0 + b.age * 0.5) * float(Data.CH_POWER.get(chapter, 1.0))
 	_host_hazard("rock", from, target, 1.0, 2.2, dmg)
+
+
+# ------------------------------------------------------------------ 魂兽的独门本事（Data.BEAST_SKILLS）
+
+## 房主：魂兽开始前摇，告诉大家（地上出圈、头顶冒招式名）
+func beast_telegraph(b: Beast, sk: Dictionary, at: Vector3) -> void:
+	var center: Vector3 = b.global_position if str(sk["at"]) == "self" else at
+	var msg := [b.id, b.species, center, float(sk["wind"]), float(sk["radius"]) * b.size_k]
+	Net.send(0, "btel", msg)
+	_on_btel(msg)
+
+
+func _on_btel(msg: Array) -> void:
+	var sk: Dictionary = Data.BEAST_SKILLS.get(str(msg[1]), {})
+	if sk.is_empty():
+		return
+	var center: Vector3 = msg[2]
+	var g: float = island.height_at(center.x, center.z)
+	var ctrl := sk.has("root") or sk.has("blind") or sk.has("silence") or sk.has("slow") or sk.has("pull") or sk.has("vuln")
+	var col := Color(0.75, 0.35, 1.0) if ctrl else Color(1.0, 0.25, 0.15)
+	if not sk.has("howl"):
+		var t := fx.telegraph(Vector3(center.x, maxf(g, Island.WATER_Y), center.z), float(msg[4]), float(msg[3]), col)
+		get_tree().create_timer(float(msg[3]) + 0.1).timeout.connect(t.queue_free)
+	var b: Beast = beasts.get(int(msg[0]))
+	var at: Vector3 = b.global_position if b else center
+	var l := U.label3d(str(sk["name"]) + "！", 56, col.lightened(0.3), 10)
+	l.no_depth_test = true
+	l.fixed_size = true
+	l.pixel_size = 0.0011
+	fx.add_child(l)
+	l.global_position = at + Vector3(0, 2.6, 0)
+	var tw := l.create_tween()
+	tw.tween_property(l, "global_position:y", at.y + 3.4, float(msg[3]) + 0.4)
+	tw.parallel().tween_property(l, "modulate:a", 0.0, float(msg[3]) + 0.4).set_ease(Tween.EASE_IN)
+	tw.tween_callback(l.queue_free)
+	Sfx.play_at("bite_attack", at, 2.0, 0.1, 0.6)
+
+
+## 房主：前摇结束，圈里的人中招
+func host_beast_special(b: Beast, sk: Dictionary, at: Vector3) -> void:
+	var center: Vector3 = b.global_position if str(sk["at"]) == "self" else at
+	var r := float(sk["radius"]) * b.size_k
+	var base: float = float(Data.BEASTS[b.species].get("hurt", 8.0)) * (1.0 + b.age * 0.5) * (Data.ELITE_DMG if b.temper == "elite" else 1.0) * b._dmgk() * float(Data.CH_POWER.get(chapter, 1.0))
+	var dmg := base * float(sk.get("dmg", 1.0))
+	if sk.has("howl"):
+		for o: Beast in beasts.values():
+			if o.alive() and o.global_position.distance_to(b.global_position) < r:
+				o.enrage_t = float(sk["howl"])
+	var hit := 0
+	for pl in alive_players():
+		var p: Vector3 = pl["pos"]
+		if Vector2(p.x - center.x, p.z - center.z).length() > r or absf(p.y - center.y) > r + 2.0:
+			continue
+		hit += 1
+		var msg := [b.species, dmg, base, b.global_position]
+		if int(pl["peer"]) == Net.my_id:
+			_apply_beast_special(msg)
+		else:
+			Net.send(int(pl["peer"]), "bsk", msg)
+	if hit > 0:
+		if sk.has("heal"):
+			b.hp = minf(b.hp + dmg * float(sk["heal"]) * hit, b.max_hp)
+		if sk.has("steal"):
+			b.reward_k += 0.5 * hit
+	var fxm := [b.species, center, r]
+	Net.send(0, "bskfx", fxm)
+	_on_bskfx(fxm)
+
+
+## 客人 / 自己：中了魂兽的招
+func _apply_beast_special(msg: Array) -> void:
+	var sk: Dictionary = Data.BEAST_SKILLS.get(str(msg[0]), {})
+	if sk.is_empty() or player.dead:
+		return
+	if player.invuln_t > 0.0:
+		hud.toast("躲开了%s！" % sk["name"], Color(0.6, 1.0, 0.7), 1.0)
+		return
+	var dmg := float(msg[1])
+	var base := float(msg[2])
+	var from: Vector3 = msg[3]
+	if dmg > 0.0:
+		player.take_damage(dmg, from)
+	var away := player.global_position - from
+	away.y = 0.0
+	away = away.normalized() if away.length() > 0.01 else -player.aim_dir()
+	var txt := str(sk["name"])
+	var col := Color(1.0, 0.6, 0.5)
+	if sk.has("push"):
+		player.velocity += away * float(sk["push"]) + Vector3.UP * float(sk["push"]) * 0.4
+	if sk.has("pull"):
+		player.velocity += -away * float(sk["pull"]) + Vector3.UP * 4.0
+		txt += "：被拽过去了"
+	if sk.has("root"):
+		player.root(float(sk["root"]))
+		txt += "：动不了（连按空格挣脱）"
+		col = Color(0.8, 0.6, 1.0)
+	if sk.has("slow"):
+		player.slow(float(sk["slow"]), float(sk.get("dur", 2.0)))
+		txt += "：走不快"
+	if sk.has("blind"):
+		hud.blind(float(sk["blind"]), Color(0.75, 0.8, 1.0) if msg[0] != "reeffish" else Color(1.0, 0.7, 0.9))
+		txt += "：看不见了"
+	if sk.has("vuln"):
+		player.vuln_t = maxf(player.vuln_t, float(sk["vuln"]))
+		txt += "：被盯上了，受到伤害 +30%"
+		col = Color(0.6, 0.8, 1.0)
+	if sk.has("silence"):
+		player.silence_t = maxf(player.silence_t, float(sk["silence"]))
+		txt += "：电麻了，放不了魂技"
+		col = Color(0.5, 0.8, 1.0)
+	if sk.has("poison"):
+		player.poison(maxf(base * float(sk["poison"]), 2.0), float(sk.get("dur", 4.0)))
+	if sk.has("bleed"):
+		player.poison(maxf(base * float(sk["bleed"]), 2.0), float(sk.get("dur", 4.0)))
+		txt += "：流血了"
+	if sk.has("shield") and player.shield > 0.0:
+		player.shield = 0.0
+		txt += "：护盾被打碎"
+	if sk.has("steal"):
+		var n := mini(int(Profile.money * float(sk["steal"])), int(float(Data.CH_MONEY.get(chapter, 12.0)) * 8.0))
+		if n > 0:
+			Profile.add_money(-n)
+			txt += "：叼走了 %d 金魂币（打下它能多拿回来）" % n
+			col = UiKit.GOLD
+	hud.toast(txt, col, 1.8)
+
+
+func _on_bskfx(msg: Array) -> void:
+	var sk: Dictionary = Data.BEAST_SKILLS.get(str(msg[0]), {})
+	var c: Vector3 = msg[1]
+	var r := float(msg[2])
+	if sk.is_empty():
+		return
+	if sk.has("howl"):
+		fx.aura_burst(c, Color(1.0, 0.4, 0.3), r * 0.3)
+		Sfx.play_at("boss_roar", c, -4.0, 0.1, 1.6)
+		return
+	if sk.has("root"):
+		fx.vines(c, r, Color(0.6, 0.4, 1.0) if msg[0] != "icedeer" else Color(0.6, 0.9, 1.0))
+	elif sk.has("blind"):
+		fx._burst(c + Vector3.UP, Vector3.UP, Color(0.8, 0.85, 1.0, 0.9) if msg[0] == "moth" else Color(1.0, 0.6, 0.9, 0.9), 70, 5.0, 1.2, 3.0, true, -1.0, 180.0)
+	elif sk.has("silence"):
+		fx.vortex(c, r, Color(0.4, 0.7, 1.0))
+	elif sk.has("poison") or sk.has("bleed"):
+		var pool := fx.poison_pool(c, r * 0.8)
+		get_tree().create_timer(3.0).timeout.connect(pool.queue_free)
+	elif msg[0] == "spiderling":
+		fx.web_burst(c)
+	else:
+		fx.slam(c, r)
+	Sfx.play_at("skill_launch", c, -2.0, 0.1)
+
+
+var _streak := 0
+var _streak_at := -99.0
 
 
 func _on_kill(msg: Array) -> void:
@@ -905,6 +1210,7 @@ func _on_kill(msg: Array) -> void:
 	var mine: Array = rewards.get(Net.my_id, rewards.get(str(Net.my_id), [0, 0]))
 	var who := peer_name(killer)
 	if killer == Net.my_id:
+		_ach_kill(tags, msg[9] if msg.size() > 9 else [], bool(msg[10]) if msg.size() > 10 else false)
 		_check_bounty(species, age, msg[9] if msg.size() > 9 else [])
 		_codex_kill(species, age, msg[9] if msg.size() > 9 else [], bool(msg[10]) if msg.size() > 10 else false)
 	hud.feed("%s 击杀 %s·%s" % [who, Data.age_name(age), Data.BEASTS[species]["name"]], Data.age_color(age))
@@ -912,9 +1218,27 @@ func _on_kill(msg: Array) -> void:
 	if killer == Net.my_id:
 		Profile.kills += 1
 		hud.hitmarker(false, true)
-		hud.kill_popup(int(mine[0]), int(mine[1]), tags, species, age)
+		# 连杀：5 秒内接着杀，每多一只多 15% 金魂币（最多 +75%）
+		var now := Time.get_ticks_msec() / 1000.0
+		_streak = _streak + 1 if now - _streak_at < 5.0 else 1
+		_streak_at = now
+		var bonus := int(float(mine[0]) * 0.15 * mini(_streak - 1, 5))
+		if bonus > 0:
+			Profile.add_money(bonus)
+			tags = tags.duplicate()
+			tags.append("%s  +%d 金魂币" % [["", "", "双杀", "三连杀", "四连杀", "五连杀"][mini(_streak, 5)] if _streak <= 5 else "%d 连杀！" % _streak, bonus])
+		hud.kill_popup(int(mine[0]) + bonus, int(mine[1]), tags, species, age)
 		Sfx.play("kill", -1.0)
 		Sfx.play("coin", -4.0, 0.03)
+
+
+## 炼化魂环精华：相当于打死 4 只这种魂兽的修为
+func _gain_essence(age: int, species: String) -> void:
+	var xp := int(Data.kill_xp(species, age) * 4.0)
+	fx.absorb(player, Data.age_color(age))
+	Sfx.play("absorb", -6.0, 0.0, 1.3)
+	hud.toast("炼化了%s魂环精华：修为 +%d" % [Data.age_name(age), xp], Data.AGES[age]["glow"], 2.0)
+	_gain(0, xp)
 
 
 ## 自己拿到金魂币和修为
@@ -928,7 +1252,9 @@ func _gain(money: int, xp: int) -> void:
 			hud.level_up(Profile.level)
 			Sfx.play("level_up", -2.0)
 			player.hp = Profile.max_hp()
+			fx.level_up_burst(player.global_position, Profile.rings.size())
 			_broadcast_prog()
+			_check_god()
 		if Profile.at_bottleneck() and not was_cap:
 			hud.toast("到瓶颈了！猎杀魂兽，吸收第%d魂环才能继续修炼（至少%s）" % [Profile.rings.size() + 1, Data.age_name(Data.RING_MIN_AGE[Profile.rings.size()])], Color(1.0, 0.85, 0.4), 6.0)
 
@@ -971,24 +1297,36 @@ func _remove_beast(b: Beast) -> void:
 ## 魂环只在有人用得上的时候才掉：有人卡在瓶颈、这只魂兽的年份也够。
 ## 地上已经有够多没人吸收的魂环就不掉了（不会掉一地没用的魂环）
 func _host_maybe_drop_ring(b: Beast, killer: int) -> void:
+	# 打的人卡在瓶颈、但这只年份不够：告诉他要什么年份（免得以为魂环不掉）
+	var kinfo: Dictionary = peer_info.get(killer, {})
+	var knr: int = (kinfo.get("rings", []) as Array).size()
+	var klv := int(kinfo.get("level", 1))
+	if knr < Data.MAX_RINGS and klv >= (knr + 1) * 10 and b.age < int(Data.RING_MIN_AGE[knr]):
+		var tip := "这只年份不够，不掉魂环：第%s魂环要%s以上的魂兽（换血腥饵 / 魂晶饵钓，或者打王、打 Boss）" % [Data.RING_NAMES[knr], Data.age_name(int(Data.RING_MIN_AGE[knr]))]
+		if killer == Net.my_id:
+			hud.toast(tip, Color(1.0, 0.8, 0.5), 4.0)
+		else:
+			Net.send(killer, "hint", [tip])
 	var need := 0
 	var killer_needs := false
 	for id in peer_info:
 		var info: Dictionary = peer_info[id]
 		var lv := int(info.get("level", 1))
 		var nr: int = (info.get("rings", []) as Array).size()
-		if nr < 5 and lv >= (nr + 1) * 10 and b.age >= int(Data.RING_MIN_AGE[nr]):
+		if nr < Data.MAX_RINGS and lv >= (nr + 1) * 10 and b.age >= int(Data.RING_MIN_AGE[nr]):
 			need += 1
 			if int(id) == killer:
 				killer_needs = true
-	if need <= rings.size():
+	if need > rings.size() and (killer_needs or rng.randf() < 0.6):
+		_host_drop_ring(b.global_position + Vector3(0, 1.0, 0), b.age, b.species)
 		return
-	if not killer_needs and rng.randf() > 0.6:
-		return
-	_host_drop_ring(b.global_position + Vector3(0, 1.0, 0), b.age, b.species)
+	# 没人要的魂环也按年份概率掉（十年 25% … 十万年 100% 的一半），30 秒后散掉；
+	# 走过去按 F 能炼化魂环精华，涨一截修为
+	if rings.size() < 6 and rng.randf() < float(Data.AGES[b.age]["ring_drop"]) * 0.5:
+		_host_drop_ring(b.global_position + Vector3(0, 1.0, 0), b.age, b.species, 30.0)
 
 
-func _host_drop_ring(pos: Vector3, age: int, species: String) -> void:
+func _host_drop_ring(pos: Vector3, age: int, species: String, life := 90.0) -> void:
 	# 魂兽多半死在半空：魂环落到地面上方一人高，走过去就能吸收
 	# 掉进水里的：浅水沉到水底（潜下去拿，注意憋气），深水冲到最近的岸边
 	var g := island.height_at(pos.x, pos.z)
@@ -1009,7 +1347,7 @@ func _host_drop_ring(pos: Vector3, age: int, species: String) -> void:
 		pos = Vector3(best.x, island.height_at(best.x, best.z) + 1.2, best.z)
 	var rid := next_ring_id
 	next_ring_id += 1
-	var msg := [rid, pos, age, species]
+	var msg := [rid, pos, age, species, life]
 	Net.send(0, "ring", msg)
 	_on_ring(msg)
 
@@ -1019,15 +1357,17 @@ func _on_ring(msg: Array) -> void:
 	var pos: Vector3 = msg[1]
 	var age := int(msg[2])
 	var node := fx.soul_ring(pos, Data.age_color(age))
-	rings[rid] = {"pos": pos, "age": age, "species": str(msg[3]), "node": node, "t": 0.0}
-	hud.feed("掉落了%s魂环！走过去按 F 吸收" % Data.age_name(age), Data.age_color(age))
+	var life := float(msg[4]) if msg.size() > 4 else 90.0
+	rings[rid] = {"pos": pos, "age": age, "species": str(msg[3]), "node": node, "t": 0.0, "life": life}
+	if Profile.can_absorb(age) == "":
+		hud.feed("掉落了%s魂环！走过去按 F 吸收" % Data.age_name(age), Data.age_color(age))
 	Sfx.play_at("ring_drop", pos, 0.0)
 
 
 func _host_rings(dt: float) -> void:
 	for rid in rings.keys():
 		rings[rid]["t"] += dt
-		if rings[rid]["t"] > 90.0:
+		if rings[rid]["t"] > float(rings[rid].get("life", 90.0)):
 			Net.send(0, "ringgone", [rid, 0])
 			_on_ring_gone([rid, 0])
 
@@ -1065,11 +1405,11 @@ func _reveal_skill(age: int, species: String) -> void:
 	var sid := Data.skill_for(Data.wuhun_id(Settings.wuhun), species, age, owned)
 	finish_absorb(age, species, sid)
 	var s: Dictionary = Data.SKILLS[sid]
-	var cat := "攻击（Q）"
-	for c in SkillSystem.CATS:
-		if str(s["type"]) in SkillSystem.CATS[c]:
-			cat = {"attack": "攻击魂技 · 按 Q", "support": "辅助魂技 · 按 F", "move": "位移魂技 · 双击 Shift"}[c]
-	hud._show_banner("领悟魂技 · %s" % s["name"], "%s\n%s" % [s["desc"], cat], Data.age_color(age) if age > 0 else Color.WHITE, 6.0)
+	var key := "按 K 把它装到 Q / E / F"
+	var slot := Profile.skill_slots.find(Profile.rings.size() - 1)
+	if slot >= 0:
+		key = "已经装在 %s 键上（K 面板里可以换）" % ["Q", "E", "F"][slot]
+	hud._show_banner("领悟魂技 · %s" % s["name"], "%s\n%s" % [s["desc"], key], Data.AGES[age]["glow"], 6.0)
 
 
 ## 界面选好魂技后调用
@@ -1079,31 +1419,67 @@ func finish_absorb(age: int, species: String, sid: String) -> void:
 	player.soul = Profile.max_soul()
 	player.hp = Profile.max_hp()
 	skills.current = Profile.rings.size() - 1
-	hud.toast("吸收了%s魂环！获得魂技【%s】" % [Data.age_name(age), Data.SKILLS[sid]["name"]], Data.age_color(age), 6.0)
+	# 大提升：魂环突破，全屏一闪，魂环从脚下升起
+	fx.ring_breakthrough(player.global_position, Data.age_color(age), Profile.rings.size())
+	player.trauma = 0.7
+	player.hud_flash(Data.age_color(age))
+	hud.toast("吸收了%s魂环！获得魂技【%s】" % [Data.age_name(age), Data.SKILLS[sid]["name"]], Data.AGES[age]["glow"], 6.0)
 	Sfx.play("level_up", -2.0)
 	_broadcast_prog()
+	_check_god()
+	_ach_check()
 	if ups > 0:
 		hud.level_up(Profile.level)
 
 
 # ------------------------------------------------------------------ 交互（F）
 
+## act = true：按 F 真的会做点什么（开店、召唤、上船、吸收、救人）；false 的只显示说明，F 照样放第三个魂技
 func interactables() -> Array:
 	var out := [
-		{"id": "shop", "pos": builder.shop_door, "r": 3.5, "text": "按 F 打开唐门暗器铺"},
-		{"id": "altar", "pos": island.altar_pos + Vector3(0, 1, 0), "r": 3.5, "text": _altar_text()},
+		{"id": "shop", "pos": builder.shop_door, "r": 3.5, "text": "按 F 打开唐门暗器铺", "act": true},
+		{"id": "altar", "pos": island.altar_pos + Vector3(0, 1, 0), "r": 3.5, "text": _altar_text(), "act": _can_summon()},
+		{"id": "boat", "pos": builder.boat_pos + Vector3(0, 1.0, 0), "r": 4.2, "text": _boat_text(), "act": not boat_destinations().is_empty()},
 	]
-	if int(Data.CHAPTERS[chapter].get("next", 0)) > 0:
-		out.append({"id": "boat", "pos": builder.boat_pos + Vector3(0, 1.0, 0), "r": 4.2, "text": _boat_text()})
 	for id in remotes:
 		var rp: RemotePlayer = remotes[id]
 		if rp.is_dead() and not player.dead:
-			out.append({"id": "revive", "peer": id, "pos": rp.global_position + Vector3(0, 0.6, 0), "r": 2.6, "text": "按住 F 把 %s 拉起来" % peer_name(id)})
+			out.append({"id": "revive", "peer": id, "pos": rp.global_position + Vector3(0, 0.6, 0), "r": 2.6, "text": "按住 F 把 %s 拉起来" % peer_name(id), "act": true})
 	for rid in rings:
 		var r: Dictionary = rings[rid]
 		var why := Profile.can_absorb(int(r["age"]))
 		var t := "按 F 吸收%s魂环（%s）" % [Data.age_name(int(r["age"])), Data.BEASTS[r["species"]]["name"]] if why == "" else "%s魂环：%s" % [Data.age_name(int(r["age"])), why]
-		out.append({"id": "ring", "rid": rid, "pos": r["pos"], "r": 2.6, "text": t, "ok": why == ""})
+		var ess := why != "" and not Profile.at_bottleneck()
+		if ess:
+			t = "按 F 炼化%s魂环精华（+修为）" % Data.age_name(int(r["age"]))
+		out.append({"id": "ring", "rid": rid, "pos": r["pos"], "r": 2.6, "text": t, "ok": why == "", "act": why == "" or ess, "essence": ess})
+	return out
+
+
+## Boss 打赢过了（主线到了坐船 / 成神）
+func boss_cleared() -> bool:
+	return str(_cur_quest().get("type", "")) in ["boat", "god"] or quest_idx >= (Data.CHAPTERS[chapter]["quests"] as Array).size()
+
+
+var _altar_cd := 0.0
+
+
+func _can_summon() -> bool:
+	if boss:
+		return false
+	var t := str(_cur_quest().get("type", ""))
+	return t == "altar" or (boss_cleared() and _altar_cd <= 0.0)
+
+
+## 渡船能去哪：Boss 打赢了可以去下一章；以前去过的岛随时能回去
+func boat_destinations() -> Array:
+	var out: Array = []
+	var nxt := int(Data.CHAPTERS[chapter].get("next", 0))
+	for c in range(1, Data.CHAPTERS.size() + 1):
+		if c == chapter:
+			continue
+		if c <= Profile.max_chapter or (c == nxt and boss_cleared()):
+			out.append(c)
 	return out
 
 
@@ -1116,16 +1492,19 @@ func _altar_text() -> String:
 		return "祭坛（Boss 已经出现了）"
 	if _cur_quest().get("type", "") == "altar":
 		return "按 F 点燃祭坛，召唤 Boss"
-	return "祭坛：先完成前面的任务"
+	if boss_cleared():
+		if _altar_cd > 0.0:
+			return "祭坛：%d 秒后可以再次召唤 Boss" % ceili(_altar_cd)
+		return "按 F 再次召唤 Boss（刷魂骨、魂环）"
+	return "祭坛：修炼到 %d 级才能召唤 Boss（现在 %d 级）" % [int(Data.CHAPTERS[chapter]["boss_level"]), Profile.level]
 
 
 func _boat_text() -> String:
-	var nxt := int(Data.CHAPTERS[chapter].get("next", 0))
-	if _cur_quest().get("type", "") == "boat" and Data.CHAPTERS.has(nxt):
-		if _i_boarded:
-			return "你已经上船了（%d/%d），等其他人都按 F" % [_boat_count[0], _boat_count[1]]
-		return "按 F 上船，前往%s（人齐了一起出发，已上船 %d/%d）" % [Data.CHAPTERS[nxt]["name"], _boat_count[0], maxi(_boat_count[1], _all_peers().size())]
-	return "渡船：打败这里的 Boss 之后才能出发"
+	if boat_destinations().is_empty():
+		return "渡船：打败这里的 Boss 之后才能去下一个岛"
+	if _i_boarded:
+		return "你已经上船了（%d/%d），等其他人都按 F" % [_boat_count[0], _boat_count[1]]
+	return "按 F 上船选目的地（人齐了一起出发，已上船 %d/%d）" % [_boat_count[0], maxi(_boat_count[1], _all_peers().size())]
 
 
 func nearest_interactable() -> Dictionary:
@@ -1147,19 +1526,21 @@ func interact() -> void:
 		"shop":
 			hud.open_shop()
 		"altar":
-			if _cur_quest().get("type", "") == "altar" and not boss:
+			if _can_summon():
 				Net.send_host("altar", [])
 			else:
 				hud.toast(_altar_text(), Color(0.9, 0.9, 0.9))
 		"boat":
-			if _cur_quest().get("type", "") == "boat":
-				_i_boarded = true
-				Net.send_host("boat", [])
-			else:
+			var ds := boat_destinations()
+			if ds.is_empty():
 				hud.toast(_boat_text(), Color(0.9, 0.9, 0.9))
+			else:
+				hud.open_boat_picker(ds)
 		"ring":
 			if it.get("ok", false):
 				Net.send_host("absorb", [it["rid"]])
+			elif it.get("essence", false):
+				Net.send_host("essence", [it["rid"]])
 			else:
 				hud.toast(str(it["text"]), Color(1, 0.8, 0.6), 4.0)
 
@@ -1172,6 +1553,16 @@ func on_bought_weapon(id: String) -> void:
 		if player.guns[i].id == id:
 			player.switch_weapon(i)
 	Net.send_host("qev", ["buy", 1])
+
+
+func on_sold_weapon(_id: String) -> void:
+	player.rebuild_guns()
+	_broadcast_prog()
+
+
+func on_attach_changed() -> void:
+	player.rebuild_guns()
+	player.viewmodel.apply_look()
 
 
 func on_upgraded(_id: String) -> void:
@@ -1316,6 +1707,7 @@ func boss_died(b: Boss) -> void:
 	for i in _all_peers().size():
 		_host_drop_ring(b.center() + Vector3(randf_range(-3, 3), 0, randf_range(-3, 3)), int(d["age"]), str(d.get("ring_beast", "wolf")))
 	_host_quest_event("boss", 1)
+	_altar_cd = 180.0
 
 
 func _on_boss_dead(msg: Array) -> void:
@@ -1324,10 +1716,17 @@ func _on_boss_dead(msg: Array) -> void:
 	var rewards: Dictionary = msg[1]
 	var mine: Array = rewards.get(Net.my_id, [0, 0])
 	if boss:
+		# 神圣的陨落：天上打下光柱，金光冲天，一圈圈冲击波
+		var bp: Vector3 = boss.center()
+		var holy: Color = d.get("holy", Color(1.0, 0.86, 0.45))
+		fx.ring_breakthrough(bp, holy, 0)
+		fx.skill_flourish(bp, holy, 6, 10.0)
+		player.trauma = minf(player.trauma + 0.6, 1.0)
 		boss.die_visual()     # 播死亡动画、摔下来，自己炸掉
 		boss = null
 	hud.boss_bar("")
 	_gain(int(mine[0]), int(mine[1]))
+	Profile.count("boss_" + kind)
 	# 魂骨：每人拿一块自己还没有的
 	# 每章 Boss 送一款专属外观
 	for sid in Data.GUN_SKINS:
@@ -1338,8 +1737,8 @@ func _on_boss_dead(msg: Array) -> void:
 			hud.feed("解锁了装扮【%s】（暗器铺 → 外观）" % Data.OUTFITS[oid]["name"], UiKit.GOLD)
 	var got := ""
 	for bid in d["bones"]:
-		if Profile.add_bone(str(bid) + "@2", true):
-			got = str(bid) + "@2"
+		if Profile.add_bone("%s@%d" % [str(bid), int(d["age"])], true):
+			got = "%s@%d" % [str(bid), int(d["age"])]
 			player.on_bones_changed()
 			break
 	hud.boss_defeated(str(d["name"]), int(mine[0]), got)
@@ -1350,7 +1749,7 @@ func _on_boss_dead(msg: Array) -> void:
 # ------------------------------------------------------------------ 危险物：毒液、蛛网、石头、红圈
 
 func boss_projectile(kind: String, from: Vector3, to: Vector3, flight: float, radius: float, dmg: float) -> void:
-	_host_hazard(kind, from, to, flight, radius, dmg)
+	_host_hazard(kind, from, to, flight, radius, dmg * float(Data.CH_POWER.get(chapter, 1.0)))
 
 
 func _host_hazard(kind: String, from: Vector3, to: Vector3, flight: float, radius: float, dmg: float) -> void:
@@ -1372,6 +1771,7 @@ func _on_hazard(msg: Array) -> void:
 ## late = true：红圈只在砸下来前 0.35 秒才出现（要看 Boss 起手、听声音判断，翻滚躲）
 func boss_telegraph(center: Vector3, radius: float, delay: float, dmg: float, kind: String, _src: Vector3, late := false) -> void:
 	center.y = maxf(island.height_at(center.x, center.z), Island.WATER_Y)
+	dmg *= float(Data.CH_POWER.get(chapter, 1.0))
 	var msg := [center, radius, delay, dmg, kind, late]
 	Net.send(0, "tg", msg)
 	_on_telegraph(msg)
@@ -1400,7 +1800,7 @@ var _zones: Array = []
 ## 冲击环：从中心往外扩的一圈红墙，贴地的人被扫到。跳过去或者翻滚穿过去
 func boss_shockwave(center: Vector3, max_r: float, speed: float, dmg: float) -> void:
 	center.y = maxf(island.height_at(center.x, center.z), Island.WATER_Y)
-	var msg := [center, max_r, speed, dmg]
+	var msg := [center, max_r, speed, dmg * float(Data.CH_POWER.get(chapter, 1.0))]
 	Net.send(0, "sw", msg)
 	_on_shockwave(msg)
 
@@ -1426,7 +1826,7 @@ func _on_shockwave(msg: Array) -> void:
 ## 扇形横扫：地上先出扇形，一会儿后扇形里的人挨打
 func boss_cone(origin: Vector3, dir: Vector3, half: float, reach: float, delay: float, dmg: float) -> void:
 	origin.y = maxf(island.height_at(origin.x, origin.z), Island.WATER_Y)
-	var msg := [origin, Vector3(dir.x, 0, dir.z).normalized(), half, reach, delay, dmg]
+	var msg := [origin, Vector3(dir.x, 0, dir.z).normalized(), half, reach, delay, dmg * float(Data.CH_POWER.get(chapter, 1.0))]
 	Net.send(0, "cone", msg)
 	_on_cone(msg)
 
@@ -1463,7 +1863,7 @@ func _on_cone(msg: Array) -> void:
 
 ## 全场大招：一大片都会被砸，只有几个绿圈安全（翻滚也躲不掉，要跑进绿圈）
 func boss_ultimate(center: Vector3, radius: float, safes: Array, delay: float, dmg: float) -> void:
-	var msg := [center, radius, safes, delay, dmg]
+	var msg := [center, radius, safes, delay, dmg * float(Data.CH_POWER.get(chapter, 1.0))]
 	Net.send(0, "ult", msg)
 	_on_ultimate(msg)
 
@@ -1643,13 +2043,15 @@ func _update_grenades(dt: float) -> void:
 
 
 func _host_boom(pos: Vector3, owner: int) -> void:
+	# 佛怒唐莲跟着章节变强（不然后面的图炸不动）
+	var base := 160.0 * float(Data.CH_HP.get(chapter, 1.0)) * 2.5
 	for b in skills._beasts_in(pos, 7.0):
-		var dmg := 160.0 * (1.0 - clampf(b.global_position.distance_to(pos) / 8.0, 0.0, 0.7))
+		var dmg := base * (1.0 - clampf(b.global_position.distance_to(pos) / 8.0, 0.0, 0.7))
 		var away: Vector3 = b.global_position - pos
 		away.y = 0
 		host_skill_damage(b, dmg, (away.normalized() * 3.0 + Vector3.UP * 11.0) * b.mass, owner)
 	if boss and not boss.dead and boss.surface_dist(pos) < 7.0:
-		host_boss_damage(160.0, false, owner)
+		host_boss_damage(base, false, owner)
 
 
 # ------------------------------------------------------------------ 魂技特效（大家都放）
@@ -1659,6 +2061,14 @@ func skill_fx(sid: String, center: Vector3, dir: Vector3, caster: int, origin: V
 	if s.is_empty():
 		return
 	var col := caster_color(caster)
+	var tier := Data.skill_tier(sid)
+	if tier == 5:
+		col = col.lerp(Color(0.8, 0.05, 0.1), 0.6)
+	elif tier >= 6:
+		col = Color(1.0, 0.86, 0.45)
+	var who0: Vector3 = player.global_position if caster == Net.my_id else (remotes[caster].global_position if remotes.has(caster) else center)
+	var fc: Vector3 = center if str(s.get("target", "self")) == "aim" or str(s["type"]) in ["launch", "leap", "root", "mark", "pull", "rain"] else who0
+	fx.skill_flourish(fc, col, tier, float(s.get("radius", 4.0)))
 	match str(s["type"]):
 		"launch", "leap":
 			fx.shockwave(center, float(s["radius"]), col)
@@ -1787,6 +2197,7 @@ func _update_revive(dt: float) -> void:
 		_revive_peer = 0
 		hud.revive_progress(-1.0)
 		Net.send(peer, "revive", [Net.my_id])
+		Profile.count("revives")
 		hud.feed("你把 %s 拉了起来" % peer_name(peer), Color(0.6, 1.0, 0.7))
 		Sfx.play("heal", -2.0)
 
@@ -1922,6 +2333,12 @@ func on_message(from: int, type: String, data: Variant) -> void:
 			_on_escape(data)
 		"dmgnum":
 			fx.damage_number(data[0], float(data[1]), false)
+		"btel":
+			_on_btel(data)
+		"bsk":
+			_apply_beast_special(data)
+		"bskfx":
+			_on_bskfx(data)
 		"dmg":
 			player.take_damage(float(data[0]), data[1])
 			if (data as Array).size() > 2:
@@ -1944,6 +2361,18 @@ func on_message(from: int, type: String, data: Variant) -> void:
 						Net.send(from, "absorbok", ok)
 		"absorbok":
 			_start_absorb(int(data[1]), str(data[2]))
+		"essence":
+			if Net.is_host() and rings.has(int(data[0])):
+				var r2: Dictionary = rings[int(data[0])]
+				var ok2 := [int(data[0]), r2["age"], r2["species"]]
+				Net.send(0, "ringgone", [int(data[0]), from])
+				_on_ring_gone([int(data[0]), from])
+				if from == Net.my_id:
+					_gain_essence(int(ok2[1]), str(ok2[2]))
+				else:
+					Net.send(from, "essenceok", ok2)
+		"essenceok":
+			_gain_essence(int(data[1]), str(data[2]))
 		"skill":
 			if Net.is_host():
 				var d: Array = data
@@ -2015,13 +2444,18 @@ func on_message(from: int, type: String, data: Variant) -> void:
 				var d: Array = data
 				_host_quest_event(str(d[0]), int(d[1]), str(d[2]) if d.size() > 2 else "")
 		"altar":
-			if Net.is_host() and _cur_quest().get("type", "") == "altar" and not boss:
+			if Net.is_host() and _can_summon():
 				_host_spawn_boss()
 				_host_quest_event("altar", 1)
 		"boat":
-			if Net.is_host() and _cur_quest().get("type", "") == "boat":
-				_boat_ready[from] = true
-				_host_boat_check(peer_name(from))
+			if Net.is_host():
+				var dest := int(data[0]) if (data is Array and (data as Array).size() > 0) else int(Data.CHAPTERS[chapter]["next"])
+				if dest in boat_destinations():
+					if dest != _boat_dest:
+						_boat_ready.clear()
+						_boat_dest = dest
+					_boat_ready[from] = true
+					_host_boat_check(peer_name(from))
 		"boatready":
 			_on_boat_ready(data)
 		"travel":
@@ -2042,6 +2476,8 @@ func on_message(from: int, type: String, data: Variant) -> void:
 				hud.feed("海鸥把 %s 叼走了……" % peer_name(gp), Color(0.8, 0.85, 0.9))
 		"feedall":
 			hud.feed(str(data[0]), UiKit.GOLD)
+		"hint":
+			hud.toast(str(data[0]), Color(1.0, 0.8, 0.5), 4.0)
 		"tide":
 			_on_tide()
 		"gi", "gitake", "gigone", "gull", "gullhit", "gulldown":
@@ -2056,24 +2492,36 @@ func _host_boat_check(who: String) -> void:
 	for k in _boat_ready.keys():
 		if not k in peers:
 			_boat_ready.erase(k)
-	var msg := [_boat_ready.size(), peers.size(), who]
+	var msg := [_boat_ready.size(), peers.size(), who, _boat_dest]
 	Net.send(0, "boatready", msg)
 	_on_boat_ready(msg)
-	if _boat_ready.size() >= peers.size() and _cur_quest().get("type", "") == "boat":
-		var next := int(Data.CHAPTERS[chapter]["next"])
-		Net.send(0, "travel", [next])
-		_travel(next)
+	if _boat_ready.size() >= peers.size() and _boat_dest > 0:
+		Net.send(0, "travel", [_boat_dest])
+		_travel(_boat_dest)
+
+
+var _boat_dest := 0
+
+
+## 在船边选好目的地，上船
+func board(dest: int) -> void:
+	_i_boarded = true
+	Net.send_host("boat", [dest])
 
 
 func _on_boat_ready(msg: Array) -> void:
 	_boat_count = [int(msg[0]), int(msg[1])]
+	var dname := ""
+	if msg.size() > 3 and Data.CHAPTERS.has(int(msg[3])):
+		dname = "，去%s" % Data.CHAPTERS[int(msg[3])]["name"]
 	if str(msg[2]) != "":
-		hud.feed("%s 上船了（%d/%d）" % [str(msg[2]), int(msg[0]), int(msg[1])], Color(0.6, 0.85, 1.0))
+		hud.feed("%s 上船了（%d/%d%s）" % [str(msg[2]), int(msg[0]), int(msg[1]), dname], Color(0.6, 0.85, 1.0))
 	if int(msg[0]) < int(msg[1]):
 		hud.toast("已上船 %d/%d，等所有人走到船边按 F" % [int(msg[0]), int(msg[1])], Color(0.6, 0.85, 1.0), 3.0)
 
 
 func _travel(next: int) -> void:
+	Profile.max_chapter = maxi(Profile.max_chapter, next)
 	if Net.is_host():
 		Profile.chapter = next
 		Profile.quest = 0

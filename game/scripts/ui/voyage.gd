@@ -1,14 +1,13 @@
 class_name Voyage
 extends CanvasLayer
-## 坐船换章节时的过场动画：乌篷船在黄昏的海上划向远处的岛（5 秒）。
+## 过场动画：坐船换章节（6 秒，远景 → 近景 → 目的地的岛），成神结局（10 秒，video / length 换成 ending）。
 ## 画面是 tools/boat_anim 里用 Remotion 渲染、再用 ffmpeg 转成 Ogg Theora 的视频（assets/cutscene/voyage.ogv），
 ## 上面叠一行"前往 · 第几章"。按 Esc / 空格可以跳过。
 
 signal finished
 
-const VIDEO := "res://assets/cutscene/voyage.ogv"
-const LENGTH := 5.0
-
+var video := "res://assets/cutscene/voyage.ogv"
+var length := 6.0
 var title := ""
 var _player: VideoStreamPlayer
 var _label: Label
@@ -22,7 +21,7 @@ func _ready() -> void:
 	bg.color = Color.BLACK
 	add_child(bg)
 	UiKit.fill(bg)
-	var stream: VideoStream = load(VIDEO) if ResourceLoader.exists(VIDEO) else null
+	var stream: VideoStream = load(video) if ResourceLoader.exists(video) else null
 	if stream:
 		_player = VideoStreamPlayer.new()
 		_player.stream = stream
@@ -48,10 +47,10 @@ func _process(dt: float) -> void:
 	if _done:
 		return
 	_t += dt
-	_label.modulate.a = clampf((_t - 0.6) / 0.6, 0.0, 1.0) * clampf((LENGTH - _t) / 0.5, 0.0, 1.0)
+	_label.modulate.a = clampf((_t - 0.6) / 0.6, 0.0, 1.0) * clampf((length - _t) / 0.5, 0.0, 1.0)
 	if int(_t * 1.6) != int((_t - dt) * 1.6):
 		Sfx.play("splash_small", -18.0, 0.2, 0.8)
-	if _t > LENGTH + 2.0:
+	if _t > length + 2.0:
 		_finish()
 
 
