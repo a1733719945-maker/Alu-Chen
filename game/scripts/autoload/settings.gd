@@ -55,6 +55,7 @@ func _register_inputs() -> void:
 		"wuhun_panel": [KEY_K],
 		"holster": [KEY_X],
 		"inspect": [KEY_V],
+		"true_body": [KEY_Z],
 		"achievements": [KEY_J],
 		"weapon_1": [KEY_1],
 		"weapon_2": [KEY_2],

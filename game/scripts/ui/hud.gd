@@ -170,6 +170,7 @@ void fragment() {
 	_build_bottom_center()
 	_build_bottom_right()
 	_build_center()
+	_build_combo()
 	_build_death()
 	_build_intro()
 
@@ -296,9 +297,11 @@ func _build_top_left() -> void:
 	_kings.add_theme_constant_override("separation", 5)
 	_kings.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	tl.add_child(_kings)
+	# 悬赏不常驻在 HUD 上（字太多），按住 Tab 在魂师榜里看
 	_bounty = VBoxContainer.new()
 	_bounty.add_theme_constant_override("separation", 3)
 	_bounty.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_bounty.visible = false
 	tl.add_child(_bounty)
 
 
@@ -320,13 +323,16 @@ func update_quest() -> void:
 	var cut := t.find("（")
 	_quest_text.text = t.substr(0, cut) if cut > 0 else t
 	_quest_hint.text = t.substr(cut + 1).trim_suffix("）") if cut > 0 else ""
-	_quest_hint.visible = _quest_hint.text != ""
+	_quest_hint.visible = false   # 用户嫌字多：只留一句目标
 	var a := 0
 	var b := 0
 	match str(q["type"]):
 		"kill", "hunt":
 			a = world.quest_count
 			b = maxi(world.quest_target, int(q["n"]))
+		"kings":
+			a = world.quest_count
+			b = maxi(world.quest_target, 1)
 		"level":
 			a = Profile.level
 			b = int(q["n"])
@@ -366,7 +372,8 @@ func _king_data() -> Array:
 ## 左上的狩猎目标：一只王一张卡（怪物猎人那样）。活着的：方向箭头、距离、血条、状态；死了的：重生倒计时
 func _update_kings(dt: float) -> void:
 	_kings_t -= dt
-	var data := _king_data()
+	# 只列活着的（打死了在等重生的不占地方）
+	var data := _king_data().filter(func(e): return e["b"] != null)
 	var sig := ""
 	for d in data:
 		sig += "%s%s|" % [d["key"], d["b"] != null]
@@ -376,7 +383,7 @@ func _update_kings(dt: float) -> void:
 		for c in _kings.get_children():
 			c.queue_free()
 		if not data.is_empty():
-			_kings.add_child(UiKit.section("狩猎目标 · 魂兽王", Color(1.0, 0.62, 0.3), 3))
+			_kings.add_child(UiKit.section("魂兽王", Color(1.0, 0.62, 0.3), 3))
 		for d in data:
 			_king_rows.append(_king_row(d))
 	var me: Vector3 = world.player.global_position
@@ -784,6 +791,7 @@ func _build_bottom_left() -> void:
 	tv.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	top.add_child(tv)
 	_title = UiKit.bold("", 15, Color.WHITE, 3)
+	_title.visible = false
 	tv.add_child(_title)
 	_xp = UiKit.bar(UiKit.GOLD, 250, 3)
 	tv.add_child(_xp)
@@ -816,6 +824,7 @@ func _build_bottom_left() -> void:
 	_soul.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	srow.add_child(_soul)
 	_soul_text = UiKit.num("", 17, Color(0.7, 0.82, 1.0), 3)
+	_soul_text.visible = false
 	srow.add_child(_soul_text)
 	# 饱食度
 	_food_row = HBoxContainer.new()
@@ -927,6 +936,7 @@ func _build_bottom_center() -> void:
 		var nm := UiKit.bold("", 13, Color.WHITE, 3)
 		nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		nm.custom_minimum_size.x = 110
+		nm.visible = false   # 字少一点：魂技名放的时候上面会喊出来
 		v.add_child(nm)
 		box["icon"] = icon
 		box["over"] = over
@@ -1062,9 +1072,7 @@ func _update_lure_ui(p: Player) -> void:
 	_prompt.add_theme_color_override("font_color", UiKit.MOON)
 	match lure.state:
 		Lure.S.IDLE:
-			_prompt.text = "G / 鼠标中键 按住蓄力甩出引魂索    B 鱼饵：%s" % p.bait_text()
-			_prompt.add_theme_font_size_override("font_size", 14)
-			_prompt.modulate = Color(1, 1, 1, 0.55)
+			_prompt.text = ""   # 闲着的时候不常驻提示（按键在暂停菜单里）
 		Lure.S.CHARGING:
 			_prompt.text = "松开 G 甩出去"
 			_prompt.add_theme_font_size_override("font_size", 18)
@@ -1281,7 +1289,7 @@ func revive_progress(k: float) -> void:
 
 
 ## 击杀奖励：准星下方，一个大数字 + 几个小标签（使命召唤那样），往上一弹
-func kill_popup(money: int, xp: int, tags: Array, species: String, age: int) -> void:
+func kill_popup(money: int, xp: int, tags: Array, _species: String, _age: int) -> void:
 	for c in _popup.get_children():
 		c.queue_free()
 	var row := HBoxContainer.new()
@@ -1290,20 +1298,22 @@ func kill_popup(money: int, xp: int, tags: Array, species: String, age: int) -> 
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_popup.add_child(row)
 	row.add_child(UiKit.num("+%d" % money, 36, UiKit.GOLD, 3))
+	var cr: int = world.combo.rank() if world.combo else 0
+	if cr >= 1:
+		var rl := UiKit.title(str(Combo.RANKS[cr][0]), 26, Combo.RANKS[cr][3])
+		UiKit._text_style(rl, 3)
+		rl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		row.add_child(rl)
 	var xl := UiKit.bold("+%d 修为" % xp, 16, Color(0.85, 0.9, 1.0), 3)
 	xl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	row.add_child(xl)
-	var who := UiKit.bold("%s · %s" % [Data.age_name(age), Data.BEASTS[species]["name"]], 15, Data.AGES[age]["glow"], 3)
-	who.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_popup.add_child(who)
-	if not tags.is_empty():
-		var tr := HBoxContainer.new()
-		tr.alignment = BoxContainer.ALIGNMENT_CENTER
-		tr.add_theme_constant_override("separation", 6)
-		tr.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		_popup.add_child(tr)
-		for t in tags:
-			tr.add_child(UiKit.chip(str(t), Color(1, 0.9, 0.6), 13))
+	# 字少一点：魂兽名字、爆头 / 空中击杀这些标签都不写了，只有连杀才提一句
+	for t in tags:
+		var ts := str(t)
+		if "连杀" in ts or ts.begins_with("双杀"):
+			var ch := UiKit.chip(ts.split("  ")[0], Color(1, 0.9, 0.6), 13)
+			ch.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+			_popup.add_child(ch)
 	_popup.modulate.a = 1.0
 	_popup.position.y = _popup.get_parent_area_size().y * 0.5 + 84.0
 	var tw := _popup.create_tween()
@@ -1342,11 +1352,13 @@ func _show_banner(title: String, sub: String, color: Color, time := 4.0) -> void
 
 
 func chapter_banner(name: String, intro: String) -> void:
-	_show_banner(name, intro, UiKit.MOON, 7.0)
+	# 介绍只留第一句
+	var first := intro.split("。")[0]
+	_show_banner(name, first, UiKit.MOON, 5.0)
 
 
 func level_up(level: int) -> void:
-	_show_banner("%d 级 · %s" % [level, Data.titles(level)], "魂力提升：体力、魂力上限提高", UiKit.GOLD, 2.5)
+	_show_banner("%d 级" % level, "", UiKit.GOLD, 1.8)
 
 
 func quest_done(text: String, reward: int) -> void:
@@ -1412,6 +1424,132 @@ func flash(c: Color) -> void:
 	var tw := r.create_tween()
 	tw.tween_property(r, "color:a", 0.0, 0.9).set_ease(Tween.EASE_OUT)
 	tw.tween_callback(r.queue_free)
+
+
+# ------------------------------------------------------------------ 猎魂连击、武魂真身
+
+var _combo_box: Control
+var _combo_rank: Label
+var _combo_hits: Label
+var _combo_mult: Label
+var _combo_bar: ProgressBar
+var _combo_shown := -1
+var _tb_box: HBoxContainer
+var _tb_bar: ProgressBar
+var _tb_key: Control
+var _tb_edge: ColorRect
+
+
+func _build_combo() -> void:
+	# 左边中间：评级大字母 + 连击数 + 奖励倍数 + 快断了的条
+	_combo_box = HBoxContainer.new()
+	_combo_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_combo_box.add_theme_constant_override("separation", 12)
+	UiKit.place(_combo_box, Vector4(0, 0.5, 0, 0.5), Vector4(30, -30, 380, 70))
+	_combo_box.modulate.a = 0.0
+	_root.add_child(_combo_box)
+	_combo_rank = UiKit.title("D", 64, Color.WHITE)
+	UiKit._text_style(_combo_rank, 4)
+	_combo_rank.custom_minimum_size.x = 96
+	_combo_rank.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_combo_box.add_child(_combo_rank)
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 0)
+	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	v.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_combo_box.add_child(v)
+	_combo_hits = UiKit.num("", 30, Color.WHITE, 3)
+	v.add_child(_combo_hits)
+	_combo_mult = UiKit.bold("", 14, UiKit.GOLD, 3)
+	v.add_child(_combo_mult)
+	_combo_bar = UiKit.bar(Color.WHITE, 150, 3)
+	v.add_child(_combo_bar)
+	# 武魂真身充能条：魂技格子上面
+	_tb_box = HBoxContainer.new()
+	_tb_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_tb_box.alignment = BoxContainer.ALIGNMENT_CENTER
+	_tb_box.add_theme_constant_override("separation", 8)
+	UiKit.place(_tb_box, Vector4(0.5, 1, 0.5, 1), Vector4(-180, -130, 180, -108))
+	_root.add_child(_tb_box)
+	var tl := UiKit.kicker("武魂真身", UiKit.GOLD, 12)
+	UiKit._text_style(tl, 3)
+	tl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_tb_box.add_child(tl)
+	_tb_bar = UiKit.bar(UiKit.GOLD, 200, 5)
+	_tb_bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_tb_box.add_child(_tb_bar)
+	_tb_key = UiKit.keycap("Z", 12)
+	_tb_box.add_child(_tb_key)
+	# 变身时屏幕四边一圈武魂颜色的光
+	_tb_edge = ColorRect.new()
+	_tb_edge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var m := ShaderMaterial.new()
+	m.shader = Shader.new()
+	m.shader.code = """shader_type canvas_item;
+uniform vec4 tint : source_color = vec4(1.0, 0.8, 0.3, 1.0);
+uniform float amount = 0.0;
+void fragment() {
+	vec2 d = abs(UV - 0.5) * 2.0;
+	float e = pow(max(d.x, d.y), 6.0);
+	float wave = 0.75 + 0.25 * sin(TIME * 4.0 + (UV.x + UV.y) * 8.0);
+	COLOR = vec4(tint.rgb, e * amount * wave * 0.55);
+}"""
+	_tb_edge.material = m
+	_tb_edge.visible = false
+	_root.add_child(_tb_edge)
+	UiKit.fill(_tb_edge)
+	_root.move_child(_tb_edge, 1)
+
+
+func _update_combo(dt: float) -> void:
+	var c: Combo = world.combo
+	if c == null:
+		return
+	var on := c.hits > 0
+	_combo_box.modulate.a = move_toward(_combo_box.modulate.a, 1.0 if on else 0.0, dt * (6.0 if on else 2.0))
+	if on:
+		var r := c.rank()
+		var col: Color = Combo.RANKS[r][3]
+		if r != _combo_shown:
+			_combo_shown = r
+			_combo_rank.text = str(Combo.RANKS[r][0])
+			_combo_rank.add_theme_color_override("font_color", col)
+			(_combo_bar.get_theme_stylebox("fill") as StyleBoxFlat).bg_color = col
+		_combo_hits.text = "连击 %d" % c.hits
+		_combo_mult.text = ("奖励 ×%.2f" % c.mult()) if c.mult() > 1.0 else ""
+		_combo_bar.value = c.decay_left()
+	# 武魂真身
+	_tb_bar.value = c.meter
+	var ready := c.meter >= 1.0 and not c.active()
+	_tb_key.visible = ready
+	if ready:
+		_tb_box.modulate = Color(1, 1, 1, 0.75 + 0.25 * sin(Time.get_ticks_msec() / 150.0))
+	else:
+		_tb_box.modulate = Color(1, 1, 1, 0.85 if c.meter > 0.0 else 0.4)
+	if _tb_edge.visible:
+		(_tb_edge.material as ShaderMaterial).set_shader_parameter("amount", clampf(c.tb_t / 1.0, 0.0, 1.0))
+
+
+## 连击升了一个评级：字母弹一下，S 以上屏幕闪一下
+func combo_rank_up(r: int) -> void:
+	_combo_shown = -1
+	_combo_rank.pivot_offset = _combo_rank.size * 0.5
+	_combo_rank.scale = Vector2.ONE * 1.8
+	var tw := _combo_rank.create_tween()
+	tw.tween_property(_combo_rank, "scale", Vector2.ONE, 0.25).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	if r >= 4:
+		var col: Color = Combo.RANKS[r][3]
+		flash(Color(col.r, col.g, col.b, 0.25))
+
+
+func true_body(on: bool) -> void:
+	_tb_edge.visible = on
+	if on:
+		var col: Color = world.caster_color(Net.my_id)
+		(_tb_edge.material as ShaderMaterial).set_shader_parameter("tint", col)
+		(_tb_bar.get_theme_stylebox("fill") as StyleBoxFlat).bg_color = col
+	else:
+		(_tb_bar.get_theme_stylebox("fill") as StyleBoxFlat).bg_color = UiKit.GOLD
 
 
 # ------------------------------------------------------------------ 倒地、Boss 出场
@@ -1585,6 +1723,14 @@ func _fill_scores() -> void:
 			var l: Label = UiKit.bold(vals[i], 18, UiKit.GOLD if me and i == 0 else UiKit.MOON) if i == 0 else UiKit.num(vals[i], 22, UiKit.MOON, 0)
 			l.custom_minimum_size.x = cols[i][1] - (12 if i == 0 else 0)
 			h.add_child(l)
+	# 悬赏（HUD 上不常驻，在这里看）
+	if not Profile.bounties.is_empty():
+		var gap := Control.new()
+		gap.custom_minimum_size.y = 10
+		_scores_list.add_child(gap)
+		update_bounties()
+		for c in _bounty.get_children():
+			c.reparent(_scores_list)
 
 
 # ------------------------------------------------------------------ 暂停（Valorant 那样：左边一列大字菜单，右边按键说明）
@@ -1641,7 +1787,8 @@ func _build_pause() -> void:
 		["T", "丢出手上的东西"], ["H", "回血丹"],
 		["X", "收起暗器（跑得快）"], ["V", "检视暗器"],
 		["K", "武魂和魂骨"], ["J", "成就"],
-		["M", "地图"], ["Tab", "魂师榜"],
+		["M", "地图"], ["Tab", "魂师榜（悬赏）"],
+		["Z", "武魂真身（连击充满）"],
 	]
 	for k in keys:
 		grid.add_child(UiKit.key_hint(str(k[0]), str(k[1]), 15, Color(0.85, 0.88, 0.92)))
@@ -2020,6 +2167,7 @@ func _process(dt: float) -> void:
 	_breath.value = p.air / p.max_air()
 	_update_hotbar(p)
 	_update_kings(dt)
+	_update_combo(dt)
 
 	# Boss / 正在打的魂兽王：顶上的血条
 	var bk := -1.0
@@ -2155,10 +2303,14 @@ func _draw_plates() -> void:
 		var top: Vector3 = b._hp_label.global_position
 		var d := me.distance_to(top)
 		var hurt := b.hp < b.max_hp - 0.5
-		var max_d := 75.0 if elite else (45.0 if hurt else 26.0)
+		# 字少一点：魂兽王一直显示；普通魂兽只有准星对着它、或者挨过打又离得近才显示
+		var max_d := 75.0 if elite else (60.0 if hurt else 45.0)
 		if d > max_d or cam.is_position_behind(top):
 			continue
 		var sp := cam.unproject_position(top)
+		var aimed := sp.distance_to(_plates.size * 0.5) < 140.0
+		if not elite and not aimed and not (hurt and d < 18.0):
+			continue
 		var a := clampf((max_d - d) / 8.0, 0.0, 1.0)
 		var k := clampf(1.15 - d / 90.0, 0.75, 1.1)
 		var w := (170.0 if elite else 96.0) * k
@@ -2193,7 +2345,7 @@ func _draw_plates() -> void:
 			tags.append(["缠绕", UiKit.GREEN])
 		if b.flags & Beast.FLAG_BURN:
 			tags.append(["灼烧", Color(1.0, 0.55, 0.2)])
-		if tags.is_empty():
+		if tags.is_empty() or not (aimed or elite):
 			continue
 		var ts := int(12.0 * k)
 		var total := 0.0

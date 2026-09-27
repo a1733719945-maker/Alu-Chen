@@ -189,6 +189,7 @@ const ELITE_RESPAWN := 360.0
 const ELITE_MAX := 3
 const KING_BIND_TIME := 5.0      # 捆魂：按住几秒
 const KING_BIND_CD := 18.0
+const KING_XP_LEVELS := 2.5      # 打死一只魂兽王，全队每人多拿大约这一章 2.5 级的修为（主线靠猎王，不靠刷小怪）
 
 # ================================================================ 魂导附魔：用魂兽王掉的"王魂"给暗器附魔，命中有几率触发
 # mats：哪些魂兽王的王魂能用（任意组合凑够 n 个）；kind 是命中效果（SkillSystem.host_empower）
@@ -658,7 +659,7 @@ const SPECIES_CH := {
 const CH_REF_LEVEL := {1: 10, 2: 30, 3: 50, 4: 70, 5: 90}      # 这一章大概在多少级
 const CH_MONEY := {1: 12.0, 2: 45.0, 3: 120.0, 4: 280.0, 5: 600.0}   # 这一章一只普通魂兽给多少金魂币
 const CH_PRICE := {1: 1.0, 2: 3.0, 3: 8.0, 4: 20.0, 5: 45.0}         # 道具、鱼饵价格倍数
-const KILLS_PER_LEVEL := 24.0                                      # 这一章里大约杀多少只升一级
+const KILLS_PER_LEVEL := 12.0                                      # 这一章里大约杀多少只升一级
 var cur_chapter := 1                                               # 当前地图是第几章（World 设置）
 
 
@@ -1038,9 +1039,9 @@ const BOSSES := {
 const CHAPTERS := {
 	1: {
 		"name": "第一章 · 湖心岛", "map": "island", "boss": "mandala", "next": 2, "levels": [1, 20], "boss_level": 15,
-		"intro": "圣魂村外的湖心小岛。甩出引魂索把魂兽拽上天，在空中打死它们。修炼到 15 级，就能去北坡祭坛召唤湖主。",
+		"intro": "圣魂村外的湖心小岛。甩出引魂索把魂兽拽上天，在空中打死它们。猎杀岛上的 3 只魂兽王，就能去北坡祭坛召唤湖主。",
 		"quests": [
-			{"type": "level", "n": 15, "text": "修炼到 15 级（猎魂兽王最快：必掉魂环、魂骨、王魂）", "reward": 0},
+			{"type": "kings", "n": 3, "text": "猎杀岛上的 3 只魂兽王", "reward": 0},
 			{"type": "altar", "n": 1, "text": "去北边山坡的祭坛（按 F），召唤湖主 · 千年曼陀罗蛇", "reward": 0, "target": "altar"},
 			{"type": "boss", "n": 1, "text": "击败湖主 · 千年曼陀罗蛇", "reward": 0},
 			{"type": "boat", "n": 1, "text": "所有人到码头尽头的船边按 F，一起去落日森林", "reward": 0, "target": "boat"},
@@ -1050,7 +1051,7 @@ const CHAPTERS := {
 		"name": "第二章 · 落日森林", "map": "forest", "boss": "spider", "next": 3, "levels": [20, 40], "boss_level": 35,
 		"intro": "落日森林，傍晚的光从树缝里漏下来。这里的魂兽会反击：魔狼扑人，铁甲犀冲撞，金刚猿扔石头，被咬会中毒。",
 		"quests": [
-			{"type": "level", "n": 35, "text": "修炼到 35 级", "reward": 0},
+			{"type": "kings", "n": 3, "text": "猎杀岛上的 3 只魂兽王", "reward": 0},
 			{"type": "altar", "n": 1, "text": "去森林中心古树下的祭坛（按 F），召唤森林之主", "reward": 0, "target": "altar"},
 			{"type": "boss", "n": 1, "text": "击败森林之主 · 人面魔蛛", "reward": 0},
 			{"type": "boat", "n": 1, "text": "所有人上船（按 F），去星斗大森林", "reward": 0, "target": "boat"},
@@ -1060,7 +1061,7 @@ const CHAPTERS := {
 		"name": "第三章 · 星斗大森林", "map": "deepforest", "boss": "titan", "next": 4, "levels": [40, 60], "boss_level": 55,
 		"intro": "斗罗大陆最大的魂兽森林，古木参天、终年雾气环绕。这里没有十年魂兽了，百年、千年成群出没。",
 		"quests": [
-			{"type": "level", "n": 55, "text": "修炼到 55 级", "reward": 0},
+			{"type": "kings", "n": 3, "text": "猎杀岛上的 3 只魂兽王", "reward": 0},
 			{"type": "altar", "n": 1, "text": "去星斗古树下的祭坛（按 F），唤醒星斗之王", "reward": 0, "target": "altar"},
 			{"type": "boss", "n": 1, "text": "击败星斗之王 · 万年泰坦巨猿", "reward": 0},
 			{"type": "boat", "n": 1, "text": "所有人上船（按 F），去极北之地", "reward": 0, "target": "boat"},
@@ -1070,7 +1071,7 @@ const CHAPTERS := {
 		"name": "第四章 · 极北之地", "map": "snow", "boss": "icedragon", "next": 5, "levels": [60, 80], "boss_level": 75,
 		"intro": "终年冰雪的极北之地。千年魂兽遍地，万年魂兽开始出现。被咬会冻得走不快。",
 		"quests": [
-			{"type": "level", "n": 75, "text": "修炼到 75 级", "reward": 0},
+			{"type": "kings", "n": 3, "text": "猎杀岛上的 3 只魂兽王", "reward": 0},
 			{"type": "altar", "n": 1, "text": "去北边冰崖上的祭坛（按 F），召唤冰霜巨龙", "reward": 0, "target": "altar"},
 			{"type": "boss", "n": 1, "text": "击败极北之主 · 万年冰霜巨龙", "reward": 0},
 			{"type": "boat", "n": 1, "text": "所有人上船（按 F），去海神岛", "reward": 0, "target": "boat"},
@@ -1080,7 +1081,7 @@ const CHAPTERS := {
 		"name": "第五章 · 海神岛", "map": "sea", "boss": "whale", "next": 0, "levels": [80, 100], "boss_level": 95,
 		"intro": "传说中的海神岛，千年、万年海兽横行。打败十万年的深海魔鲸，吸收它的魂环，修炼到 100 级——成神。",
 		"quests": [
-			{"type": "level", "n": 95, "text": "修炼到 95 级", "reward": 0},
+			{"type": "kings", "n": 3, "text": "猎杀岛上的 3 只魂兽王", "reward": 0},
 			{"type": "altar", "n": 1, "text": "去北岸的海神祭坛（按 F），召唤深海魔鲸", "reward": 0, "target": "altar"},
 			{"type": "boss", "n": 1, "text": "击败海神岛之主 · 十万年深海魔鲸", "reward": 0},
 			{"type": "god", "n": 1, "text": "成神：修炼到 100 级，吸收第十魂环（十万年，深海魔鲸掉；祭坛可以再召唤它）", "reward": 0},

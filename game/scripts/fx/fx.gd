@@ -55,10 +55,18 @@ func set_camera(c: Camera3D) -> void:
 
 # ------------------------------------------------------------------ 基础零件
 
+## 过一会儿删掉：用节点自己的 tween（节点先没了 tween 也跟着没，不会引用已经删掉的节点）
 func _free_after(n: Node, t: float) -> void:
-	get_tree().create_timer(t).timeout.connect(func():
-		if is_instance_valid(n):
-			n.queue_free())
+	var tw := n.create_tween()
+	tw.tween_interval(t)
+	tw.tween_callback(n.queue_free)
+
+
+## 过一会儿做一件事：挂在 Fx 自己身上（换地图 Fx 没了就不做了；以前用 SceneTree 的计时器，换地图后会引用已经删掉的节点报错）
+func _after(t: float, f: Callable) -> void:
+	var tw := create_tween()
+	tw.tween_interval(t)
+	tw.tween_callback(f)
 
 
 func _near_cam(pos: Vector3, d: float) -> bool:
@@ -446,20 +454,23 @@ func _place_tracer(mi: MeshInstance3D, b: Node3D, from: Vector3, dir: Vector3, d
 		b.visible = k < 0.999
 
 
-## 枪口火光：星芒一闪 + 往前喷的两片火舌 + 一点灯光 + 一小团枪口烟
+## 枪口火光：星芒一闪 + 往前喷的两片火舌 + 一点灯光。
+## 自己开枪时枪口就在镜头前半米：不放烟（半米大的烟团贴在镜头上，整个屏幕一层灰雾一闪一闪，用户说像黑屏抖动），火光也要小
 func muzzle_flash(pos: Vector3, dir: Vector3, color: Color, big := false) -> void:
 	var warm := color.lerp(Color(1.0, 0.85, 0.55), 0.5)
-	_flash(pos, warm, 0.34 if big else 0.2, 0.05, "flare", 5.0)
+	var near := _near_cam(pos, 2.5)
+	var ks := 0.5 if near else 1.0
+	_flash(pos, warm, (0.3 if big else 0.18) * ks, 0.04, "flare", 2.2)
 	var star := Node3D.new()
 	add_child(star)
 	star.global_position = pos
 	star.look_at(pos + dir, Vector3.UP if absf(dir.y) < 0.99 else Vector3.RIGHT)
 	star.rotate_object_local(Vector3.FORWARD, randf() * TAU)
-	var L := 0.42 if big else 0.24
+	var L := (0.36 if big else 0.22) * ks
 	for k in 2:
 		var q := MeshInstance3D.new()
 		q.mesh = _quad
-		q.material_override = FxLib.quad_mat("spark", warm, 5.0, true)
+		q.material_override = FxLib.quad_mat("spark", warm, 2.6, true)
 		q.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		star.add_child(q)
 		# 方片的长边（Y）朝枪口前方（-Z）
@@ -470,9 +481,8 @@ func muzzle_flash(pos: Vector3, dir: Vector3, color: Color, big := false) -> voi
 	var tw := star.create_tween()
 	tw.tween_property(star, "scale", Vector3(0.3, 0.3, 1.3), 0.05)
 	tw.tween_callback(star.queue_free)
-	_light(pos, warm, 2.8 if big else 1.4, 4.5, 0.07)
-	_smoke(pos + dir * 0.08, Color(0.8, 0.8, 0.78, 0.22), 2 if not big else 5, 0.8, 0.7, 0.35 if not big else 0.6, 0.4, 25.0, dir)
-	if big:
+	_light(pos, warm, 2.0 if big else 1.0, 4.5, 0.06)
+	if big and not near:
 		_sparks(pos, dir, warm, 6, 9.0, 0.25, 0.04, -4.0, 18.0, 6.0)
 
 
@@ -507,7 +517,8 @@ func _process(dt: float) -> void:
 
 ## 打到地面 / 树 / 石头：一小团尘、几粒碎屑、一点火星
 func impact_world(pos: Vector3, normal: Vector3) -> void:
-	_smoke(pos + normal * 0.1, Color(0.62, 0.56, 0.47, 0.55), 3, 1.2, 0.8, 0.45, 0.3, 40.0, normal)
+	if not _near_cam(pos, 3.0):
+		_smoke(pos + normal * 0.1, Color(0.62, 0.56, 0.47, 0.45), 3, 1.2, 0.8, 0.4, 0.3, 40.0, normal)
 	_bits(pos, normal, Color(0.5, 0.42, 0.32), 5, 3.5, 0.05)
 	_sparks(pos, normal, Color(1.0, 0.75, 0.4), 3, 4.0, 0.18, 0.03, -9.0, 50.0, 4.0)
 
@@ -556,6 +567,9 @@ func death_burst(pos: Vector3, color: Color, age: int) -> void:
 
 ## 伤害数字：从命中点往上飘，出来时弹一下
 func damage_number(pos: Vector3, amount: float, headshot: bool, kill := false) -> void:
+	# 用户嫌满屏都是字：普通命中不飘数字，只有爆头（黄）和击杀（红）
+	if not headshot and not kill:
+		return
 	var l := U.label3d(str(roundi(amount)), 72 if headshot or kill else 56, Color(1, 0.86, 0.3) if headshot else Color(1, 1, 1), 12)
 	l.font = Data.font_num
 	if kill:
@@ -601,7 +615,7 @@ func stick_arrow(pos: Vector3, dir: Vector3, on: Node3D) -> void:
 			(old as Node).queue_free()
 	# 箭可能插在魂兽身上，魂兽先没了箭也跟着没了：用弱引用，别抓着已经释放的节点
 	var wr: WeakRef = weakref(a)
-	get_tree().create_timer(12.0).timeout.connect(func():
+	_after(12.0, func():
 		var n: Node = wr.get_ref()
 		if n:
 			n.queue_free())
@@ -941,7 +955,7 @@ func explosion(pos: Vector3, radius: float, color: Color) -> void:
 	_fire(pos, c, 12 + int(radius * 2.0), radius)
 	_sparks(pos, Vector3.UP, c, 22 + int(radius * 3.0), radius * 3.0 + 4.0, 0.9, 0.09, -9.0, 180.0, 5.0)
 	_glows(pos, Vector3.UP, c, 10, radius * 1.2, 1.2, 0.22, 1.5, 180.0)
-	_smoke(pos + Vector3.UP * 0.3, Color(c.r * 0.18 + 0.08, c.g * 0.15 + 0.07, c.b * 0.15 + 0.07, 0.75), 10, radius * 0.9, 2.2, radius * 0.7, 1.4, 180.0, Vector3.UP, radius * 0.25)
+	_smoke(pos + Vector3.UP * (0.6 + radius * 0.2), Color(c.r * 0.2 + 0.12, c.g * 0.16 + 0.1, c.b * 0.14 + 0.1, 0.8), 12, radius * 0.9, 2.6, radius * 0.9, 2.6, 180.0, Vector3.UP, radius * 0.3)
 	if not _on_water(pos) and pos.y - _ground_y(pos) < 2.0:
 		_ground(Vector3(pos.x, _ground_y(pos), pos.z), "scorch", Color(0, 0, 0, 0.85), radius * 1.5, 6.0, 3.0)
 	shockwave(pos, radius, c)
@@ -1297,7 +1311,7 @@ func ring_breakthrough(pos: Vector3, color: Color, rings: int) -> void:
 	for i in rings:
 		var rc: Color = Data.AGES[int(Profile.rings[i]["age"])]["glow"] if i < Profile.rings.size() else c
 		_ring_rise(pos, rc, 1.1 + i * 0.12, 0.2, 1.0 + i * 0.35, 1.8, 0.12 * i)
-	get_tree().create_timer(0.6).timeout.connect(func():
+	_after(0.6, func():
 		shockwave(pos, 14.0, c)
 		_sparks(pos + Vector3.UP, Vector3.UP, c, 70, 16.0, 1.2, 0.12, -3.0, 180.0, 6.0)
 		_glows(pos + Vector3.UP, Vector3.UP, c, 40, 6.0, 1.6, 0.35, 0.5, 180.0)
@@ -1322,10 +1336,10 @@ func skill_flourish(center: Vector3, color: Color, tier: int, radius: float) -> 
 		for k in 6:
 			var a := TAU * k / 6.0
 			var p := center + Vector3(cos(a), 0, sin(a)) * maxf(radius, 4.0) * 0.8
-			get_tree().create_timer(0.07 * k).timeout.connect(func(): _pillar(p, holy, 0.6, 50.0, 0.4))
+			_after(0.07 * k, func(): _pillar(p, holy, 0.6, 50.0, 0.4))
 		_ring_rise(center, holy, maxf(radius, 4.0), 12.0, 16.0, 1.6)
 		_rise(center, holy, 110, maxf(radius, 4.0), 12.0, 2.0, 2.0)
-		get_tree().create_timer(0.45).timeout.connect(func(): shockwave(center, maxf(radius, 5.0) * 1.6, holy))
+		_after(0.45, func(): shockwave(center, maxf(radius, 5.0) * 1.6, holy))
 
 
 # ------------------------------------------------------------------ 新魂技的特效：召唤魂灵、环绕、连锁、黑洞、领域、陨石、神技法相
@@ -1541,13 +1555,13 @@ func summon_attack(kind: String, from: Vector3, to: Vector3, color: Color, _cast
 	match kind:
 		"phoenix":
 			tracer(from, to, color, 0.35, 70.0, 6.0)
-			get_tree().create_timer(0.15).timeout.connect(func(): explosion(to, 3.0, color))
+			_after(0.15, func(): explosion(to, 3.0, color))
 		"angel", "tower":
 			beam(from, to - from, from.distance_to(to), color, 0.18)
 			_sparks(to, Vector3.UP, color, 20, 7.0, 0.5, 0.07, -3.0, 180.0)
 			_flash(to, color, 2.0, 0.15)
 		"hammer":
-			get_tree().create_timer(0.2).timeout.connect(func():
+			_after(0.2, func():
 				explosion(to, 5.0, color)
 				slam(to, 5.0))
 		"vine":
@@ -1780,7 +1794,7 @@ func blackhole_fx(center: Vector3, radius: float, dur: float, color: Color) -> v
 	p.scale_amount_max = 0.25
 	p.color_ramp = _ramp(c, true)
 	n.add_child(p)
-	get_tree().create_timer(dur).timeout.connect(func():
+	_after(dur, func():
 		if is_instance_valid(n):
 			n.queue_free()
 		explosion(center + Vector3.UP, radius, color)
@@ -1843,7 +1857,7 @@ func domain_fx(center: Vector3, radius: float, dur: float, color: Color) -> void
 	tw.tween_property(wall, "scale", Vector3.ONE, 0.4).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	for gnode in [outer, inner]:
 		_ground_grow(gnode, 0.4)
-	get_tree().create_timer(dur).timeout.connect(func():
+	_after(dur, func():
 		for gnode in [outer, inner]:
 			if is_instance_valid(gnode):
 				var tg: Tween = gnode.create_tween()
@@ -1961,7 +1975,7 @@ func shen_manifest(pos: Vector3, wuhun: int, color: Color) -> void:
 	for k in 8:
 		var a := TAU * k / 8.0
 		var pp := pos + Vector3(cos(a), 0, sin(a)) * 12.0
-		get_tree().create_timer(0.05 * k).timeout.connect(func(): _pillar(pp, color, 0.8, 60.0, 1.2))
+		_after(0.05 * k, func(): _pillar(pp, color, 0.8, 60.0, 1.2))
 	_pillar(pos, Color(1, 0.95, 0.8), 2.0, 80.0, 1.6)
 	_ground(Vector3(pos.x, _ground_y(pos), pos.z), "magic", color, 26.0, 3.0, 1.0, 2.0, 0.4, 0.4)
 	_rise(pos, color, 120, 10.0, 12.0, 2.4, 2.2)
@@ -1989,6 +2003,67 @@ func empower_hit(kind: String, pos: Vector3, color: Color) -> void:
 		_:
 			_flash(pos, color, 1.2, 0.1)
 			_sparks(pos, Vector3.UP, color, 14, 5.0, 0.5, 0.06, 0.0, 180.0)
+
+
+## 武魂真身：脚下一圈转着的魂环、全身往上冒光焰、一盏灯，跟着人 dur 秒
+func true_body_aura(target: Node3D, dur: float, color: Color) -> void:
+	if target == null or not is_instance_valid(target):
+		return
+	var c := Color(color.r, color.g, color.b, 1.0)
+	var root := Node3D.new()
+	target.add_child(root)
+	var ring := FxLib.soul_ring(c, c, 1.3, 2.6)
+	ring.position = Vector3(0, 0.08, 0)
+	root.add_child(ring)
+	var spin := ring.create_tween().set_loops()
+	spin.tween_property(ring, "rotation:y", TAU, 2.0).as_relative()
+	# 自己变身：光焰会从镜头旁边往上冒，糊一脸（和枪口烟一样的问题），自己只看脚下的环和屏幕边上的光
+	var mine := _player != null and target == _player
+	if not mine:
+		var ring2 := FxLib.soul_ring(c.lerp(Color.WHITE, 0.3), c, 0.9, 2.0)
+		ring2.position = Vector3(0, 1.1, 0)
+		root.add_child(ring2)
+		var spin2 := ring2.create_tween().set_loops()
+		spin2.tween_property(ring2, "rotation:y", -TAU, 1.4).as_relative()
+	var p := CPUParticles3D.new()
+	p.emitting = not mine
+	p.visible = not mine
+	p.amount = 40
+	p.lifetime = 1.0
+	p.mesh = _quad
+	p.local_coords = false
+	p.material_override = FxLib.pmat("smoke", true, 1.4, 2, 0.0)
+	p.emission_shape = CPUParticles3D.EMISSION_SHAPE_RING
+	p.emission_ring_axis = Vector3.UP
+	p.emission_ring_radius = 0.9
+	p.emission_ring_inner_radius = 0.5
+	p.emission_ring_height = 0.2
+	p.direction = Vector3.UP
+	p.spread = 10.0
+	p.initial_velocity_min = 1.5
+	p.initial_velocity_max = 3.0
+	p.gravity = Vector3(0, 1.0, 0)
+	p.angle_max = 360.0
+	p.anim_offset_max = 1.0
+	p.scale_amount_min = 0.4
+	p.scale_amount_max = 0.8
+	p.scale_amount_curve = _c_shrink
+	p.color_ramp = _ramp(c, true)
+	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(p)
+	var light := OmniLight3D.new()
+	light.light_color = c
+	light.light_energy = 2.0
+	light.omni_range = 6.0
+	light.position = Vector3(0, 1.2, 0)
+	root.add_child(light)
+	_pillar(target.global_position, c, 1.2, 40.0, 0.4)
+	_ground_ring(Vector3(target.global_position.x, _ground_y(target.global_position), target.global_position.z), c, 10.0, 0.5, 2.0)
+	var tw := root.create_tween()
+	tw.tween_interval(maxf(dur - 0.5, 0.1))
+	tw.tween_callback(func(): p.emitting = false)
+	tw.tween_property(light, "light_energy", 0.0, 0.5)
+	tw.tween_callback(root.queue_free)
 
 
 ## 护盾：六边形格子的光罩跟着人 dur 秒

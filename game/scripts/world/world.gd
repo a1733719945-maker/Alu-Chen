@@ -28,6 +28,7 @@ var builder: WorldBuilder
 var fx: Fx
 var hud: Hud
 var skills: SkillSystem
+var combo: Combo                  # 猎魂连击 + 武魂真身（world/combo.gd）
 var loot: Loot
 var player: Player
 var players_root: Node3D
@@ -104,6 +105,9 @@ func _ready() -> void:
 	skills = SkillSystem.new()
 	skills.world = self
 	add_child(skills)
+	combo = Combo.new()
+	combo.world = self
+	add_child(combo)
 
 	player = Player.new()
 	player.name = "LocalPlayer"
@@ -313,6 +317,26 @@ func _stat(id: int) -> Dictionary:
 	return stats[id]
 
 
+## 武魂真身：谁变身了都看得到（天上法相、身上光），离得近的队友伤害 +30%
+func on_true_body(peer: int) -> void:
+	var node: Node3D = player if peer == Net.my_id else (remotes.get(peer) as Node3D)
+	if node == null:
+		return
+	var col := caster_color(peer)
+	var wh := int(peer_info.get(peer, {}).get("wuhun", Settings.wuhun if peer == Net.my_id else 0))
+	fx.shen_manifest(node.global_position, wh, col)
+	fx.true_body_aura(node, Combo.TB_TIME, col)
+	Sfx.play_at("boss_roar", node.global_position, 0.0, 0.0, 1.4)
+	if peer == Net.my_id:
+		hud.true_body(true)
+		hud._show_banner("武魂真身", "", col, 2.2)
+	else:
+		hud.feed("%s 武魂真身！" % peer_name(peer), col)
+		if not player.dead and player.global_position.distance_to(node.global_position) < Combo.TB_ALLY_RANGE:
+			player.add_buff("dmg", Combo.TB_ALLY_DMG, Combo.TB_TIME)
+			hud.toast("%s 的武魂真身：你的伤害 +%d%%" % [peer_name(peer), int(Combo.TB_ALLY_DMG * 100)], col, 3.0)
+
+
 func caster_color(peer: int) -> Color:
 	var info: Dictionary = peer_info.get(peer, {})
 	return Data.wuhun_fx_color(int(info.get("wuhun", Settings.wuhun if peer == Net.my_id else 0)))
@@ -400,6 +424,13 @@ func local_fire(g: Gun, origin: Vector3, dirs: Array[Vector3], muzzle: Vector3) 
 				else:
 					Net.send(1, "nesthit", [nid, nd])
 				break
+			elif col is Node and (col as Node).has_meta("critter"):
+				# 天上飞的鸟、蛾子：打下来，变成一只真的魂兽
+				fx.impact_beast(end, hit["normal"], Color(1.0, 0.95, 0.8), false)
+				hud.hitmarker(false, false)
+				Sfx.play("hit", -3.0, 0.05)
+				critter_hit(int((col as Node).get_meta("critter")), end)
+				break
 			elif col is Node and (col as Node).has_meta("gull"):
 				# 打海鸥：它叼着的东西 / 队友会掉下来
 				fx.impact_beast(end, hit["normal"], Color(0.95, 0.95, 1.0), false)
@@ -464,7 +495,8 @@ func local_fire(g: Gun, origin: Vector3, dirs: Array[Vector3], muzzle: Vector3) 
 		var local_pt: Vector3 = h["pts"] / float(h["n"])
 		var shown: float = h["dmg"] * b.armor_factor(h["head"])
 		hud.hitmarker(h["head"], false)
-		Sfx.play("hit_head" if h["head"] else "hit", -1.0 if h["head"] else -4.0, 0.05)
+		combo.hit(b.state == Beast.State.AIR, h["head"])
+		Sfx.play("hit_head" if h["head"] else "hit", -1.0 if h["head"] else -4.0, 0.03, combo.pitch())
 		if Net.is_host():
 			var before := b.alive()
 			var real := b.take_hit(h["dmg"], h["imp"], local_pt, h["head"], Net.my_id, h["dist"])
@@ -501,6 +533,7 @@ func local_melee(g: Gun, _origin: Vector3, dir: Vector3, hit: Dictionary) -> voi
 			dmg *= float(w["headshot"])
 		fx.impact_beast(at, hit["normal"], Data.age_color(b.age), head)
 		hud.hitmarker(head, false)
+		combo.hit(b.state == Beast.State.AIR, head)
 		var local_pt := b.to_local(at)
 		if Net.is_host():
 			var before := b.alive()
@@ -523,8 +556,31 @@ func local_melee(g: Gun, _origin: Vector3, dir: Vector3, hit: Dictionary) -> voi
 			Net.send(1, "bhit", [dmg, weak])
 	elif col is Node and (col as Node).has_meta("gull"):
 		Net.send_host("gullhit", [int((col as Node).get_meta("gull"))])
+	elif col is Node and (col as Node).has_meta("critter"):
+		critter_hit(int((col as Node).get_meta("critter")), at)
 	else:
 		fx.impact_world(at, hit["normal"])
+
+
+## 天上飞的鸟 / 蛾子 / 蝙蝠 / 海鸥被打中（或被引魂索钩中）：房主把它变成一只真的魂兽掉下来，天上那只藏 90 秒
+func critter_hit(idx: int, at: Vector3) -> void:
+	if Net.is_host():
+		_host_critter(idx, at)
+	else:
+		Net.send(1, "critter", [idx, at])
+
+
+func _host_critter(idx: int, at: Vector3) -> void:
+	if not builder.critter_up(idx):
+		return
+	var sp := builder.critter_species(idx)
+	if not Data.BEASTS.has(sp):
+		return
+	var msg := [idx, 90.0]
+	Net.send(0, "critterhide", msg)
+	builder.critter_hide(idx, 90.0)
+	var age := 1 if rng.randf() < 0.3 else 0
+	_host_spawn_wild(at, sp, age, "flee")
 
 
 # ------------------------------------------------------------------ 引魂索拽出魂兽
@@ -682,13 +738,15 @@ func _host_kill(b: Beast) -> void:
 	var reward := roundi(base * mult * Data.KILL_MONEY)
 	var xp_total := roundi(xp * mult)
 	var rewards := {}
+	# 魂兽王是这一章的主线：全队每人再加一大笔修为（大约这一章 2.5 级），不用刷小怪升级
+	var king_xp := roundi(Data.xp_to_next(int(Data.CH_REF_LEVEL.get(chapter, 10))) * Data.KING_XP_LEVELS) if b.temper == "elite" else 0
 	for peer in _all_peers():
 		if peer == killer:
-			rewards[peer] = [reward, xp_total]
+			rewards[peer] = [reward, xp_total + king_xp]
 		elif b.damagers.has(peer):
-			rewards[peer] = [roundi(reward * float(KB["assist"])), roundi(xp_total * 0.7)]
+			rewards[peer] = [roundi(reward * float(KB["assist"])), roundi(xp_total * 0.7) + king_xp]
 		else:
-			rewards[peer] = [0, roundi(xp_total * float(KB["team_xp"]))]
+			rewards[peer] = [0, roundi(xp_total * float(KB["team_xp"])) + king_xp]
 	var st := _stat(killer)
 	st["kills"] += 1
 	st["earned"] += reward
@@ -705,6 +763,8 @@ func _host_kill(b: Beast) -> void:
 	_host_drop_loot(b)
 	_host_quest_event("kill", 1)
 	_host_quest_event("hunt", 1, b.species)
+	if b.temper == "elite":
+		_host_quest_event("kings", 1)
 
 
 func beast_escaped(b: Beast, reason: String) -> void:
@@ -1239,6 +1299,7 @@ func _on_king_move(msg: Array) -> void:
 		return
 	var names := {"slam": "震地", "pounce": "扑杀", "roar": "王之咆哮"}
 	var l := U.label3d(str(names.get(str(msg[1]), "")) + "！", 64, Color(1.0, 0.45, 0.2), 12)
+	l.visible = false   # 用户嫌字多：招式名不飘了，看地上的红圈
 	l.no_depth_test = true
 	l.fixed_size = true
 	l.pixel_size = 0.0012
@@ -1516,6 +1577,7 @@ func _on_btel(msg: Array) -> void:
 	var b: Beast = beasts.get(int(msg[0]))
 	var at: Vector3 = b.global_position if b else center
 	var l := U.label3d(str(sk["name"]) + "！", 56, col.lightened(0.3), 10)
+	l.visible = false   # 用户嫌字多：招式名不飘了
 	l.no_depth_test = true
 	l.fixed_size = true
 	l.pixel_size = 0.0011
@@ -1670,12 +1732,23 @@ func _on_kill(msg: Array) -> void:
 	if age >= 2:
 		Sfx.play_at("kill_burst", pos, -6.0, 0.08)
 	var mine: Array = rewards.get(Net.my_id, rewards.get(str(Net.my_id), [0, 0]))
+	if killer == Net.my_id:
+		var air_kill := false
+		for t in tags:
+			if "空中" in str(t):
+				air_kill = true
+		combo.kill(air_kill)
+	# 连击评级越高，自己拿到的越多
+	var cm := combo.mult()
+	mine = [roundi(float(mine[0]) * cm), roundi(float(mine[1]) * cm)]
 	var who := peer_name(killer)
 	if killer == Net.my_id:
 		_ach_kill(tags, msg[9] if msg.size() > 9 else [], bool(msg[10]) if msg.size() > 10 else false)
 		_check_bounty(species, age, msg[9] if msg.size() > 9 else [])
 		_codex_kill(species, age, msg[9] if msg.size() > 9 else [], bool(msg[10]) if msg.size() > 10 else false)
-	hud.feed("%s 击杀 %s·%s" % [who, Data.age_name(age), Data.BEASTS[species]["name"]], Data.age_color(age))
+	# 自己的击杀中间已经弹了奖励，右边只写队友的（和魂兽王）
+	if killer != Net.my_id or (msg.size() > 10 and bool(msg[10])):
+		hud.feed("%s 击杀 %s·%s" % [who, Data.age_name(age), Data.BEASTS[species]["name"]], Data.age_color(age))
 	_gain(int(mine[0]), int(mine[1]))
 	# 魂兽王：打死的人和附近 80 米的队友每人一个王魂（附魔材料）
 	if msg.size() > 10 and bool(msg[10]) and (killer == Net.my_id or player.global_position.distance_to(pos) < 80.0):
@@ -1739,18 +1812,18 @@ func _on_escape(msg: Array) -> void:
 		"splash":
 			fx.splash(pos, true)
 			Sfx.play_at("splash_big", pos, -2.0)
-			hud.feed("%s 逃回了水里" % nm, Color(0.7, 0.7, 0.7))
+			pass  # hud.feed("%s 逃回了水里" % nm, Color(0.7, 0.7, 0.7))
 		"burrow":
 			fx.dirt_puff(pos)
-			hud.feed("%s 逃回了窝里" % nm, Color(0.7, 0.7, 0.7))
+			pass  # hud.feed("%s 逃回了窝里" % nm, Color(0.7, 0.7, 0.7))
 		"despawn":
 			pass
 		"fly":
 			fx.poof(pos)
-			hud.feed("%s 飞走了" % nm, Color(0.7, 0.7, 0.7))
+			pass  # hud.feed("%s 飞走了" % nm, Color(0.7, 0.7, 0.7))
 		_:
 			fx.poof(pos)
-			hud.feed("%s 逃走了" % nm, Color(0.7, 0.7, 0.7))
+			pass  # hud.feed("%s 逃走了" % nm, Color(0.7, 0.7, 0.7))
 
 
 func _remove_beast(b: Beast) -> void:
@@ -1970,7 +2043,7 @@ func _altar_text() -> String:
 		if _altar_cd > 0.0:
 			return "祭坛：%d 秒后可以再次召唤 Boss" % ceili(_altar_cd)
 		return "按 F 再次召唤 Boss（刷魂骨、魂环）"
-	return "祭坛：修炼到 %d 级才能召唤 Boss（现在 %d 级）" % [int(Data.CHAPTERS[chapter]["boss_level"]), Profile.level]
+	return "祭坛：先猎杀岛上的魂兽王（%d / %d），才能召唤 Boss" % [quest_count, maxi(quest_target, 1)]
 
 
 func _boat_text() -> String:
@@ -2068,6 +2141,10 @@ func _host_check_quest() -> void:
 	quest_target = Data.quest_target(q, maxi(peer_info.size(), 1))
 	match str(q["type"]):
 		"kill", "buy", "altar", "boss", "hunt", "upgrade":
+			done = quest_count >= quest_target
+		"kings":
+			# 有的岛陆地栖息地少，王不到 3 只：按这座岛实际有几只算
+			quest_target = mini(int(q["n"]), maxi(elites.size(), 1)) if not elites.is_empty() else int(q["n"])
 			done = quest_count >= quest_target
 		"level":
 			var mx := 0
@@ -2986,6 +3063,16 @@ func on_message(from: int, type: String, data: Variant) -> void:
 		"nesthit":
 			if Net.is_host():
 				nests.host_damage(int(data[0]), float(data[1]), from)
+		"critter":
+			if Net.is_host():
+				_host_critter(int(data[0]), data[1])
+		"critterhide":
+			builder.critter_hide(int(data[0]), float(data[1]))
+		"tb":
+			on_true_body(int(data[0]))
+		"crank":
+			var r := int(data[1])
+			hud.feed("%s 打出了 %s 级连击！" % [str(data[0]), Combo.RANKS[r][0]], Combo.RANKS[r][3])
 		"nesthp", "nestdown", "nestup", "nestsync":
 			nests.on_message(type, data)
 		"chainfx":

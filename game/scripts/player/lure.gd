@@ -181,6 +181,14 @@ func _fly(dt: float) -> void:
 				pos = hit["position"]
 				_start_return()
 				return
+			if col is Node and (col as Node).has_meta("critter"):
+				# 钩中天上飞的：拽下来变成魂兽
+				pos = hit["position"]
+				if not remote:
+					world.critter_hit(int((col as Node).get_meta("critter")), pos)
+					Sfx.play("yank", -2.0, 0.05)
+				_start_return()
+				return
 			if col is Node and ((col as Node).has_meta("nest") or (col as Node).has_meta("gull")):
 				pos = hit["position"]
 				_start_return()

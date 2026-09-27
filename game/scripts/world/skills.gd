@@ -336,12 +336,12 @@ func host_apply(sid: String, power: float, center: Vector3, dir: Vector3, caster
 				b.root_pos = b.global_position + (Vector3.UP * 1.2 if b.state != Beast.State.AIR else Vector3.ZERO)
 				b.gravity_scale = 0.0
 				if dmg > 0.0:
-					_hit(b, dmg, Vector3.ZERO, caster)
+					_sdmg(b, dmg, Vector3.ZERO, caster)
 			var boss: Boss = world.boss
 			if boss and not boss.dead and boss.surface_dist(center) < float(s["radius"]):
 				boss.root(float(s["dur"]))
 				if dmg > 0.0:
-					world.host_boss_damage(dmg, false, caster)
+					_boss_hit(dmg, false, caster)
 		"mark":
 			for b in _beasts_in(center, float(s["radius"])):
 				b.mark_t = float(s["dur"])
@@ -456,17 +456,17 @@ func _update_summons(dt: float) -> void:
 				_launch(to, float(s["radius"]), dmg, float(s.get("impulse", 8.0)), int(sm["caster"]), float(s.get("burn", 0.0)) * power)
 			else:
 				var imp: Vector3 = ((to - pos).normalized() * 2.0 + Vector3.UP * float(s.get("impulse", 3.0))) * b.mass
-				world.host_skill_damage(b, dmg, imp, int(sm["caster"]))
+				_sdmg(b, dmg, imp, int(sm["caster"]))
 				if s.has("root") and b.alive():
 					b.root_t = float(s["root"])
 					b.root_pos = b.global_position
 				if s.has("burn") and b.alive():
 					b.burn_t = 3.0
-					b.burn_dps = float(s["burn"]) * power
+					b.burn_dps = float(s["burn"]) * power * _dk()
 					b.burn_by = int(sm["caster"])
 		elif world.boss and not world.boss.dead and world.boss.surface_dist(pos) < float(s["range"]):
 			to = world.boss.center()
-			world.host_boss_damage(dmg, false, int(sm["caster"]))
+			_boss_hit(dmg, false, int(sm["caster"]))
 		if to != Vector3.INF:
 			var msg := [sm["sid"], from, to, sm["caster"]]
 			Net.send(0, "sumhit", msg)
@@ -492,13 +492,13 @@ func _update_orbits(dt: float) -> void:
 		for b in _beasts_in(cp, r):
 			var away: Vector3 = b.global_position - cp
 			away.y = 0.0
-			world.host_skill_damage(b, dmg, (away.normalized() * 3.0 + Vector3.UP * 2.0) * b.mass, int(ob["caster"]))
+			_sdmg(b, dmg, (away.normalized() * 3.0 + Vector3.UP * 2.0) * b.mass, int(ob["caster"]))
 			if s.has("burn") and b.alive():
 				b.burn_t = 3.0
-				b.burn_dps = float(s["burn"]) * float(ob["power"])
+				b.burn_dps = float(s["burn"]) * float(ob["power"]) * _dk()
 				b.burn_by = int(ob["caster"])
 		if world.boss and not world.boss.dead and world.boss.surface_dist(cp) < r:
-			world.host_boss_damage(dmg, false, int(ob["caster"]))
+			_boss_hit(dmg, false, int(ob["caster"]))
 
 
 func _chain(sid: String, s: Dictionary, center: Vector3, power: float, caster: int) -> void:
@@ -513,7 +513,7 @@ func _chain(sid: String, s: Dictionary, center: Vector3, power: float, caster: i
 		hit[b.id] = true
 		pts.append(b.global_position + Vector3.UP * 0.5)
 		cur = b.global_position
-		world.host_skill_damage(b, dmg, Vector3.UP * 3.0 * b.mass, caster)
+		_sdmg(b, dmg, Vector3.UP * 3.0 * b.mass, caster)
 		if b.alive():
 			if s.has("root"):
 				b.root_t = float(s["root"])
@@ -524,7 +524,7 @@ func _chain(sid: String, s: Dictionary, center: Vector3, power: float, caster: i
 		dmg *= 0.92
 	var boss: Boss = world.boss
 	if boss and not boss.dead and boss.surface_dist(center) < 12.0:
-		world.host_boss_damage(float(s["damage"]) * power * 2.0, false, caster)
+		_boss_hit(float(s["damage"]) * power * 2.0, false, caster)
 		pts.append(boss.center())
 	if pts.size() > 1:
 		var msg := [pts, caster]
@@ -551,7 +551,7 @@ func _update_domains(dt: float) -> void:
 		if do_root:
 			dm["root_next"] = float(s["root_every"])
 		for b in _beasts_in(c, r):
-			world.host_skill_damage(b, float(s["dps"]) * power * 0.5, Vector3.ZERO, int(dm["caster"]))
+			_sdmg(b, float(s["dps"]) * power * 0.5, Vector3.ZERO, int(dm["caster"]))
 			if not b.alive():
 				continue
 			if s.has("mult"):
@@ -562,11 +562,11 @@ func _update_domains(dt: float) -> void:
 				b.root_pos = b.global_position
 			if s.has("burn"):
 				b.burn_t = 2.0
-				b.burn_dps = float(s["burn"]) * power
+				b.burn_dps = float(s["burn"]) * power * _dk()
 				b.burn_by = int(dm["caster"])
 		var boss: Boss = world.boss
 		if boss and not boss.dead and boss.surface_dist(c) < r:
-			world.host_boss_damage(float(s["dps"]) * power * 0.5, false, int(dm["caster"]))
+			_boss_hit(float(s["dps"]) * power * 0.5, false, int(dm["caster"]))
 			if s.has("mult"):
 				boss.mark(1.0, float(s["mult"]))
 
@@ -659,7 +659,7 @@ func _beasts_in(center: Vector3, radius: float) -> Array:
 
 
 func _hit(b: Beast, dmg: float, imp: Vector3, caster: int) -> void:
-	var dead: bool = world.host_skill_damage(b, dmg, imp, caster)
+	var dead: bool = _sdmg(b, dmg, imp, caster)
 	if not dead and imp != Vector3.ZERO:
 		pass
 
@@ -668,18 +668,18 @@ func _launch(center: Vector3, radius: float, dmg: float, up: float, caster: int,
 	for b in _beasts_in(center, radius):
 		if burn > 0.0:
 			b.burn_t = 3.0
-			b.burn_dps = burn
+			b.burn_dps = burn * _dk()
 			b.burn_by = caster
 		var away: Vector3 = b.global_position - center
 		away.y = 0
 		var imp: Vector3 = (away.normalized() * up * 0.25 + Vector3.UP * up) * b.mass
 		b.root_t = 0.0
 		b.gravity_scale = Beast.G_RISE
-		world.host_skill_damage(b, dmg, imp, caster)
+		_sdmg(b, dmg, imp, caster)
 	# Boss 按身体表面算距离（它很大，按中心算会打不到）
 	var boss: Boss = world.boss
 	if boss and not boss.dead and dmg > 0.0 and boss.surface_dist(center) < radius:
-		world.host_boss_damage(dmg, false, caster)
+		_boss_hit(dmg, false, caster)
 	if dmg > 0.0:
 		world.nests.host_area_damage(center, radius, dmg, caster)
 
@@ -698,7 +698,22 @@ func _beam(origin: Vector3, dir: Vector3, length: float, dmg: float, pierce: int
 			hits.append([along, b])
 	hits.sort_custom(func(a, c): return a[0] < c[0])
 	for i in mini(pierce, hits.size()):
-		world.host_skill_damage(hits[i][1], dmg, dir * 3.0 + Vector3.UP * 3.0, caster)
+		_sdmg(hits[i][1], dmg, dir * 3.0 + Vector3.UP * 3.0, caster)
 	var boss: Boss = world.boss
 	if boss and not boss.dead and dmg > 0.0 and boss.segment_hit(origin, dir, length, width):
-		world.host_boss_damage(dmg, true, caster)
+		_boss_hit(dmg, true, caster)
+
+
+## 魂技伤害跟着章节的魂兽血量一起涨（魂兽血量每章翻倍，魂技不涨的话后面的章节刮痧；用户反馈"很多魂技基本打不动后面的怪物"）
+func _dk() -> float:
+	if Data.autotest:
+		return 1.0
+	return float(Data.CH_HP.get(int(world.chapter), 1.0)) * Profile.rebirth_hard()
+
+
+func _sdmg(b: Beast, dmg: float, imp: Vector3, caster: int) -> bool:
+	return world.host_skill_damage(b, dmg * _dk(), imp, caster)
+
+
+func _boss_hit(dmg: float, weak: bool, caster: int) -> void:
+	world.host_boss_damage(dmg * _dk(), weak, caster)

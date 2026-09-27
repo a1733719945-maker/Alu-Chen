@@ -233,6 +233,12 @@ func _process(dt: float) -> void:
 			_run_uishots()
 		"fxshots":
 			_run_fxshots()
+		"critters":
+			_run_critters()
+		"combo":
+			_run_combo()
+		"comboshot":
+			_run_comboshot()
 		"tour", "tour1", "tour2":
 			_run_tour()
 		"host":
@@ -1266,6 +1272,137 @@ func _run_fxshots() -> void:
 				return
 			_next(1)
 			await _shot("fx_" + str(_mem["shot"]))
+
+
+## 天上飞的鸟：用真的射线打它，要掉下来变成一只魂兽；魂兽王任务要能计数
+func _run_critters() -> void:
+	var w := _ready_world()
+	if not w:
+		return
+	var p := w.player
+	match _step:
+		0:
+			if _step_t < 1.0:
+				return
+			if not _check(not w.builder._critters.is_empty(), "这张图天上没有能打的鸟"):
+				return
+			var n: Node3D = w.builder._critters[0]
+			var body := n.get_node_or_null("Hit") as StaticBody3D
+			if not _check(body != null, "天上的鸟没有碰撞体"):
+				return
+			# 站到鸟的正下方偏一点，朝它开一枪（真的射线）
+			p.teleport(Vector3(n.global_position.x + 6.0, w.island.height_at(n.global_position.x + 6.0, n.global_position.z) + 0.5, n.global_position.z))
+			_mem["nb"] = w.beasts.size()
+			_next(1)
+		1:
+			if _step_t < 0.5:
+				return
+			var n: Node3D = w.builder._critters[0]
+			var hit: Dictionary = w.raycast(p.cam.global_position, n.global_position, U.LAYER_WORLD | U.LAYER_BEAST, [p.get_rid()])
+			if not _check(not hit.is_empty() and (hit["collider"] as Node).has_meta("critter"), "射线打不到天上的鸟"):
+				return
+			w.critter_hit(int((hit["collider"] as Node).get_meta("critter")), hit["position"])
+			_next(2)
+		2:
+			if _step_t < 0.5:
+				return
+			if not _check(w.beasts.size() > int(_mem["nb"]), "打中鸟以后没有掉下来变成魂兽"):
+				return
+			if not _check(not (w.builder._critters[0] as Node3D).visible, "打下来的鸟还在天上飞"):
+				return
+			_note("天上的鸟打下来变成了魂兽")
+			# 魂兽王任务：计数
+			w.quest_idx = _quest_index(w.chapter, "kings")
+			w.quest_count = 0
+			w._host_check_quest()
+			w._host_quest_event("kings", 1)
+			if not _check(w.quest_count == 1, "打死魂兽王任务没计数"):
+				return
+			_note("魂兽王任务计数正常（目标 %d）" % w.quest_target)
+			_next_phase()
+
+
+## 猎魂连击：空中命中涨评级、奖励倍数、3 秒不打就断；武魂真身：充满后变身、加伤害、子弹不耗、到时间结束
+func _run_combo() -> void:
+	var w := _ready_world()
+	if not w:
+		return
+	var c: Combo = w.combo
+	var p := w.player
+	match _step:
+		0:
+			if _step_t < 1.0:
+				return
+			for i in 45:
+				c.hit(true, i % 3 == 0)
+			c.kill(true)
+			if not _check(c.rank() >= 3, "空中连击 45 下评级还不到 A（%d 分）" % int(c.points)):
+				return
+			if not _check(c.mult() > 1.5, "连击奖励倍数没涨"):
+				return
+			_note("连击 %d · 评级 %s · 奖励 ×%.2f · 充能 %d%%" % [c.hits, Combo.RANKS[c.rank()][0], c.mult(), int(c.meter * 100)])
+			_next(1)
+		1:
+			if _step_t < Combo.DECAY + 0.4:
+				return
+			if not _check(c.hits == 0 and c.rank() == 0, "3 秒不打连击没断"):
+				return
+			_note("连击 3 秒不打就断了")
+			c.meter = 1.0
+			var before := p.damage_mult()
+			c.activate()
+			if not _check(c.active() and p.damage_mult() > before * 1.8, "武魂真身没加伤害"):
+				return
+			p.gun.ammo = 0
+			_mem["dm"] = before
+			_next(2)
+		2:
+			if _step_t < 0.3:
+				return
+			if not _check(p.gun.ammo == int(p.gun.d["mag"]), "武魂真身期间子弹还在消耗"):
+				return
+			c.tb_t = 0.05
+			_next(3)
+		3:
+			if _step_t < 0.4:
+				return
+			if not _check(not c.active() and c.meter == 0.0, "武魂真身到时间没结束"):
+				return
+			_note("武魂真身：加伤害、子弹不耗、到时间结束都正常")
+			_next_phase()
+
+
+## 截图：连击评级 S、武魂真身
+func _run_comboshot() -> void:
+	var w := _ready_world()
+	if not w:
+		return
+	var c: Combo = w.combo
+	match _step:
+		0:
+			if _step_t < 2.0:
+				return
+			for i in 75:
+				c.hit(true, i % 3 == 0)
+			_next(1)
+		1:
+			c.since = 0.0
+			if _step_t < 0.6:
+				return
+			_next(2)
+			await _shot("combo")
+			c.meter = 1.0
+			c.activate()
+		2:
+			c.since = 0.0
+			if _step_t < 1.2:
+				return
+			_next(3)
+			await _shot("true_body")
+		3:
+			if _step_t < 0.5:
+				return
+			_next_phase()
 
 
 func _free_later(n: Node) -> void:

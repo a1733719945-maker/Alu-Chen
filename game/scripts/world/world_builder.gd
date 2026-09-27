@@ -65,6 +65,7 @@ var _trunks: Array = []                # [Vector2 位置, 半径]：放灌木、
 var _trunk_grid := {}                  # 8 米一格，查附近的树干
 var _birds: Array[Node3D] = []
 var _moths: Array[Node3D] = []
+var _critters: Array = []        # 天上飞的鸟、蛾子、蝙蝠、海鸥：能打，打中了掉下来变成真的魂兽
 var _bubbles: Array[MeshInstance3D] = []
 var _altar_flame: Node3D
 var _snowfall: GPUParticles3D
@@ -2092,6 +2093,7 @@ func _shop() -> void:
 	sign.outline_modulate = Color(1.0, 0.85, 0.5, 0.5) if not tent else Color(0, 0, 0, 0.8)
 	hut.add_child(sign)
 	var sub := U.label3d("买暗器 · 升级 · 道具（按 F）", 40, Color(1.0, 0.95, 0.85))
+	sub.visibility_range_end = 14.0
 	sub.position = Vector3(1.0, 2.1, 3.4) if not tent else Vector3(0, 2.4, 2.4)
 	sub.pixel_size = 0.006
 	hut.add_child(sub)
@@ -2158,10 +2160,12 @@ func _sign(pos: Vector2, title: String, sub: String, color: Color) -> void:
 	U.part(root, U.cyl(0.07, 0.08, 2.4, 6), wood, Vector3(pos.x, h + 1.2, pos.y))
 	U.part(root, U.box(Vector3(1.4, 0.35, 0.06)), wood, Vector3(pos.x, h + 2.0, pos.y), Vector3(0, rng.randf() * TAU, 0.05))
 	var t := U.label3d(title, 64, color)
+	t.visibility_range_end = 45.0     # 走近了才看得到，远处不糊一堆字
 	t.pixel_size = 0.012
 	t.position = Vector3(pos.x, h + 3.2, pos.y)
 	root.add_child(t)
 	var s := U.label3d(sub, 36, Color(0.95, 0.95, 0.9))
+	s.visibility_range_end = 14.0
 	s.pixel_size = 0.01
 	s.position = Vector3(pos.x, h + 2.55, pos.y)
 	root.add_child(s)
@@ -2199,7 +2203,7 @@ func _signs() -> void:
 	_sign(Vector2(island.altar_pos.x + 4.5, island.altar_pos.z + 4.5), "祭坛", "按 F 召唤 Boss（要先完成前面的任务）", Color(1.0, 0.75, 0.45))
 
 
-# ------------------------------------------------------------------ 装饰用的鸟和蛾子（不能打，只是让地图热闹点）
+# ------------------------------------------------------------------ 天上飞的鸟和蛾子：打中了掉下来变成真的魂兽（World.critter_hit），过一会儿天上再补一只
 
 func _ambient_life() -> void:
 	var centers: Array = []
@@ -2229,10 +2233,53 @@ func _ambient_life() -> void:
 				_moths.append(n)
 			else:
 				_birds.append(n)
+			# 能被暗器、引魂索打中：魂兽层上的一个球（打中由 World.critter_hit 处理）
+			var body := StaticBody3D.new()
+			body.name = "Hit"
+			body.collision_layer = U.LAYER_BEAST
+			body.collision_mask = 0
+			var cs := CollisionShape3D.new()
+			var sh := SphereShape3D.new()
+			sh.radius = 0.7 if c[1] == "moth" else 1.0
+			cs.shape = sh
+			body.add_child(cs)
+			body.set_meta("critter", _critters.size())
+			n.add_child(body)
+			n.set_meta("species", str(c[1]))
+			_critters.append(n)
+
+
+func critter_species(idx: int) -> String:
+	return str(_critters[idx].get_meta("species")) if idx >= 0 and idx < _critters.size() else ""
+
+
+func critter_up(idx: int) -> bool:
+	return idx >= 0 and idx < _critters.size() and (_critters[idx] as Node3D).visible
+
+
+## 打下来了：藏起来 t 秒（碰撞也关掉），然后再飞回来
+func critter_hide(idx: int, t: float) -> void:
+	if idx < 0 or idx >= _critters.size():
+		return
+	var n: Node3D = _critters[idx]
+	n.visible = false
+	var body := n.get_node_or_null("Hit") as StaticBody3D
+	if body:
+		body.collision_layer = 0
+	root.get_tree().create_timer(t).timeout.connect(_critter_show.bind(n, body))
+
+
+func _critter_show(n: Node3D, body: StaticBody3D) -> void:
+	if is_instance_valid(n):
+		n.visible = true
+	if is_instance_valid(body):
+		body.collision_layer = U.LAYER_BEAST
 
 
 func animate(t: float) -> void:
 	for n in _birds + _moths:
+		if not n.visible:
+			continue
 		var o: Vector4 = n.get_meta("orbit")
 		var ph: float = n.get_meta("phase")
 		var a := t * o.w + ph

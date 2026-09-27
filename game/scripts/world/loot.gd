@@ -75,6 +75,7 @@ func _build_box() -> void:
 	light.position = Vector3(0, 1.5, 0)
 	root.add_child(light)
 	var l := U.label3d("唐门收购箱\n拿着魂骨、道具按 T 丢进来卖", 44, Color(1.0, 0.85, 0.45), 10)
+	l.visibility_range_end = 16.0
 	l.position = Vector3(0, 2.2, 0)
 	l.fixed_size = false
 	l.pixel_size = 0.006
@@ -132,6 +133,7 @@ func _make_node(kind: String, key: String) -> Node3D:
 	var ring := U.part(n, U.torus(0.3, 0.36, 24, 4), U.glow(col, 2.0, true), Vector3(0, -0.12, 0), Vector3.ZERO, Vector3.ONE, false)
 	ring.name = "Ring"
 	var l := U.label3d(Data.item_name(kind, key), 30, col, 8)
+	l.visibility_range_end = 9.0      # 地上的东西走近了才显示名字
 	l.position = Vector3(0, 0.55, 0)
 	l.fixed_size = true
 	l.pixel_size = 0.0008
