@@ -203,7 +203,7 @@ func rebuild_guns() -> void:
 	if slot >= 2 and slot_ready(slot):
 		_show_slot_item()
 	else:
-		slot = 1 if gun.id in ["xiujian", "fist"] else 0
+		slot = 1 if _is_side(gun.id) else 0
 		viewmodel.set_weapon(gun.id, true)
 	weapon_changed.emit(gun)
 	ammo_changed.emit(gun)
@@ -356,13 +356,9 @@ func on_bones_changed() -> void:
 # ------------------------------------------------------------------ 暗器掉落 / 捡起
 
 ## 倒地时手里的暗器掉在地上（空手不掉）：这把就不是你的了，谁捡到归谁，也可以自己捡回来
+## 第十一版关掉了：玩家的两个存档因为这个把暗器全丢光了，封号斗罗只能空手打（"打不动""一来就死"）
 func drop_guns_on_death() -> Array:
-	var out: Array = []
-	if gun.id != "fist" and slot < 2:
-		out.append([gun.id, Net.my_id])
-		_remove_gun(gun.id)
-		rebuild_guns()
-	return out
+	return []
 
 
 func _remove_gun(id: String) -> void:
@@ -511,7 +507,7 @@ func _physics_process(dt: float) -> void:
 	max_speed *= lerpf(1.0, float(gun.d["ads_move"]), ads)
 	max_speed *= 1.0 + buff("speed") + Profile.bone_bonus("speed") + giant_k * 0.25
 	if slot < 2:
-		max_speed *= float(Data.MOVE_K.get(gun.id, 1.0))
+		max_speed *= float(Data.MOVE_K.get(gun.id, 1.0)) * float(gun.d.get("move_k", 1.0)) * (0.7 if gun.charge > 0.0 else 1.0)
 	max_speed = maxf(max_speed, 1.0)
 	_update_status(dt)
 	if slow_t > 0.0:
@@ -699,6 +695,9 @@ func _process(dt: float) -> void:
 	_update_camera(dt)
 	var hv := Vector3(velocity.x, 0, velocity.z)
 	viewmodel.scoped = scoped
+	viewmodel.charge = gun.charge
+	viewmodel.spin = gun.heat if gun.since_shot < 0.25 else 0.0
+	viewmodel.move_vel = velocity
 	viewmodel.update(dt, ads, hv.length() / WALK_SPEED, is_on_floor(), gun.reload_progress(), sprint_k, _strafe,
 		lure.state != Lure.S.IDLE, bool(gun.d["per_shell"]))
 	lure.hand = viewmodel.hand_global()
@@ -928,9 +927,24 @@ func _update_weapons(dt: float) -> void:
 	if Input.is_action_just_pressed("reload"):
 		start_reload()
 
+	var mode := str(gun.d["mode"])
+	# 三连发：扣一下以后，剩下的几箭隔 burst_gap 秒自己出
+	if gun.burst_left > 0:
+		gun.burst_t -= dt
+		if gun.burst_t <= 0.0:
+			if gun.ammo > 0 and not gun.reloading and slot < 2:
+				gun.burst_left -= 1
+				gun.burst_t = float(gun.d.get("burst_gap", 0.06))
+				_fire()
+			else:
+				gun.burst_left = 0
+	if mode == "charge":
+		_charge_input(dt)
+		return
+
 	if Input.is_action_just_pressed("fire"):
 		fire_buffer = FIRE_BUFFER
-	var auto: bool = gun.d["mode"] == "auto"
+	var auto: bool = mode == "auto"
 	var trigger: bool = fire_buffer > 0.0 or (auto and Input.is_action_pressed("fire"))
 	if trigger:
 		sprint_k = 0.0
@@ -941,19 +955,45 @@ func _update_weapons(dt: float) -> void:
 			fire_buffer = 0.0
 			start_reload()
 		elif gun.ready_to_fire():
+			if mode == "burst":
+				gun.burst_left = int(gun.d.get("burst", 3)) - 1
+				gun.burst_t = float(gun.d.get("burst_gap", 0.06))
 			_fire()
+
+
+## 观音泪：按住左键蓄力，松开出手（蓄满了一箭穿透一路上所有魂兽）
+func _charge_input(dt: float) -> void:
+	var held := Input.is_action_pressed("fire")
+	if held and switch_t <= 0.0 and gun.ammo > 0 and not gun.reloading and gun.fire_cd <= 0.0:
+		if gun.charge <= 0.0:
+			Sfx.play("skill_cast", -10.0, 0.0, 1.5)
+		gun.charge = minf(gun.charge + dt / maxf(float(gun.d.get("charge", 1.0)), 0.05), 1.0)
+		sprint_k = 0.0
+		if gun.charge >= 1.0 and not gun.charge_full:
+			gun.charge_full = true
+			Sfx.play("rare", -6.0, 0.0, 1.6)
+	elif gun.charge > 0.0 and not held:
+		_fire()
+		gun.charge = 0.0
+		gun.charge_full = false
+	elif Input.is_action_just_pressed("fire") and gun.ammo <= 0 and not gun.reloading:
+		Sfx.play("dry", -6.0)
+		start_reload()
 
 
 func switch_weapon(i: int) -> void:
 	if i < 0 or i >= guns.size() or (i == gun_idx and slot < 2):
 		return
 	gun.cancel_reload()
+	gun.charge = 0.0
+	gun.charge_full = false
+	gun.burst_left = 0
 	# 切枪取消拉栓（狙完马上切走再切回来，栓已经拉好了）
 	if gun.cycling > 0.0:
 		gun.cycling = 0.0
 	gun_idx = i
 	gun = guns[i]
-	slot = 1 if gun.id in ["xiujian", "fist"] else 0
+	slot = 1 if _is_side(gun.id) else 0
 	_last_gun_slot = slot
 	switch_t = 0.3
 	ads = 0.0
@@ -969,7 +1009,7 @@ func switch_weapon(i: int) -> void:
 func primaries() -> Array:
 	var out: Array = []
 	for g in guns:
-		if not g.id in ["xiujian", "fist"]:
+		if not _is_side(g.id):
 			out.append(g.id)
 	return out
 
@@ -1051,7 +1091,15 @@ func select_slot(i: int) -> void:
 				var want := _primary_pick if _primary_pick in ps else str(ps[0])
 				switch_weapon(_gun_index(want))
 		1:
-			switch_weapon(_gun_index("xiujian") if _gun_index("xiujian") >= 0 else _gun_index("fist"))
+			# 副手（袖箭、梅花袖箭）：已经拿着副手再按 2 换下一把
+			var ss := sidearms()
+			if ss.is_empty():
+				switch_weapon(_gun_index("fist"))
+			elif slot == 1 and gun.id in ss and ss.size() > 1:
+				switch_weapon(_gun_index(str(ss[(ss.find(gun.id) + 1) % ss.size()])))
+			elif not (slot == 1 and gun.id in ss):
+				var want2 := _side_pick if _side_pick in ss else str(ss[0])
+				switch_weapon(_gun_index(want2))
 		_:
 			if i == 4 and slot == 4:
 				_spare_idx = (_spare_idx + 1) % maxi(spare_bones().size(), 1)
@@ -1069,6 +1117,24 @@ func select_slot(i: int) -> void:
 			Sfx.play("switch", -10.0, 0.05, 1.2)
 	if slot == 0:
 		_primary_pick = gun.id
+	elif slot == 1 and gun.id != "fist":
+		_side_pick = gun.id
+
+
+var _side_pick := "xiujian"
+
+
+## 副手：袖箭这类小暗器（和空手一样按 2）
+func _is_side(id: String) -> bool:
+	return id in Data.SIDEARMS or id == "fist"
+
+
+func sidearms() -> Array:
+	var out: Array = []
+	for g in guns:
+		if g.id in Data.SIDEARMS:
+			out.append(g.id)
+	return out
 
 
 func _show_slot_item() -> void:
@@ -1253,6 +1319,13 @@ func _fire() -> void:
 	fire_buffer = 0.0
 	# 先按开火前的准星方向算弹道，再加这一发的后坐
 	var spread := deg_to_rad(current_spread())
+	# 蓄力：越蓄越准，伤害越高，蓄满了穿透所有
+	var ck := 1.0
+	var pierce_all := false
+	if str(d["mode"]) == "charge":
+		spread *= 1.0 - 0.9 * gun.charge
+		ck = gun.charge_mult()
+		pierce_all = gun.charge >= 0.98
 	var basis := aim_basis()
 	var dirs: Array[Vector3] = []
 	var n := int(d["pellets"])
@@ -1264,11 +1337,11 @@ func _fire() -> void:
 		dirs.append((basis * local).normalized())
 	var origin := cam.global_position
 	var muzzle := viewmodel.muzzle_global() if not scoped else origin + aim_dir() * 0.6 + basis.y * -0.08
-	world.local_fire(gun, origin, dirs, muzzle)
+	world.local_fire(gun, origin, dirs, muzzle, ck, 8 if pierce_all else 0)
 	gun.shoot(ads)
 	ammo_changed.emit(gun)
-	# 镜头冲击（不影响弹道）
-	var vp := float(d["view_punch"]) * lerpf(1.0, 0.6, ads)
+	# 镜头冲击（不影响弹道）；蓄力的一箭按蓄了多少加重
+	var vp := float(d["view_punch"]) * lerpf(1.0, 0.6, ads) * (lerpf(0.5, 1.3, gun.charge) if str(d["mode"]) == "charge" else 1.0)
 	_punch_v += Vector3(vp * 22.0, randf_range(-0.35, 0.35) * vp * 22.0, randf_range(-0.5, 0.5) * vp * 22.0)
 	_fov_punch += vp * 0.35
 	trauma = minf(trauma + float(d["shake"]), 1.0)
@@ -1278,16 +1351,22 @@ func _fire() -> void:
 			lever = 0.055
 		"zhuihun":
 			lever = float(d.get("cycle", 1.0))
-		"baoyu":
+		"baoyu", "zimu":
 			lever = 0.35
 	var back := 0.05 if n == 1 else 0.1
-	if gun.id == "zhuihun":
+	if gun.id in ["zhuihun", "zimu", "guanyin"]:
 		back = 0.13
 	# 手里的暗器往后顶、往上跳（开镜时小一些，但不会没有）
 	viewmodel.kick(back * (1.0 - ads * 0.35), deg_to_rad(float(d["view_punch"]) * 4.2) * (1.0 - ads * 0.45), lever)
-	Sfx.play(d["sound"], 0.0, 0.04, 1.0 + randf_range(-0.03, 0.03))
+	# 消音器：枪声小、低一点
+	var quiet := bool(d.get("quiet", false))
+	var pitch := float(d.get("pitch", 1.0)) * (0.85 if quiet else 1.0)
+	Sfx.play(d["sound"], -9.0 if quiet else 0.0, 0.04, pitch + randf_range(-0.03, 0.03))
 	# 低频的"咚"叠在枪声下面，让每一发更有分量
-	Sfx.play("thud", -9.0 if n == 1 else -4.0, 0.05, 1.6 if gun.id in ["xiujian", "zhuge"] else 1.1)
+	if not quiet:
+		Sfx.play("thud", -9.0 if n == 1 else -4.0, 0.05, 1.6 if gun.id in ["xiujian", "meihua", "zhuge", "hansha"] else 1.1)
+	if str(d["mode"]) == "charge" and gun.charge >= 0.98:
+		Sfx.play("skill_beam", -2.0, 0.0, 1.2)
 	# 抛壳
 	var ej := viewmodel.model().get_node_or_null("Eject") as Node3D
 	if ej and not scoped:
@@ -1300,8 +1379,8 @@ func _fire() -> void:
 		Sfx.play("low_ammo", -8.0, 0.05)
 	if gun.id == "zhuihun":
 		get_tree().create_timer(0.35).timeout.connect(func(): Sfx.play("bolt_cycle", -4.0))
-	elif gun.id == "baoyu":
-		get_tree().create_timer(0.3).timeout.connect(func(): Sfx.play("pump", -4.0))
+	elif gun.id in ["baoyu", "zimu"]:
+		get_tree().create_timer(0.3).timeout.connect(func(): Sfx.play("pump", -4.0, 0.0, 0.85 if gun.id == "zimu" else 1.0))
 	if gun.ammo <= 0:
 		get_tree().create_timer(0.25).timeout.connect(start_reload)
 

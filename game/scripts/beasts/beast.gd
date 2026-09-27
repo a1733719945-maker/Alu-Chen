@@ -81,12 +81,13 @@ var _thunder_cd := 0.0
 var _frenzy_on := false
 var _aggro_t := 0.0              # 精英：挨打后追人的时间
 var _foe := 0                    # 正在打的人（仇恨范围放宽到 AGGRO_KEEP）
-var focus_peer := 0              # 房主指定只打这个人（猎魂远征：护法时围攻吸魂环的人）
-var aggro_k := 1.0               # 仇恨范围倍数（远征的夜猎者看得更远）
-var exp_role := ""               # 猎魂远征：target 猎物 / hunter 夜猎者（HUD 不当普通的王显示）
-var speed_cap := 0.0             # 追人最快多少米/秒（夜猎者：比冲刺慢，跑得掉）
-var home_speed := 5.0            # 精英走回"老家"的速度（远征的猎物慢慢逛，夜猎者跟踪人）
-var avoid_c := Vector3.ZERO      # 不进去的区域（远征：船边营地），里面的人不打
+var focus_peer := 0              # 房主指定只打这个人（护法时围攻吸收魂环的人）
+var aggro_k := 1.0               # 仇恨范围倍数（秘境里的魂兽看得更远）
+var dmg_mult := 1.0              # 伤害倍数（秘境小怪轻一点）
+var hunt_role := ""              # target 猎魂榜的猎物 / dgboss 秘境之主 / dg 秘境里的魂兽（HUD 不当普通的王显示）
+var speed_cap := 0.0             # 追人最快多少米/秒（0 = 不限）
+var home_speed := 5.0            # 精英走回"老家"的速度（猎物在岛上慢慢逛）
+var avoid_c := Vector3.ZERO      # 不进去的区域，里面的人不打（现在没用上）
 var avoid_r := 0.0
 var _roam := false               # 陆地魂兽跑回老家以后就在附近转悠，不会凭空消失
 var _roam_to := Vector3.ZERO
@@ -208,7 +209,7 @@ func _spd() -> float:
 
 
 func _dmgk() -> float:
-	return (1.6 if _frenzy_on else 1.0) * (1.3 if enrage_t > 0.0 else 1.0)
+	return (1.6 if _frenzy_on else 1.0) * (1.3 if enrage_t > 0.0 else 1.0) * dmg_mult
 
 
 ## 独门本事：冷却好了、人在射程里就开始前摇（站住、发光、地上出圈），前摇完了才生效。返回 true 表示这一帧在放招
@@ -262,8 +263,8 @@ func is_land_beast() -> bool:
 
 
 func display_name() -> String:
-	if exp_role == "hunter":
-		return "夜猎者 · %s%s王" % [Data.age_name(age), Data.BEASTS[species]["name"]]
+	if hunt_role == "dgboss":
+		return "秘境之主 · %s%s" % [Data.age_name(age), Data.BEASTS[species]["name"]]
 	if temper == "elite":
 		return "%s%s王" % [Data.age_name(age), Data.BEASTS[species]["name"]]
 	return str(Data.BEASTS[species]["name"])
@@ -849,8 +850,14 @@ func _fierce(delta: float, m: String, touching: bool) -> void:
 				linear_velocity = Vector3(v.x, minf(linear_velocity.y, 0.5), v.z)
 				angular_velocity = Vector3.ZERO
 		"charge":
-			# 刨地 → 冲锋 → 冲过头停下 → 再来
-			if _charge_t > 0.0:
+			# 刨地 → 冲锋 → 冲过头停下 → 再来；贴着人的时候直接夹 / 顶（以前贴身也要先刨地，看着像不打人）
+			if _charge_t <= 0.0 and dist < reach + 0.8 and _atk_cd <= 0.0:
+				_face(dir, 0.5)
+				_atk_cd = randf_range(1.2, 1.7)
+				attack_t = 0.0
+				world.beast_bite(self, int(tp["peer"]), dmg)
+				BeastModels.play_attack(model)
+			elif _charge_t > 0.0:
 				_charge_t -= delta
 				if touching:
 					linear_velocity = Vector3(_charge_dir.x * 12.5 * _spd(), minf(linear_velocity.y, 0.5), _charge_dir.z * 12.5 * _spd())

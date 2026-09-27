@@ -42,13 +42,22 @@ func _ready() -> void:
 	print("[autotest] mode=", mode)
 	Profile.path = "user://profile_test_%s.json" % mode
 	Profile.reset()
+	# --from_save=profile.json：拿玩家真存档的一份拷贝来测（原存档只读，不会被改）
+	if args.has("from_save"):
+		var src := "user://" + str(args["from_save"])
+		if FileAccess.file_exists(src):
+			var f := FileAccess.open(Profile.path, FileAccess.WRITE)
+			f.store_string(FileAccess.get_file_as_string(src))
+			f.close()
+			Profile._defaults()
+			Profile.load_profile()
 	match mode:
 		"solo":
 			main.start_solo()
 			_plan = ["phys", "hunt:burrow,meadow,flowers,water,reel", "shop", "recoil", "sniper", "ring", "boss", "boat", "hunt:den,swamp,mud", "boss", "boat",
 				"hunt:glade,roost,thicket,nest,bog", "boss", "boat",
 				"hunt:snowden,frostgrove,icefield,icecave,icelake", "boss", "boat",
-				"hunt:beach,cliff,reef,deep,abyss", "boss", "done"]
+				"hunt:beach,cliff,reef,deep,abyss", "boss", "dungeon", "guns2", "huntrun", "done"]
 		"shots":
 			_shots = true
 			_shots_dir = str(args.get("out", "user://shots"))
@@ -75,15 +84,15 @@ func _ready() -> void:
 			_plan = ["vm"]
 		"host":
 			Settings.server_url = str(args.get("server", "ws://127.0.0.1:18931"))
-			# --exp=1：房主直接开猎魂远征，测远征的联机
-			main._expedition = args.has("exp")
+			# --dg=1：测猎魂榜和秘境的联机（配 --autotest=client --dg=1）
+
 			main.start_host(str(args.get("room", "TEST")))
-			_plan = ["exphost"] if args.has("exp") else ["host"]
+			_plan = ["dghost"] if args.has("dg") else ["host"]
 		"client":
 			Settings.server_url = str(args.get("server", "ws://127.0.0.1:18931"))
 			Settings.player_name = "客人"
 			main.start_join(str(args.get("room", "TEST")))
-			_plan = ["expclient", "done"] if args.has("exp") else ["hunt:burrow,meadow", "done"]
+			_plan = ["dgclient", "done"] if args.has("dg") else ["hunt:burrow,meadow", "done"]
 	# 只跑其中几段：--chapter=2 --plan=tour2,hunt:den+mud,boss,done
 	if args.has("plan") and mode in ["solo", "shots"]:
 		if args.has("chapter"):
@@ -241,20 +250,32 @@ func _process(dt: float) -> void:
 			_run_combo()
 		"aggro":
 			_run_aggro()
-		"expedition":
-			_run_expedition()
-		"expshot":
-			_run_expshot()
+		"huntrun":
+			_run_huntrun()
+		"migrate":
+			_run_migrate()
+		"bot":
+			_run_bot()
+		"guns2":
+			_run_guns2()
+		"gunshots":
+			_run_gunshots()
+		"dgwatch":
+			_run_dgwatch()
+		"dungeon":
+			_run_dungeon()
+		"dgshot":
+			_run_dgshot()
 		"comboshot":
 			_run_comboshot()
 		"tour", "tour1", "tour2":
 			_run_tour()
 		"host":
 			_run_host()
-		"exphost":
-			_run_exphost()
-		"expclient":
-			_run_expclient()
+		"dghost":
+			_run_dghost()
+		"dgclient":
+			_run_dgclient()
 		"vm":
 			_run_vm()
 		"measure":
@@ -796,6 +817,8 @@ func _run_ring() -> void:
 			var dbg := "玩家 %s，魂环 %s" % [p.global_position, w.rings.values().map(func(r): return r["pos"])]
 			if not _check(it.get("id", "") == "ring" and it.get("ok", false), "站在魂环旁边却不能吸收：%s（%s）" % [it, dbg]):
 				return
+			# 第十一版：吸收要站着 10 秒，会来一小波魂兽；测试里别让人被咬死
+			p.invuln_t = 20.0
 			w.interact()
 			_next(3)
 		3:
@@ -826,8 +849,8 @@ func _run_ring() -> void:
 				if not _check(Profile.level == 20, "吸收魂环后没有突破瓶颈（%d 级）" % Profile.level):
 					return
 				_next(4)
-			elif _step_t > 5.0:
-				_fail("吸收魂环 5 秒后没弹出魂技选择")
+			elif _step_t > 15.0:
+				_fail("吸收魂环 15 秒后还没学到魂技")
 		4:
 			if _step_t < 0.5:
 				return
@@ -1333,14 +1356,15 @@ func _run_critters() -> void:
 			if not _check(not (w.builder._critters[0] as Node3D).visible, "打下来的鸟还在天上飞"):
 				return
 			_note("天上的鸟打下来变成了魂兽")
-			# 魂兽王任务：计数
-			w.quest_idx = _quest_index(w.chapter, "kings")
+			# 秘境任务：通关一次就算
+			w.quest_idx = _quest_index(w.chapter, "dungeon")
 			w.quest_count = 0
 			w._host_check_quest()
-			w._host_quest_event("kings", 1)
-			if not _check(w.quest_count == 1, "打死魂兽王任务没计数"):
+			var before := w.quest_idx
+			w._host_quest_event("dungeon", 1)
+			if not _check(w.quest_idx > before, "通关秘境任务没推进"):
 				return
-			_note("魂兽王任务计数正常（目标 %d）" % w.quest_target)
+			_note("秘境任务推进正常")
 			_next_phase()
 
 
@@ -1431,6 +1455,166 @@ func _run_comboshot() -> void:
 			_next_phase()
 
 
+## 机器人打一局秘境（配 --from_save=profile.json --tier=0，用真存档的等级、暗器、魂骨；存档只读不写）：
+## 站在进出台上，自动瞄最近的魂兽开枪，记掉了多少血、最低剩多少、多久通关——用来调单人难度
+func _run_bot() -> void:
+	var w := _ready_world()
+	if not w:
+		return
+	var d := w.dungeon
+	var p := w.player
+	match _step:
+		0:
+			if _step_t < 2.0:
+				return
+			var tier := int(args.get("tier", "0"))
+			# 用真实数值（自动测试默认不乘章节血量）
+			Data.autotest = false
+			# 拿存档里每秒伤害最高的暗器
+			var bi := 0
+			var bdps := -1.0
+			for i in p.guns.size():
+				var gd: Dictionary = p.guns[i].d
+				var dps := float(gd["damage"]) * float(gd["pellets"]) * float(gd["rpm"])
+				if dps > bdps:
+					bdps = dps
+					bi = i
+			p.switch_weapon(bi)
+			var o := Profile.output()
+			var fl := []
+			for a in 4:
+				fl.append(int(Data.hp_floor(w.chapter, a, o)))
+			_note("输出：一发 %d · 每秒 %d · 这一章标准 %s · 血量下限（十年/百年/千年/万年）%s" % [int(o.x), int(o.y), Data.ref_output(w.chapter), fl])
+			_note("机器人：%d 级 · %d 环 · 第 %d 章 · 暗器 %s · 体力 %d · 护体 %d%% · 进%s" % [Profile.level, Profile.rings.size(), w.chapter, p.gun.id, int(Profile.max_hp()), roundi(p.defense() * 100.0), d.tier_name(tier)])
+			_mem["hurt"] = 0.0
+			_mem["minhp"] = 1.0
+			Net.send_host("dgenter", [tier])
+			_next(1)
+		1:
+			if not d.inside:
+				if _step_t > 3.0:
+					_fail("没进秘境")
+				return
+			_mem["hp_last"] = p.hp
+			_mem["wave"] = 0
+			_next(2)
+		2:
+			var last := float(_mem["hp_last"])
+			if p.hp < last:
+				_mem["hurt"] = float(_mem["hurt"]) + (last - p.hp)
+			_mem["hp_last"] = p.hp
+			_mem["minhp"] = minf(float(_mem["minhp"]), p.hp / Profile.max_hp())
+			if not d.run.is_empty() and int(d.run["wave"]) != int(_mem["wave"]):
+				_mem["wave"] = int(d.run["wave"])
+				_note("  %d 秒：第 %d 波，体力 %d%%" % [int(_step_t), int(d.run["wave"]), roundi(p.hp / Profile.max_hp() * 100.0)])
+			if p.dead:
+				_note("  %d 秒倒下了（%s）· 一共挨了 %d 点伤害" % [int(_step_t), str(d.run.get("phase", "")), int(float(_mem["hurt"]))])
+				_next_phase()
+				return
+			if not d.run.is_empty() and str(d.run["phase"]) == "clear":
+				_note("  通关：%d 秒 · 一共挨了 %d 点伤害（体力上限的 %d%%）· 最低剩 %d%%" % [int(_step_t), int(float(_mem["hurt"])), roundi(float(_mem["hurt"]) / Profile.max_hp() * 100.0), roundi(float(_mem["minhp"]) * 100.0)])
+				Input.action_release("fire")
+				_next_phase()
+				return
+			if _step_t > 300.0:
+				_note("  300 秒没打完（%s）" % str(d.run))
+				_next_phase()
+				return
+			var best: Beast = null
+			var bd := INF
+			for b: Beast in w.beasts.values():
+				if b.alive() and b.hunt_role in ["dg", "dgboss"]:
+					var dd := b.global_position.distance_to(p.global_position)
+					if dd < bd:
+						bd = dd
+						best = b
+			if best:
+				_aim(p, best.global_position + Vector3(0, 0.5 * float(Data.AGES[best.age]["scale"]) * best.size_k, 0))
+				if p.gun.ammo <= 0 and not p.gun.reloading:
+					p.start_reload()
+				# 血少了吃回血丹（真人也会吃）
+				if p.hp < Profile.max_hp() * 0.4 and int(Profile.items.get("pill", 0)) > 0:
+					p._use_pill()
+				# 装着的魂技好了就放（真人也会放）
+				if bool(args.get("skills", "1") == "1"):
+					for i in 3:
+						if int(Profile.skill_slots[i]) >= 0 and float(w.skills.cooldowns[i]) <= 0.0:
+							w.skills.cast(i)
+				Input.action_press("fire")
+				get_tree().create_timer(0.02).timeout.connect(func(): Input.action_release("fire"))
+
+
+## 观察秘境（调试用，配 --from_save）：人站着不打，每 2 秒记一次每只魂兽在干什么、谁咬到人了；人来回走，看会不会卡住
+func _run_dgwatch() -> void:
+	var w := _ready_world()
+	if not w:
+		return
+	var d := w.dungeon
+	var p := w.player
+	match _step:
+		0:
+			if _step_t < 2.0:
+				return
+			Data.autotest = false
+			_mem["bites"] = {}
+			p.hurt.connect(func(amount, _dir): _mem["hurt_n"] = int(_mem.get("hurt_n", 0)) + 1)
+			Net.send_host("dgenter", [int(args.get("tier", "0"))])
+			_next(1)
+		1:
+			if not d.inside:
+				return
+			_mem["last"] = p.global_position
+			_mem["tick"] = 0
+			for off in [Vector3(0, 0, 20), Vector3(0, 0, 0), Vector3(10, 0, -10)]:
+				var from: Vector3 = Dungeon.ARENA + off + Vector3(0, 5, 0)
+				var hit := w.raycast(from, from + Vector3(0, -20, 0), U.LAYER_WORLD)
+				print("[watch] 地面探测 %s → %s" % [off, (hit["position"] - Dungeon.ARENA) if not hit.is_empty() else "没打中"])
+			_next(2)
+		2:
+			p.hp = Profile.max_hp()
+			# 来回走：往前走、转圈
+			p.yaw += 0.6 * get_process_delta_time()
+			Input.action_press("move_forward")
+			var tick := int(_step_t / 2.0)
+			if tick != int(_mem["tick"]):
+				_mem["tick"] = tick
+				var moved := (p.global_position - (_mem["last"] as Vector3)).length()
+				_mem["last"] = p.global_position
+				var line := "t=%d 人 %s 走了 %.1f 米 挨打 %d 次 | " % [int(_step_t), _fmt(p.global_position - Dungeon.ARENA), moved, int(_mem.get("hurt_n", 0))]
+				for b: Beast in w.beasts.values():
+					if b.alive() and b.hunt_role in ["dg", "dgboss"]:
+						line += "%s st%d d%.0f v%.1f cd%.1f ch%.1f %s; " % [b.species, b.state, b.global_position.distance_to(p.global_position), b.linear_velocity.length(), b._atk_cd, b._charge_t, _fmt(b.global_position - Dungeon.ARENA)]
+				print("[watch] ", line)
+			if _step_t > 50.0:
+				Input.action_release("move_forward")
+				_next_phase()
+
+
+func _fmt(v: Vector3) -> String:
+	return "(%.0f,%.1f,%.0f)" % [v.x, v.y, v.z]
+
+
+## 旧存档（版本 3）升级：任务往后挪一格，第一章在"坐船"的还在"坐船"
+func _run_migrate() -> void:
+	var old := Profile.path
+	Profile.path = "user://profile_test_migrate.json"
+	var cases := [[3, 4, "boat"], [1, 2, "altar"], [0, 0, "dungeon"]]
+	for c in cases:
+		var f := FileAccess.open(Profile.path, FileAccess.WRITE)
+		f.store_string(JSON.stringify({"version": 3, "level": 30, "chapter": 1, "quest": c[0], "quest_count": 2}))
+		f.close()
+		Profile._defaults()
+		Profile.load_profile()
+		var q := Data.quest(1, Profile.quest)
+		if not _check(Profile.quest == int(c[1]) and str(q.get("type", "")) == str(c[2]), "旧存档任务 %d 升级后是 %d（%s），应该是 %d（%s）" % [c[0], Profile.quest, q.get("type", ""), c[1], c[2]]):
+			return
+	_note("旧存档升级：任务位置都对（坐船还是坐船、祭坛还是祭坛、第一个任务变成秘境）")
+	Profile.path = old
+	Profile._defaults()
+	Profile.load_profile()
+	_next_phase()
+
+
 func _free_later(n: Node) -> void:
 	get_tree().create_timer(2.0).timeout.connect(n.queue_free)
 
@@ -1499,61 +1683,67 @@ func _run_aggro() -> void:
 				_fail("走到 14 米凶暴魂兽也不过来（%.1f 米；魂兽 %s %s state=%d，玩家 %s dead=%s 能打=%s）" % [d, b.global_position, b.temper, b.state, p.global_position, p.dead, not p.untargetable()])
 
 
-## 猎魂远征：坐船去 → 猎物出现、有踪迹、罗盘不标成普通的王 → 打死：钱和王魂进背包 → 护法吸收魂环（一波波只冲吸收的人）
-## → 再吸收一次时倒下：打断、魂环掉回地上、背包掉在原地 → 走回去捡回来 → 血月夜猎者：营地外追人、营地里不追
-## → 船边存战利品 ×1.8 → 坐船回原来的章节
-func _run_expedition() -> void:
+## 猎魂：卡瓶颈 → 猎魂榜挑一只（记下卡片上写的魂技）→ 猎物出现、有踪迹、罗盘不标成普通的王
+## → 打死掉魂环 → 吸收（单人 10 秒、来一小波只冲吸收的人）→ 学到的就是卡片上写的魂技
+## → 再吸收一次时倒下：打断、魂环掉回地上
+func _run_huntrun() -> void:
 	var w := _world()
 	match _step:
 		0:
 			w = _ready_world()
 			if not w or _step_t < 1.0:
 				return
-			_mem["home"] = Profile.chapter
 			Profile.level = 10
 			Profile.rings = []
 			w._broadcast_prog()
-			if not _check((Data.EXP_CODE + Data.EXP_CHAPTER) in w.boat_destinations(), "渡船没有猎魂远征"):
+			var h := w.hunt
+			w.hud.open_board()
+			if not _check(w.hud._board != null and is_instance_valid(w.hud._board), "猎魂榜打不开"):
 				return
-			_old_world = w
-			w.board(Data.EXP_CODE + Data.EXP_CHAPTER)
+			w.hud._close_board()
+			var list := h.species_list()
+			if not _check(not list.is_empty(), "猎魂榜上没有魂兽"):
+				return
+			var sp := str(list[0])
+			var age := h.base_age()
+			_mem["sp"] = sp
+			_mem["sid"] = h.skill_preview(sp, age)
+			_note("猎魂榜：%d 种魂兽；挑了%s%s，卡片上写的魂技【%s】" % [list.size(), Data.age_name(age), Data.BEASTS[sp]["name"], Data.SKILLS[str(_mem["sid"])]["name"]])
+			w.player.invuln_t = 9999.0
+			h.request(sp, age)
 			_next(1)
 		1:
-			var nw := _ready_world()
-			if nw and nw != _old_world and nw.expedition:
-				if not _check(nw.chapter == Data.EXP_CHAPTER and nw.island.map_id == str(Data.CHAPTERS[Data.EXP_CHAPTER]["map"]), "远征没到星斗大森林"):
-					return
-				if not _check(Profile.chapter == int(_mem["home"]), "去远征把存档章节改了"):
-					return
-				if not _check(not nw.hud._quest_text.get_parent().visible, "远征里还显示章节任务"):
-					return
-				_note("到了猎魂远征（存档章节还是 %d）" % Profile.chapter)
-				nw.player.invuln_t = 9999.0
-				nw.expedition.next_t = 0.0
-				_next(2)
-			elif _step_t > 20.0:
-				_fail("坐船 20 秒还没到远征")
-		2:
-			var e := w.expedition
-			if e.target_id == 0 or not w.beasts.has(e.target_id):
+			var h := w.hunt
+			if h.target_id == 0 or not w.beasts.has(h.target_id):
 				if _step_t > 5.0:
-					_fail("猎物没出现")
+					_fail("挑了猎物没出现")
 				return
-			var b: Beast = w.beasts[e.target_id]
-			if not _check(b.temper == "elite" and b.exp_role == "target", "猎物不是王"):
+			var b: Beast = w.beasts[h.target_id]
+			if not _check(b.temper == "elite" and b.hunt_role == "target" and b.species == str(_mem["sp"]), "猎物不对"):
 				return
-			var marks: Array = w.hud._compass_marks()
-			var prey := false
-			for m in marks:
-				if str(m[1]) == "王":
-					_fail("猎物被当成普通的王标在罗盘上")
+			for m in w.hud._compass_marks():
+				if str(m[1]) == "王" or str(m[1]) == "猎":
+					_fail("还没追踪，猎物就标在罗盘上了（%s）" % m[1])
 					return
-				if str(m[1]) == "猎":
-					prey = true
-			if not _check(prey, "罗盘上没有猎物"):
+			var h2 := w.hunt
+			if not _check(h2.clues.size() >= 2 and h2.region != "", "猎物没有出没地 / 爪痕（%d）" % h2.clues.size()):
 				return
-			_note("猎物：%s，%d 米外" % [b.display_name(), int(b.global_position.distance_to(w.player.global_position))])
-			# 走到它 30 米外（踪迹只在 170 米内显示），再让它挪一挪
+			_note("猎物：%s，%d 米外，在「%s」一带，地上 %d 处爪痕" % [b.display_name(), int(b.global_position.distance_to(w.player.global_position)), h2.region, h2.clues.size()])
+			# 走到每处爪痕按 F 看：看满 3 处锁定
+			var read := 0
+			for c in h2.clues:
+				w.player.teleport((c[1] as Vector3) + Vector3(0.5, 0.4, 0))
+				var it := w.nearest_interactable()
+				if str(it.get("id", "")) == "hclue":
+					w.interact()
+					read += 1
+			if h2._lock_t <= 0.0 and read < 3:
+				# 爪痕不够 3 处：让它走一走再留几处
+				b.spawn_pos = b.global_position + Vector3(40, 0, 0)
+				_mem["need_more"] = true
+			if not _check(read >= 2, "站在爪痕旁边没有「查看痕迹」（看了 %d 处）" % read):
+				return
+			_note("看了 %d 处爪痕：%s" % [read, h2._last_read])
 			for i in 16:
 				var a := TAU * i / 16.0
 				var q := b.global_position + Vector3(cos(a) * 30.0, 0, sin(a) * 30.0)
@@ -1562,83 +1752,95 @@ func _run_expedition() -> void:
 					break
 			b.global_position += Vector3(4.0, 0.5, 0.0)
 			_target = b
-			_next(3)
-		3:
-			var e := w.expedition
-			if e._prints.is_empty():
+			_next(2)
+		2:
+			var h := w.hunt
+			if h._prints.is_empty():
 				if _step_t > 3.0:
 					_fail("猎物走动了没有踪迹")
 				return
-			_note("猎物走动留下了踪迹（%d 个脚印）" % e._prints.size())
-			_mem["money"] = Profile.money
-			_mem["ach"] = Profile.achieved.keys()
+			_note("猎物走动留下了踪迹（%d 个脚印）" % h._prints.size())
+			# 还没锁定：它走动留下的新爪痕再看几处
+			var tries := 0
+			while h._lock_t <= 0.0 and tries < 10:
+				tries += 1
+				var found := false
+				for id in h._clue_nodes:
+					if not bool(h._clue_nodes[id]["read"]):
+						h.read_clue(int(id))
+						found = true
+						break
+				if not found:
+					break
+			if not _check(h._lock_t > 0.0 and h.located(), "看了爪痕没锁定猎物"):
+				return
+			var locked_mark := false
+			for m in w.hud._compass_marks():
+				if str(m[1]) == "猎":
+					locked_mark = true
+			if not _check(locked_mark, "锁定了罗盘上却没有猎物"):
+				return
+			_note("锁定猎物：罗盘上标出来了（%.0f 秒）" % h._lock_t)
 			var b := _target
 			b.last_hitter = Net.my_id
 			b.damagers[Net.my_id] = 1.0
 			b.hp = 0.0
 			w._host_kill(b)
-			_next(4)
-		4:
+			_next(3)
+		3:
 			if _step_t < 0.5:
 				return
-			var e := w.expedition
-			if not _check(e.target_id == 0 and e.next_t > 0.0, "打死猎物后没排下一只"):
-				return
-			# 成就奖励直接到手（不算战利品），其他的钱都该在背包里
-			var ach := 0
-			for a in Data.ACHIEVEMENTS:
-				if Profile.achieved.has(str(a["id"])) and not str(a["id"]) in (_mem["ach"] as Array):
-					ach += int(a["reward"])
-			if not _check(e.bag_money > 0 and Profile.money - int(_mem["money"]) == ach, "远征的钱没进背包（背包 %d，金魂币 %d → %d，成就 %d）" % [e.bag_money, int(_mem["money"]), Profile.money, ach]):
-				return
-			if not _check(e._mat_n(e.bag_mats) >= 1, "王魂没进背包"):
+			if not _check(w.hunt.target_id == 0, "猎物死了还挂着"):
 				return
 			var rid := -1
 			for k in w.rings:
 				rid = int(k)
 			if not _check(rid >= 0, "猎物没掉魂环"):
 				return
-			_note("背包：%d 金魂币、王魂 ×%d；地上掉了魂环" % [e.bag_money, e._mat_n(e.bag_mats)])
 			var rp: Vector3 = w.rings[rid]["pos"]
 			w.player.teleport(Vector3(rp.x, w.island.height_at(rp.x, rp.z) + 0.2, rp.z))
-			Net.send_host("absorb", [rid])
+			_next(4)
+		4:
+			if _step_t < 0.3:
+				return
+			var it := w.nearest_interactable()
+			if not _check(str(it.get("id", "")) == "ring" and bool(it.get("ok", false)), "站在魂环旁边不能吸收（%s）" % str(it.get("text", ""))):
+				return
+			_note("提示：%s" % str(it["text"]))
+			w.interact()
 			_next(5)
 		5:
-			var e := w.expedition
-			if e.channel.is_empty():
+			var h := w.hunt
+			if h.channel.is_empty():
 				if _step_t > 2.0:
-					_fail("吸收魂环没开始护法")
+					_fail("吸收魂环没开始")
 				return
-			if not _check(w.player.channeling and int(e.channel["peer"]) == Net.my_id, "吸收的人没被定住"):
+			if not _check(w.player.channeling and absf(float(h.channel["dur"]) - Data.HUNT_CHANNEL_SOLO) < 0.1, "单人吸收时间不对（%.0f 秒）" % float(h.channel["dur"])):
 				return
-			e.channel["dur"] = 8.0
-			e._wave_t = 0.0
 			_next(6)
 		6:
-			var e := w.expedition
-			if not e.channel.is_empty():
-				if _step_t > 1.0 and not _mem.has("wave"):
+			var h := w.hunt
+			if not h.channel.is_empty():
+				if _step_t > 3.0 and not _mem.has("wave"):
 					var n := 0
 					for b: Beast in w.beasts.values():
 						if b.alive() and b.focus_peer == Net.my_id:
 							n += 1
-					if not _check(n >= 2, "护法没来魂兽（%d）" % n):
+					if not _check(n >= 1, "吸收时没来魂兽"):
 						return
 					_mem["wave"] = n
-					_note("护法：来了 %d 只魂兽，都冲着吸收的人" % n)
-				if _step_t > 15.0:
-					_fail("护法 15 秒还没结束")
+					_note("吸收中：来了 %d 只魂兽冲着吸收的人" % n)
+				if _step_t > 14.0:
+					_fail("单人吸收 14 秒还没结束")
 				return
-			if not _check(Profile.rings.size() == 1 and not w.player.channeling, "护法结束没吸收到魂环（%d）" % Profile.rings.size()):
+			if not _check(Profile.rings.size() == 1 and not w.player.channeling, "吸收结束没学到魂技"):
 				return
-			for b: Beast in w.beasts.values():
-				if b.focus_peer != 0:
-					_fail("护法结束了魂兽还只盯着吸收的人")
-					return
-			_note("护法完成，吸收了第一魂环")
+			if not _check(str(Profile.rings[0]["skill"]) == str(_mem["sid"]), "学到的魂技和猎魂榜上写的不一样（%s ≠ %s）" % [Profile.rings[0]["skill"], _mem["sid"]]):
+				return
+			_note("吸收完：学到的就是猎魂榜上写的【%s】（%.1f 秒）" % [Data.SKILLS[str(_mem["sid"])]["name"], _step_t])
 			Profile.level = 20
 			w._broadcast_prog()
-			w._host_drop_ring(w.player.global_position + Vector3(0, 1.0, 0), 1, "stag", 90.0)
+			w._host_drop_ring(w.player.global_position + Vector3(0, 1.0, 0), 1, str(_mem["sp"]), 90.0)
 			_next(7)
 		7:
 			if _step_t < 0.3:
@@ -1648,14 +1850,12 @@ func _run_expedition() -> void:
 				rid = int(k)
 			if not _check(rid >= 0, "第二个魂环没掉"):
 				return
-			w.expedition.add_bag(500)
 			Net.send_host("absorb", [rid])
 			_next(8)
 		8:
-			var e := w.expedition
-			if e.channel.is_empty():
+			if w.hunt.channel.is_empty():
 				if _step_t > 2.0:
-					_fail("第二次护法没开始")
+					_fail("第二次吸收没开始")
 				return
 			var p := w.player
 			p.invuln_t = 0.0
@@ -1664,186 +1864,227 @@ func _run_expedition() -> void:
 		9:
 			if _step_t < 0.5:
 				return
-			var e := w.expedition
-			if not _check(e.channel.is_empty() and not w.rings.is_empty(), "倒下了吸收没被打断 / 魂环没掉回地上"):
+			if not _check(w.hunt.channel.is_empty() and not w.rings.is_empty() and not w.player.channeling, "倒下了吸收没被打断 / 魂环没掉回地上"):
 				return
-			if not _check(not e.dropped.is_empty() and e.bag_money == 0, "倒下了背包没掉"):
-				return
-			_mem["drop"] = int(e.dropped["money"])
-			_note("倒下：吸收被打断，魂环掉回地上；背包掉在原地（%d）" % int(e.dropped["money"]))
+			_note("吸收时倒下：打断，魂环掉回地上")
 			w._respawn_at_dock()
-			_next(10)
-		10:
-			if _step_t < 0.5:
-				return
-			var p := w.player
-			p.invuln_t = 9999.0
-			var dp: Vector3 = w.expedition.dropped["pos"]
-			p.teleport(dp + Vector3(0.5, 0.3, 0))
-			_next(11)
-		11:
-			if _step_t < 0.3:
-				return
-			var e := w.expedition
-			var it := w.nearest_interactable()
-			if not _check(str(it.get("id", "")) == "expbag", "站在背包旁边没有提示（%s）" % str(it.get("id", ""))):
-				return
-			w.interact()
-			if not _check(e.dropped.is_empty() and e.bag_money == int(_mem["drop"]), "背包没捡回来"):
-				return
-			_note("走回去捡回了背包")
-			e._host_phase("blood")
-			e._hunter_wait = 0.0
-			_next(12)
-		12:
-			var e := w.expedition
-			if e.hunter_id == 0 or not w.beasts.has(e.hunter_id):
-				if _step_t > 3.0:
-					_fail("血月没出夜猎者")
-				return
-			var h: Beast = w.beasts[e.hunter_id]
-			if not _check(h.exp_role == "hunter" and h.speed_cap > 0.0 and h.speed_cap < Player.SPRINT_SPEED, "夜猎者设置不对"):
-				return
-			var spot := Vector3.INF
-			for i in 24:
-				var a := TAU * i / 24.0
-				var q := h.global_position + Vector3(cos(a) * 30.0, 0, sin(a) * 30.0)
-				if w.island.is_land(q.x, q.z) and e._camp_dist(q) > Data.EXP_CAMP_R + 5.0:
-					spot = Vector3(q.x, w.island.height_at(q.x, q.z) + 0.3, q.z)
-					break
-			if not _check(spot != Vector3.INF, "夜猎者旁边找不到地方站"):
-				return
-			var p := w.player
-			p.invuln_t = 0.0
-			p.hp = 1000000.0
-			p.teleport(spot)
-			_target = h
-			_next(13)
-		13:
-			if _step_t < 1.5:
-				return
-			var h := _target
-			if not _check(is_instance_valid(h) and h.focus_peer == Net.my_id, "夜猎者没盯上营地外 30 米的人"):
-				return
-			_note("夜猎者盯上了营地外 30 米的人")
-			w.player.teleport(w.island.spawn + Vector3(0, 0.5, 0))
-			_next(14)
-		14:
-			if _step_t < 1.5:
-				return
-			var h := _target
-			var e := w.expedition
-			if not _check(h.focus_peer == 0 and e._camp_dist(h.spawn_pos) >= Data.EXP_CAMP_R, "人进了营地夜猎者还在追"):
-				return
-			_note("进了船边营地，夜猎者不追了")
-			var p := w.player
-			p.hp = Profile.max_hp()
-			p.invuln_t = 9999.0
-			var bp := w.builder.boat_pos
-			p.teleport(Vector3(w.island.dock_end.x + 0.6, w.island.dock_y + 0.2, bp.z))
-			_mem["money"] = Profile.money
-			_mem["bag"] = e.bag_money
-			_next(15)
-		15:
-			if _step_t < 0.5:
-				return
-			var e := w.expedition
-			var it := w.nearest_interactable()
-			if not _check(str(it.get("id", "")) == "boat", "船边没有提示（%s）" % str(it.get("id", ""))):
-				return
-			w.interact()
-			var want := roundi(int(_mem["bag"]) * 1.8)
-			if not _check(Profile.money - int(_mem["money"]) == want and not e.has_bag(), "存战利品不对（多了 %d，应该 %d）" % [Profile.money - int(_mem["money"]), want]):
-				return
-			_note("血月存战利品 ×1.8：+%d 金魂币" % want)
-			_old_world = w
-			w.board(int(_mem["home"]))
-			_next(16)
-		16:
-			var nw := _ready_world()
-			if nw and nw != _old_world:
-				if not _check(nw.expedition == null and nw.chapter == int(_mem["home"]), "没回到原来的章节"):
-					return
-				_note("坐船回到了%s" % Data.CHAPTERS[nw.chapter]["name"])
-				_next_phase()
-			elif _step_t > 20.0:
-				_fail("回程 20 秒还没到")
+			w.player.invuln_t = 3.0
+			_next_phase()
 
 
-## 截图：远征的黄昏、踪迹、护法、血月和夜猎者
-func _run_expshot() -> void:
-	var w := _world()
+## 秘境：三个入口 → 进一层 → 三波（测试里自动打死）→ 秘境之主 → 通关：钱、修为、宝箱、纪录、任务 → 从台子离开
+## → 再进一次、倒下 → 秘境失败、人回到码头
+func _run_dungeon() -> void:
+	var w := _ready_world()
+	if not w:
+		return
+	var d := w.dungeon
+	var p := w.player
 	match _step:
 		0:
-			w = _ready_world()
-			if not w or _step_t < 1.0:
+			if _step_t < 1.0:
 				return
-			if w.expedition == null:
-				_old_world = w
-				w.board(Data.EXP_CODE + Data.EXP_CHAPTER)
+			if not _check(d.portals.size() == 3, "秘境入口不是 3 个（%d）" % d.portals.size()):
+				return
+			var pp: Vector3 = d.portals[0]["pos"]
+			var fwd := Basis(Vector3.UP, float(d.portals[0]["yaw"])) * Vector3(0, 0, 3.0)
+			p.teleport(pp + fwd + Vector3(0, 0.4, 0))
+			p.invuln_t = 9999.0
+			_note("秘境入口：%s" % ", ".join(d.portals.map(func(e): return "%s（%d, %d）" % [d.tier_name(int(e["tier"])), int(e["pos"].x), int(e["pos"].z)])))
 			_next(1)
 		1:
-			w = _ready_world()
-			if not w or not w.expedition or _step_t < 3.0:
+			if _step_t < 0.4:
 				return
-			var p := w.player
+			var it := w.nearest_interactable()
+			if not _check(str(it.get("id", "")) == "dgportal", "站在秘境入口没有提示（%s）" % str(it.get("id", ""))):
+				return
+			_mem["money"] = Profile.money
+			_mem["xp"] = Profile.xp + Profile.level * 100000
+			_mem["quest"] = w.quest_idx
+			_mem["qtype"] = str(w._cur_quest().get("type", ""))
+			w.interact()
+			_next(2)
+		2:
+			if not d.inside:
+				if _step_t > 3.0:
+					_fail("按 F 没进秘境")
+				return
+			if not _check(d._in_arena(p.global_position) and not d.run.is_empty(), "进秘境后不在场地里"):
+				return
+			_note("进了%s · 词条 %s" % [d.tier_name(int(d.run["tier"])), Data.DG_MODS[str(d.run["mod"])]["name"]])
+			_mem["waves"] = 0
+			_next(3)
+		3:
+			# 测试：场地里出来的魂兽一律秒掉
+			for b: Beast in w.beasts.values():
+				if b.alive() and b.hunt_role in ["dg", "dgboss"] and b.state != Beast.State.AIR:
+					b.last_hitter = Net.my_id
+					b.damagers[Net.my_id] = 1.0
+					b.hp = 0.0
+					w._host_kill(b)
+			if not d.run.is_empty() and int(d.run["wave"]) > int(_mem["waves"]):
+				_mem["waves"] = int(d.run["wave"])
+				_note("第 %d 波" % int(d.run["wave"]))
+			if not d.run.is_empty() and str(d.run["phase"]) == "boss" and not _mem.has("boss"):
+				_mem["boss"] = true
+				var bb: Beast = w.beasts.get(int(d.run["boss"]))
+				if not _check(bb != null and bb.hunt_role == "dgboss", "秘境之主没出来"):
+					return
+				_note("秘境之主：%s，血量 %d" % [bb.display_name(), int(bb.max_hp)])
+			if not d.run.is_empty() and str(d.run["phase"]) == "clear":
+				_next(4)
+			elif _step_t > 90.0:
+				_fail("秘境 90 秒没打完（%s）" % str(d.run))
+		4:
+			if _step_t < 1.0:
+				return
+			if not _check(Profile.money > int(_mem["money"]) and (Profile.at_bottleneck() or Profile.xp + Profile.level * 100000 > int(_mem["xp"])), "通关没给钱和修为"):
+				return
+			if not _check(d._chest.visible, "通关没有宝箱"):
+				return
+			if not _check(d.best_time(0) > 0, "没记下通关时间"):
+				return
+			if not _check(str(_mem["qtype"]) != "dungeon" or w.quest_idx > int(_mem["quest"]), "通关秘境没完成任务"):
+				return
+			_note("通关：+%d 金魂币，用时 %d 秒，任务推进到「%s」" % [Profile.money - int(_mem["money"]), d.best_time(0), str(w._cur_quest().get("text", ""))])
+			p.teleport(d.spawn_pad() + Vector3(0.5, 0.2, 0))
+			_next(5)
+		5:
+			if _step_t < 0.4:
+				return
+			var it := w.nearest_interactable()
+			if not _check(str(it.get("id", "")) == "dgexit", "进出台没有离开的提示（%s）" % str(it.get("id", ""))):
+				return
+			w.interact()
+			if not _check(not d.inside and not d._in_arena(p.global_position, 10.0), "离开秘境后还在场地里"):
+				return
+			_note("从台子离开，回到了入口")
+			_next(6)
+		6:
+			if _step_t < 3.5:
+				return
+			if not _check(d.run.is_empty(), "人都走了秘境还没结束"):
+				return
+			# 再进一次，然后倒下
+			Net.send_host("dgenter", [1])
+			_next(7)
+		7:
+			if not d.inside:
+				if _step_t > 3.0:
+					_fail("第二次没进去")
+				return
+			p.invuln_t = 0.0
+			p.take_damage(999999.0, p.global_position + Vector3.FORWARD)
+			w._respawn_at_dock()
+			_next(8)
+		8:
+			if _step_t < 7.5:
+				return
+			if not _check(not d.inside and d.run.is_empty() and not d._in_arena(p.global_position, 10.0), "倒下后秘境没结束 / 人还在场地里"):
+				return
+			_note("在秘境里倒下：回到码头，没人了秘境就失败")
+			p.invuln_t = 3.0
+			_next_phase()
+
+
+## 截图：猎魂榜、踪迹、吸收魂环（队友视角）、秘境入口、秘境场地、秘境之主
+func _run_dgshot() -> void:
+	var w := _ready_world()
+	if not w:
+		return
+	var p := w.player
+	var d := w.dungeon
+	match _step:
+		0:
+			if _step_t < 2.0:
+				return
 			p.invuln_t = 9999.0
-			var e := w.expedition
-			# 前面一串发光的脚印
+			w.hud.open_board()
+			_next(1)
+		1:
+			if _step_t < 1.0:
+				return
+			_next(2)
+			await _shot("hunt_board")
+			w.hud._close_board()
+		2:
 			var fwd := Vector3(-sin(p.yaw), 0, -cos(p.yaw))
 			var side := fwd.cross(Vector3.UP)
 			for i in 10:
 				var q := p.global_position + fwd * (4.0 + i * 2.2) + side * sin(i * 0.7) * 1.5
 				q.y = w.island.height_at(q.x, q.z)
-				e._on_fp([q, side])
-			e.next_t = 0.0
-			_next(2)
-		2:
-			if _step_t < 2.0:
-				return
+				w.hunt._on_fp([q, side])
 			_next(3)
-			await _shot("exp_dusk_tracks")
 		3:
-			var e := w.expedition
-			var p := w.player
-			var fwd := Vector3(-sin(p.yaw), 0, -cos(p.yaw))
-			# 队友视角：别人在吸收（光柱 + 两圈魂环），左上角护法条
-			e.hold = true
-			e.channel = {"peer": 999, "age": 2, "species": "stag", "pos": p.global_position + fwd * 6.0, "t": 12.0, "dur": 40.0}
-			e._on_channel_start()
-			_next(4)
-		4:
 			if _step_t < 1.5:
 				return
-			_next(5)
-			await _shot("exp_channel")
-		5:
-			var e := w.expedition
-			e._channel_visual(false)
-			e.channel = {}
-			e.hold = false
-			e._host_phase("blood")
-			e._hunter_wait = 999.0
-			_next(6)
-		6:
-			if _step_t < 9.5:
-				return
-			var e := w.expedition
-			e._spawn_hunter()
-			var h: Beast = w.beasts[e.hunter_id]
-			var p := w.player
+			_next(4)
+			await _shot("hunt_tracks")
+		4:
 			var fwd := Vector3(-sin(p.yaw), 0, -cos(p.yaw))
-			var q := p.global_position + fwd * 22.0
-			h.global_position = Vector3(q.x, w.island.height_at(q.x, q.z) + 1.0, q.z)
-			h.spawn_pos = h.global_position
+			var h := w.hunt
+			h.hold = true
+			h.channel = {"peer": 999, "age": 1, "species": "rabbit", "pos": p.global_position + fwd * 6.0, "t": 12.0, "dur": 25.0}
+			h._on_channel_start()
+			_next(5)
+		5:
+			if _step_t < 1.5:
+				return
+			_next(6)
+			await _shot("hunt_channel")
+			w.hunt._channel_visual(false)
+			w.hunt.channel = {}
+			w.hunt.hold = false
+		6:
+			var pp: Vector3 = d.portals[0]["pos"]
+			var fwd := Basis(Vector3.UP, float(d.portals[0]["yaw"])) * Vector3(0, 0, 9.0)
+			p.teleport(pp + fwd + Vector3(0, 0.4, 0))
+			_aim(p, pp + Vector3(0, 2.8, 0))
 			_next(7)
 		7:
-			if _step_t < 2.5:
+			if _step_t < 1.5:
 				return
 			_next(8)
-			await _shot("exp_bloodmoon")
+			await _shot("dungeon_portal")
+			Net.send_host("dgenter", [0])
 		8:
+			if not d.inside or _step_t < 2.0:
+				return
+			_aim(p, Dungeon.ARENA + Vector3(0, 3.0, -20.0))
+			_next(9)
+		9:
+			if _step_t < 1.5:
+				return
+			_next(10)
+			await _shot("dungeon_arena")
+		10:
+			# 第一波出来以后拍一张
+			if d.run.is_empty() or str(d.run["phase"]) != "wave" or _step_t < 4.0:
+				return
+			_aim(p, Dungeon.ARENA + Vector3(0, 1.5, -24.0))
+			_next(11)
+		11:
+			if _step_t < 1.0:
+				return
+			_next(12)
+			await _shot("dungeon_wave")
+			d._host_start_boss_now()
+		12:
+			if d.run.is_empty() or str(d.run["phase"]) != "boss" or _step_t < 2.5:
+				return
+			var bb: Beast = w.beasts.get(int(d.run["boss"]))
+			if bb:
+				_aim(p, bb.global_position + Vector3(0, 1.5, 0))
+			_next(13)
+		13:
+			if _step_t < 0.8:
+				return
+			_next(14)
+			await _shot("dungeon_boss")
+		14:
 			_next_phase()
+
+
 
 
 func _fx_impact(fx: Fx, o: Vector3, fwd: Vector3, side: Vector3) -> void:
@@ -2212,106 +2453,499 @@ func _run_host() -> void:
 				_pass("房主测试通过")
 
 
-## 远征联机（房主）：客人进来 → 出猎物 → 算客人打死的（魂环归他）→ 客人吸收时房主开护法、缩短时间 → 客人吸收完
-func _run_exphost() -> void:
+## 联机（房主，--dg=1）：客人进来 → 挑一只猎物 → 进一层秘境（客人跟进来）→ 自动秒掉魂兽直到通关 → 等客人走
+func _run_dghost() -> void:
 	var w := _ready_world()
 	if not w:
 		return
-	var e := w.expedition
-	if not _check(e != null, "房主没进远征"):
-		return
+	var d := w.dungeon
 	match _step:
 		0:
 			if not w.remotes.is_empty():
 				_note("客人进来了：%s" % w.remotes.keys())
 				w.player.invuln_t = 9999.0
-				e.next_t = 0.0
+				var list := w.hunt.species_list()
+				w.hunt.request(str(list[0]), w.hunt.base_age())
 				_next(1)
 			elif _t > 40.0:
 				_fail("没有客人加入")
 		1:
-			var guest := int(w.remotes.keys()[0])
-			var lv := int(w.peer_info.get(guest, {}).get("level", 1))
-			if e.target_id == 0 or not w.beasts.has(e.target_id) or lv < 10 or _step_t < 3.0:
-				if _step_t > 20.0:
-					_fail("猎物没出现 / 客人等级没同步（%d）" % lv)
+			if _step_t < 3.0:
 				return
-			var b: Beast = w.beasts[e.target_id]
-			b.last_hitter = guest
-			b.damagers[guest] = 1.0
-			b.hp = 0.0
-			w._host_kill(b)
-			_note("猎物（%s）算客人打死的" % b.display_name())
+			Net.send_host("dgenter", [0])
 			_next(2)
 		2:
-			if not e.channel.is_empty():
-				if not _mem.has("short"):
-					_mem["short"] = true
-					if not _check(int(e.channel["peer"]) != Net.my_id, "护法的不是客人"):
-						return
-					e.channel["dur"] = 6.0
-					_note("客人开始吸收，房主开始刷护法的魂兽")
-				return
-			if _mem.has("short"):
-				_note("护法结束")
+			if d.inside and d._members.size() >= 2:
+				_note("客人也进了秘境（%d 人）" % d._members.size())
 				_next(3)
-			elif _step_t > 30.0:
-				_fail("客人 30 秒没开始吸收")
+			elif _step_t > 25.0:
+				_fail("客人 25 秒没跟进秘境")
 		3:
-			if w.remotes.is_empty() or _step_t > 6.0:
-				_pass("远征房主测试通过")
+			for b: Beast in w.beasts.values():
+				if b.alive() and b.hunt_role in ["dg", "dgboss"] and b.state != Beast.State.AIR:
+					b.last_hitter = Net.my_id if randf() < 0.5 else int(w.remotes.keys()[0])
+					b.damagers[b.last_hitter] = 1.0
+					b.hp = 0.0
+					w._host_kill(b)
+			if not d.run.is_empty() and str(d.run["phase"]) == "clear":
+				_note("两个人通关了秘境")
+				_next(4)
+			elif _step_t > 90.0:
+				_fail("两个人 90 秒没打完秘境")
+		4:
+			if w.remotes.is_empty() or _step_t > 10.0:
+				_pass("联机房主测试通过")
 
 
-## 远征联机（客人）：跟着房主进远征 → 收到天色和猎物 → 猎物打死后钱进自己背包、地上有自己的魂环 → 吸收（护法）→ 学会魂技
-func _run_expclient() -> void:
+## 联机（客人，--dg=1）：看到房主挑的猎物（有踪迹、罗盘）→ 房主开了秘境，从入口跟进去 → 通关拿到奖励 → 离开
+func _run_dgclient() -> void:
 	var w := _ready_world()
 	if not w:
 		return
+	var d := w.dungeon
 	match _step:
 		0:
-			if not _check(w._exp_mode and w.expedition != null and w.chapter == Data.EXP_CHAPTER, "客人没跟着进远征（章节 %d）" % w.chapter):
-				return
-			Profile.level = 10
-			Profile.rings = []
-			w._broadcast_prog()
 			w.player.invuln_t = 9999.0
-			_note("客人进了远征")
-			_next(1)
-		1:
-			var e := w.expedition
-			var tb: Beast = w.beasts.get(e.target_id) if e.target_id != 0 else null
-			if e._got_state and tb != null and tb.exp_role == "target":
-				_note("客人收到了天色（%s）和猎物（%s）" % [Data.EXP_PHASE[e.phase]["name"], tb.display_name()])
-				_next(2)
+			var tb: Beast = w.beasts.get(w.hunt.target_id) if w.hunt.target_id != 0 else null
+			if tb != null and tb.hunt_role == "target":
+				_note("客人看到了房主挑的猎物：%s" % tb.display_name())
+				_next(1)
 			elif _step_t > 25.0:
-				_fail("客人没收到远征状态 / 猎物")
-		2:
-			var e := w.expedition
-			if w.rings.is_empty():
+				_fail("客人没收到猎物")
+		1:
+			if d.run.is_empty():
 				if _step_t > 25.0:
-					_fail("客人没看到魂环")
+					_fail("客人没看到房主开的秘境")
 				return
-			if not _check(e.bag_money > 0, "客人打死猎物，钱没进背包"):
+			var tier := int(d.run["tier"])
+			var pp: Vector3 = d.portals[tier]["pos"]
+			w.player.teleport(pp + Basis(Vector3.UP, float(d.portals[tier]["yaw"])) * Vector3(0, 0, 3.0) + Vector3(0, 0.4, 0))
+			_next(2)
+		2:
+			if _step_t < 0.5:
 				return
-			var rid := int(w.rings.keys()[0])
-			var rp: Vector3 = w.rings[rid]["pos"]
-			w.player.teleport(Vector3(rp.x, w.island.height_at(rp.x, rp.z) + 0.2, rp.z))
-			_note("客人背包 %d 金魂币，去吸收魂环" % e.bag_money)
-			Net.send_host("absorb", [rid])
+			var it := w.nearest_interactable()
+			if not _check(str(it.get("id", "")) == "dgportal" and bool(it.get("act", false)), "客人在入口不能进（%s）" % str(it.get("text", ""))):
+				return
+			_mem["money"] = Profile.money
+			w.interact()
 			_next(3)
 		3:
-			var e := w.expedition
-			if w.player.channeling and not e.channel.is_empty():
-				_note("客人被定住了，在护法")
+			if d.inside:
+				_note("客人进了秘境：%s" % d.tier_name(int(d.run["tier"])))
 				_next(4)
 			elif _step_t > 8.0:
-				_fail("客人吸收没开始护法")
+				_fail("客人按 F 没进秘境")
 		4:
-			if Profile.rings.size() == 1 and not w.player.channeling:
-				_note("客人吸收完了：%s" % Data.SKILLS[str(Profile.rings[0]["skill"])]["name"])
+			if not d.run.is_empty() and str(d.run["phase"]) == "clear" and Profile.money > int(_mem["money"]):
+				_note("客人拿到了通关奖励：+%d 金魂币" % (Profile.money - int(_mem["money"])))
+				d.leave()
 				_next_phase()
-			elif _step_t > 30.0:
-				_fail("客人护法 30 秒没结束")
+			elif _step_t > 100.0:
+				_fail("客人 100 秒没等到通关")
+
+
+
+# ------------------------------------------------------------------ 第十二版：新暗器、配件、熟练度、皮肤、自己画
+
+## 一只不会动、打不死的靶子
+func _dummy(w: World, pos: Vector3) -> Beast:
+	pos.y = w.island.height_at(pos.x, pos.z) + 0.9
+	# 金刚猿：个子大、身上没有甲（铁甲犀打身子只吃一成多伤害，测出来的数不准）
+	var b: Beast = w._host_spawn_wild(pos, "ape", 1, "flee")
+	if b:
+		b.affixes.clear()
+		b.max_hp = 1000000.0
+		b.hp = b.max_hp
+		b.freeze = true
+		b.global_position = pos
+	return b
+
+
+func _dummy_center(b: Beast) -> Vector3:
+	return b.global_position + Vector3(0, 0.35, 0)
+
+
+func _run_guns2() -> void:
+	var w := _ready_world()
+	if not w:
+		return
+	var p := w.player
+	match _step:
+		0:
+			Profile.add_money(900000)
+			for id in ["meihua", "longxu", "zimu", "hansha", "guanyin"]:
+				if not _check(Profile.buy_weapon(id), "买不了 %s" % id):
+					return
+				w.on_bought_weapon(id)
+			var m := w.island.habitat("meadow")
+			var c: Vector2 = m["center"]
+			var base := Vector3(c.x, 0, c.y)
+			p.teleport(Vector3(base.x, w.island.height_at(base.x, base.z) + 0.5, base.z))
+			p.look_to(0.0, 0.0)
+			var dm := {}
+			dm["A"] = _dummy(w, base + Vector3(0, 0, -12))
+			for i in 3:
+				dm["B%d" % i] = _dummy(w, base + Vector3(-7.0 + (i - 1) * 1.6, 0, -18))
+			dm["C0"] = _dummy(w, base + Vector3(5, 0, -9))
+			dm["C1"] = _dummy(w, base + Vector3(9, 0, -16.2))
+			for k in dm:
+				if not _check(dm[k] != null, "靶子 %s 没刷出来" % k):
+					return
+			_mem["dm"] = dm
+			_note("买了五把新暗器，一共 %d 把（含空手）" % p.guns.size())
+			_switch_to(p, "meihua")
+			_next(1)
+		1:
+			# 梅花袖箭：扣一下出三箭
+			if _step_t < 0.6:
+				return
+			var a: Beast = _mem["dm"]["A"]
+			_aim(p, _dummy_center(a))
+			if not _mem.has("mh0"):
+				_mem["mh0"] = p.gun.ammo
+				_mem["hp0"] = a.hp
+				p.fire_buffer = 0.2
+				return
+			if _step_t < 1.2:
+				return
+			var shots: int = int(_mem["mh0"]) - p.gun.ammo
+			_note("梅花袖箭扣一下出了 %d 箭，靶子掉血 %d" % [shots, int(float(_mem["hp0"]) - a.hp)])
+			if not _check(shots == 3, "梅花袖箭一次应该出 3 箭，出了 %d" % shots):
+				return
+			if not _check(a.hp < float(_mem["hp0"]), "梅花袖箭没打中靶子"):
+				return
+			_switch_to(p, "hansha")
+			_next(2)
+		2:
+			# 含沙射影：按住越打越快
+			if _step_t < 0.6:
+				return
+			var a2: Beast = _mem["dm"]["A"]
+			_aim(p, _dummy_center(a2))
+			if not _mem.has("hs_iv0"):
+				_mem["hs_iv0"] = p.gun.interval()
+				Input.action_press("fire")
+				_mem["hs_t"] = _step_t
+				return
+			if _step_t - float(_mem["hs_t"]) < 1.8:
+				return
+			var iv1: float = p.gun.interval()
+			Input.action_release("fire")
+			_note("含沙射影：刚开火每发 %.3f 秒，转起来 %.3f 秒（转速 %.2f）" % [float(_mem["hs_iv0"]), iv1, p.gun.heat])
+			if not _check(p.gun.heat > 0.85 and iv1 < float(_mem["hs_iv0"]) * 0.6, "含沙射影没有越打越快"):
+				return
+			_switch_to(p, "guanyin")
+			_next(3)
+		3:
+			# 观音泪：轻点一下 vs 蓄满
+			if _step_t < 0.6:
+				return
+			var a3: Beast = _mem["dm"]["A"]
+			_aim(p, _dummy_center(a3))
+			if not _mem.has("gy_tap"):
+				# 开着镜打，两发都落在身子上（不然一发爆头一发打身子，比不出蓄力的倍数）
+				if not _mem.has("gy_ads"):
+					_mem["gy_ads"] = true
+					Input.action_press("aim")
+					_mem["gy_t0"] = _step_t
+					return
+				if _step_t - float(_mem["gy_t0"]) < 0.5:
+					return
+				_mem["gy_tap"] = true
+				_mem["gy_hp"] = a3.hp
+				Input.action_press("fire")
+				get_tree().create_timer(0.05).timeout.connect(func(): Input.action_release("fire"))
+				_mem["gy_t"] = _step_t
+				return
+			if not _mem.has("gy_d1"):
+				if _step_t - float(_mem["gy_t"]) < 0.8:
+					return
+				_mem["gy_d1"] = float(_mem["gy_hp"]) - a3.hp
+				_mem["gy_hp"] = a3.hp
+				Input.action_press("fire")
+				_mem["gy_t"] = _step_t
+				return
+			if not _mem.has("gy_full"):
+				if _step_t - float(_mem["gy_t"]) < 1.3:
+					return
+				_mem["gy_full"] = p.gun.charge
+				Input.action_release("fire")
+				_mem["gy_t"] = _step_t
+				return
+			if _step_t - float(_mem["gy_t"]) < 0.6:
+				return
+			Input.action_release("aim")
+			var d2 := float(_mem["gy_hp"]) - a3.hp
+			_note("观音泪：轻点 %d，蓄满（%.2f）%d" % [int(float(_mem["gy_d1"])), float(_mem["gy_full"]), int(d2)])
+			if not _check(float(_mem["gy_full"]) >= 0.99, "观音泪按住 1.3 秒没蓄满"):
+				return
+			if not _check(float(_mem["gy_d1"]) > 0.0 and d2 > float(_mem["gy_d1"]) * 3.5, "观音泪蓄满的伤害不够（轻点 %d，蓄满 %d）" % [int(float(_mem["gy_d1"])), int(d2)]):
+				return
+			_switch_to(p, "zimu")
+			_next(4)
+		4:
+			# 子母追魂夺命胆：打中间那只，三只都挨炸，子胆也炸
+			if _step_t < 0.6:
+				return
+			var dm2: Dictionary = _mem["dm"]
+			var mid: Beast = dm2["B1"]
+			_aim(p, mid.global_position - Vector3(0, 0.3, 0))
+			if not _mem.has("zm"):
+				_mem["zm"] = [(dm2["B0"] as Beast).hp, mid.hp, (dm2["B2"] as Beast).hp]
+				p.fire_buffer = 0.2
+				_mem["zm_t"] = _step_t
+				return
+			if _step_t - float(_mem["zm_t"]) < 1.4:
+				return
+			var hs: Array = _mem["zm"]
+			var lost: Array = []
+			for i in 3:
+				lost.append(int(float(hs[i]) - (dm2["B%d" % i] as Beast).hp))
+			_note("子母追魂夺命胆：三只靶子各掉 %s" % str(lost))
+			for i in 3:
+				if not _check(int(lost[i]) > 0, "爆炸没炸到第 %d 只（%s）" % [i + 1, str(lost)]):
+					return
+			_switch_to(p, "longxu")
+			_next(5)
+		5:
+			# 龙须针：一针穿两只
+			if _step_t < 0.6:
+				return
+			var dm3: Dictionary = _mem["dm"]
+			var c0: Beast = dm3["C0"]
+			var c1: Beast = dm3["C1"]
+			var eye := p.cam.global_position
+			_aim(p, _dummy_center(c0))
+			if not _mem.has("lx"):
+				# 两只靶子排在一条线上
+				c1.global_position = eye + (_dummy_center(c0) - eye) * 1.8 - Vector3(0, 0.35, 0)
+				_mem["lx"] = [c0.hp, c1.hp]
+				_mem["lx_t"] = _step_t
+				return
+			if not _mem.has("lx_fired"):
+				if _step_t - float(_mem["lx_t"]) < 0.2:
+					return
+				_mem["lx_fired"] = true
+				p.fire_buffer = 0.2
+				return
+			if _step_t - float(_mem["lx_t"]) < 0.8:
+				return
+			var l0 := float(_mem["lx"][0]) - c0.hp
+			var l1 := float(_mem["lx"][1]) - c1.hp
+			_note("龙须针穿透：第一只掉 %d，后面那只掉 %d" % [int(l0), int(l1)])
+			if not _check(l0 > 0.0 and l1 > 0.0, "龙须针没有穿透两只"):
+				return
+			_next(6)
+		6:
+			# 熟练度、配件
+			var r0 := float(Profile.weapon_stats("kongque")["reload"])
+			var lv := Profile.add_mastery("kongque", 400)
+			var r1 := float(Profile.weapon_stats("kongque")["reload"])
+			_note("孔雀翎熟练度 → %d 级，换弹 %.2f → %.2f 秒" % [Profile.mastery_level("kongque"), r0, r1])
+			if not _check(lv >= 3 and r1 < r0, "熟练度升级没有加成"):
+				return
+			if not _check(Profile.owns_skin("kongque", "steel") and not Profile.owns_skin("zhuge", "steel"), "熟练度皮肤应该只给练到的那把"):
+				return
+			var base := Data.weapon_stats("kongque", {})
+			for a in ["extmag", "lstock", "silencer"]:
+				if not _check(Profile.buy_attach("kongque", a), "买不了配件 %s" % a):
+					return
+			var st := Profile.weapon_stats("kongque")
+			_note("孔雀翎装扩容弹匣 + 轻型枪托 + 消音器：弹匣 %d，开镜 %.2f 秒，消音 %s" % [int(st["mag"]), float(st["ads_time"]), str(st.get("quiet", false))])
+			if not _check(int(st["mag"]) == int(round(float(base["mag"]) * 1.5)) and float(st["ads_time"]) < float(base["ads_time"]) and bool(st.get("quiet", false)), "新配件数值不对"):
+				return
+			w.on_attach_changed()
+			_next(7)
+		7:
+			# 每把暗器 × 每款皮肤都能搭出来；自己画的皮肤；挂件
+			var n := 0
+			for id in Data.WEAPON_ORDER:
+				for sid in Data.GUN_SKIN_ORDER:
+					var mdl := WeaponModels.build(str(id), str(sid), "default", {}, false, "")
+					var sm := 0
+					for mi in mdl.find_children("*", "MeshInstance3D", true, false):
+						if GunSkin.is_skin_mat((mi as MeshInstance3D).material_override):
+							sm += 1
+					mdl.free()
+					if not _check(sm > 3, "%s 穿 %s 没有质感材质" % [id, sid]):
+						return
+					n += 1
+			var img := Image.create_empty(GunSkin.PAINT_W, GunSkin.PAINT_H, false, Image.FORMAT_RGBA8)
+			img.fill_rect(Rect2i(100, 60, 200, 80), Color(1, 0.2, 0.1, 1))
+			GunSkin.save_paint("kongque", img)
+			Profile.wear_skin("kongque", "paint")
+			var painted := WeaponModels.build("kongque", "", "default", {}, false, "")
+			var on := false
+			for mi in painted.find_children("*", "MeshInstance3D", true, false):
+				var mat := (mi as MeshInstance3D).material_override
+				if GunSkin.is_skin_mat(mat) and float((mat as ShaderMaterial).get_shader_parameter("paint_on")) > 0.5:
+					on = true
+			painted.free()
+			if not _check(Profile.skin_for("kongque") == "paint" and on, "自己画的皮肤没穿上"):
+				return
+			if not _check(Profile.buy_charm("tassel"), "买不了挂件"):
+				return
+			Profile.set_charm("kongque", "tassel")
+			var ch := WeaponModels.build("kongque")
+			var has_charm := ch.get_node_or_null("Charm") != null
+			ch.free()
+			if not _check(has_charm, "挂件没挂上"):
+				return
+			_note("%d 个暗器 × 皮肤组合都搭得出来；自己画的皮肤、挂件都在" % n)
+			w.on_look_changed()
+			_switch_to(p, "kongque")
+			_next(8)
+		8:
+			# 暗器铺外观页：3D 预览、打开画板画一笔、保存
+			if _step_t < 0.4:
+				return
+			if not _mem.has("shop_open"):
+				_mem["shop_open"] = true
+				w.hud.open_shop()
+				var sp: ShopPanel = w.hud._shop
+				sp._tab = "looks"
+				sp._pick_weapon = "kongque"
+				sp.refresh()
+				return
+			var sp2: ShopPanel = w.hud._shop
+			if not _mem.has("paint_open"):
+				if not _check(sp2._preview != null and sp2._preview.model != null, "外观页没有 3D 预览"):
+					return
+				_mem["paint_open"] = true
+				sp2._open_paint("kongque")
+				return
+			if _step_t < 1.5:
+				return
+			if not _check(sp2._paint != null and sp2._paint.visible, "画板没打开"):
+				return
+			var pp: PaintPanel = sp2._paint
+			pp._push_undo()
+			pp._stroke(Vector2(50, 50), Vector2(400, 180))
+			pp._stamp_at(Vector2(256, 128))
+			pp._commit()
+			pp._save()
+			if not _check(not pp.visible and GunSkin.has_paint("kongque"), "画完保存不了"):
+				return
+			w.hud.close_panels()
+			_note("外观页 3D 预览、画板画一笔、保存都没问题")
+			_next_phase()
+
+
+## 截图：新暗器第一人称（检视姿势，看得到侧面的质感）、几款皮肤、外观页、画板
+var _gs_list: Array = []
+
+
+func _run_gunshots() -> void:
+	var w := _ready_world()
+	if not w:
+		return
+	var p := w.player
+	match _step:
+		0:
+			Profile.add_money(900000)
+			for id in Data.WEAPON_ORDER:
+				if not Profile.has_weapon(str(id)):
+					Profile.buy_weapon(str(id))
+			for sid in Data.GUN_SKIN_ORDER:
+				if Data.GUN_SKINS[sid].has("price") and int(Data.GUN_SKINS[sid]["price"]) > 0:
+					Profile.buy_look("skin", str(sid))
+			Profile.mastery["kongque"] = 5000
+			p.rebuild_guns()
+			var m := w.island.habitat("meadow")
+			var c: Vector2 = m["center"]
+			p.teleport(Vector3(c.x, w.island.height_at(c.x, c.y) + 0.5, c.y))
+			p.look_to(0.6, deg_to_rad(8))
+			_gs_list = [["meihua", "default"], ["longxu", "dragon"], ["zimu", "magma"], ["hansha", "circuit"], ["guanyin", "pearl"],
+				["kongque", "chrome"], ["kongque", "damascus"], ["kongque", "fade"], ["kongque", "star"], ["kongque", "master"],
+				["zhuge", "carbon"], ["zhuihun", "jade"], ["xiujian", "ice"], ["baoyu", "shadow"]]
+			_next(1)
+		1:
+			if _gs_list.is_empty():
+				_next(3)
+				return
+			var e: Array = _gs_list[0]
+			Profile.wear_skin(str(e[0]), str(e[1]))
+			w.on_look_changed()
+			_switch_to(p, str(e[0]))
+			_next(2)
+		2:
+			if _step_t < 0.9:
+				return
+			if not _mem.has("insp"):
+				_mem["insp"] = true
+				p.viewmodel.inspect()
+				return
+			if _step_t < 1.9:
+				return
+			_mem.erase("insp")
+			var e2: Array = _gs_list.pop_front()
+			await _shot("gun_%s_%s" % [e2[0], e2[1]])
+			_next(1)
+		3:
+			if not _mem.has("shop"):
+				_mem["shop"] = true
+				w.hud.open_shop()
+				var sp: ShopPanel = w.hud._shop
+				sp._tab = "looks"
+				sp._pick_weapon = "kongque"
+				sp._look_skin = "fade"
+				sp.refresh()
+				return
+			if _step_t < 1.5:
+				return
+			await _shot("shop_looks")
+			var sp2: ShopPanel = w.hud._shop
+			sp2._tab = "weapons"
+			sp2.refresh()
+			_next(4)
+		4:
+			if _step_t < 0.8:
+				return
+			await _shot("shop_weapons")
+			var sp3: ShopPanel = w.hud._shop
+			sp3._tab = "attach"
+			sp3._pick_weapon = "kongque"
+			sp3.refresh()
+			_next(5)
+		5:
+			if _step_t < 0.8:
+				return
+			await _shot("shop_attach")
+			var sp4: ShopPanel = w.hud._shop
+			sp4._tab = "looks"
+			sp4.refresh()
+			sp4._open_paint("zhuge")
+			var pp: PaintPanel = sp4._paint
+			pp._push_undo()
+			pp.pcol = Color(0.1, 0.6, 1.0)
+			pp.brush = 30.0
+			pp._stroke(Vector2(20, 60), Vector2(500, 90))
+			pp.pcol = Color(1.0, 0.8, 0.2)
+			pp.stamp = "star"
+			pp._stamp_at(Vector2(300, 120))
+			pp._commit()
+			_next(6)
+		6:
+			if _step_t < 1.5:
+				return
+			await _shot("paint_panel")
+			var sp5: ShopPanel = w.hud._shop
+			sp5._paint._save()
+			w.hud.close_panels()
+			_switch_to(p, "zhuge")
+			_next(7)
+		7:
+			if _step_t < 0.9:
+				return
+			if not _mem.has("insp2"):
+				_mem["insp2"] = true
+				p.viewmodel.inspect()
+				return
+			if _step_t < 1.9:
+				return
+			await _shot("gun_zhuge_painted")
+			_next_phase()
 
 
 # ------------------------------------------------------------------ 只看第一人称手和暗器（渲染很快）

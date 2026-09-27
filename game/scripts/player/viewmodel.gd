@@ -6,14 +6,28 @@ extends Node3D
 
 const HIP := {
 	"xiujian": Vector3(0.2, -0.19, -0.4),
+	"meihua": Vector3(0.2, -0.19, -0.4),
 	"zhuge": Vector3(0.16, -0.17, -0.36),
+	"longxu": Vector3(0.15, -0.17, -0.36),
 	"kongque": Vector3(0.15, -0.165, -0.36),
 	"baoyu": Vector3(0.17, -0.17, -0.37),
+	"zimu": Vector3(0.17, -0.18, -0.38),
+	"hansha": Vector3(0.16, -0.19, -0.38),
 	"zhuihun": Vector3(0.15, -0.175, -0.36),
+	"guanyin": Vector3(0.15, -0.17, -0.36),
 	"fist": Vector3.ZERO,
 }
 # 开镜时照门离眼睛多远
-const ADS_DIST := {"xiujian": 0.22, "zhuge": 0.15, "kongque": 0.14, "baoyu": 0.2, "zhuihun": 0.09, "fist": 0.0}
+const ADS_DIST := {"xiujian": 0.22, "meihua": 0.22, "zhuge": 0.15, "longxu": 0.13, "kongque": 0.14, "baoyu": 0.2, "zimu": 0.16,
+	"hansha": 0.14, "zhuihun": 0.09, "guanyin": 0.14, "fist": 0.0}
+
+var charge := 0.0               # 观音泪蓄力（泪滴越来越亮）
+var spin := 0.0                 # 含沙射影的转速（枪管转起来）
+var move_vel := Vector3.ZERO    # 人的速度（挂件跟着晃）
+var _charm_a := Vector2.ZERO    # 挂件摆角（x 前后，z 左右）
+var _charm_v := Vector2.ZERO
+var _last_vel := Vector3.ZERO
+var _rotor := 0.0
 const SPRING_K := 300.0
 const SPRING_C := 22.0
 
@@ -139,7 +153,7 @@ func hand_global() -> Vector3:
 
 
 func two_handed() -> bool:
-	return not cur in ["xiujian", "fist"] and _item == null
+	return not cur in Data.SIDEARMS and cur != "fist" and _item == null
 
 
 const INSPECT_TIME := 2.4
@@ -260,6 +274,7 @@ func update(dt: float, ads: float, speed_k: float, grounded: bool, reload_k: flo
 		-_sway.x * 1.8 + _kr.z + rs * 0.55 + _move_tilt * calm + insp.z)
 
 	_animate_parts(m, reload_k, per_shell)
+	_animate_extras(m, dt)
 	if cur == "fist":
 		_animate_fists(m, sprint)
 
@@ -281,6 +296,35 @@ func update(dt: float, ads: float, speed_k: float, grounded: bool, reload_k: flo
 	left_arm.rotation = Vector3(0.15 + 0.2 * sin(_left_throw * PI) - _left_pull * 0.3, -0.2, 0.25)
 	left_arm.visible = _left_show > 0.02
 	coil.rotation.y += dt * 2.0
+
+
+## 含沙射影的枪管转、观音泪的泪滴随蓄力变亮、挂件像摆一样晃
+func _animate_extras(m: Node3D, dt: float) -> void:
+	var rotor := m.get_node_or_null("Rotor") as Node3D
+	if rotor:
+		_rotor += dt * spin * 40.0
+		rotor.rotation.z = _rotor
+	var tear := m.get_node_or_null("Tear") as Node3D
+	if tear and m.has_meta("tear_mat"):
+		var tm: StandardMaterial3D = m.get_meta("tear_mat")
+		tm.emission_energy_multiplier = lerpf(1.5, 7.0, charge) * (1.0 + 0.15 * sin(_idle_t * 30.0) * charge)
+		tear.scale = Vector3.ONE * lerpf(1.0, 1.5, charge)
+		tear.position.x = sin(_idle_t * 47.0) * 0.0015 * charge
+	var ch := m.get_node_or_null("Charm") as Node3D
+	if ch:
+		# 摆：人加速 / 暗器后坐 / 鼠标甩动 推它，弹簧拉回来
+		var acc := (move_vel - _last_vel) / maxf(dt, 0.001)
+		_last_vel = move_vel
+		var lb := global_basis.inverse()
+		var la := lb * acc
+		var push := Vector2(la.z * 0.02 + _kpv.z * 3.0, -la.x * 0.02 - _sway.x * 20.0)
+		_charm_v += (push - _charm_a * 60.0 - _charm_v * 4.0) * dt
+		_charm_a += _charm_v * dt
+		_charm_a = _charm_a.clamp(Vector2(-1.1, -1.1), Vector2(1.1, 1.1))
+		# 暗器本身会转（检视、开镜），挂件要保持往下垂：先抵消暗器的旋转，再加上摆角
+		var down := (m.global_basis.inverse() * Vector3.DOWN).normalized()
+		var base := Basis.looking_at(Vector3.FORWARD, -down) if absf(down.dot(Vector3.FORWARD)) < 0.95 else Basis.IDENTITY
+		ch.basis = base * Basis.from_euler(Vector3(_charm_a.x, 0, _charm_a.y))
 
 
 ## 两只拳头：出拳的那只快速往前打再收回，另一只护在脸前
@@ -345,7 +389,7 @@ func _animate_parts(m: Node3D, reload_k: float, per_shell: bool) -> void:
 					var back := smoothstep(0.25, 0.5, k) - smoothstep(0.5, 0.75, k)
 					t = rest.rotated_local(Vector3.FORWARD, up * 1.2)
 					t.origin += Vector3(0, 0, back * 0.07)
-			"baoyu":
+			"baoyu", "zimu":
 				if _lever_t > 0.0:
 					t.origin += Vector3(0, 0, sin(k * PI) * 0.07)
 		lever.transform = t

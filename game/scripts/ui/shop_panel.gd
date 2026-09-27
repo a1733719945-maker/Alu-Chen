@@ -70,6 +70,9 @@ func refresh() -> void:
 		_tab = id
 		_scroll.scroll_vertical = 0
 		refresh()))
+	# 3D 预览留着重用（每次刷新都重建会闪一下）
+	if _preview and _preview.get_parent():
+		_preview.get_parent().remove_child(_preview)
 	for c in _list.get_children():
 		c.queue_free()
 	match _tab:
@@ -78,8 +81,9 @@ func refresh() -> void:
 		"attach":
 			if Profile.loadout.is_empty():
 				_list.add_child(UiKit.label("身上没有暗器。先买一把", 18, UiKit.MIST))
-			for id in Profile.loadout:
-				_attach_block(id)
+			else:
+				_weapon_picker()
+				_attach_block(_pick_weapon)
 		"enchant":
 			_enchant_tab()
 		"upgrades":
@@ -118,7 +122,8 @@ func _weapons_tab() -> void:
 	var mx := {"dmg": 1.0, "rpm": 1.0, "mag": 1.0, "hs": 1.0}
 	for id in Data.WEAPON_ORDER:
 		var w: Dictionary = Data.WEAPONS[id]
-		mx["dmg"] = maxf(mx["dmg"], float(w["damage"]) * int(w["pellets"]))
+		# 伤害条按一发算（观音泪按半蓄，不然别的暗器全是短条）
+		mx["dmg"] = maxf(mx["dmg"], float(w["damage"]) * int(w["pellets"]) * (float(w.get("charge_k", 1.0)) * 0.5 if w["mode"] == "charge" else 1.0))
 		mx["rpm"] = maxf(mx["rpm"], float(w["rpm"]))
 		mx["mag"] = maxf(mx["mag"], float(w["mag"]))
 		mx["hs"] = maxf(mx["hs"], float(w["headshot"]))
@@ -150,6 +155,13 @@ func _weapon_card(id: String, mx: Dictionary) -> Control:
 	top.add_theme_constant_override("separation", 10)
 	v.add_child(top)
 	top.add_child(UiKit.title(str(w["name"]), 28, UiKit.DIM if locked else UiKit.MOON))
+	var mode_name := str(Data.MODE_NAME.get(str(w["mode"]), ""))
+	if w.has("splash"):
+		mode_name = "爆炸"
+	elif w.has("spinup"):
+		mode_name = "越打越快"
+	if mode_name != "":
+		top.add_child(UiKit.chip(mode_name, UiKit.MIST, 12))
 	if have:
 		top.add_child(UiKit.chip("在身上", UiKit.JADE))
 		var ench := str(Profile.enchant.get(id, ""))
@@ -159,6 +171,26 @@ func _weapon_card(id: String, mx: Dictionary) -> Control:
 	d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	d.custom_minimum_size.x = 380
 	v.add_child(d)
+	# 熟练度（买过、用过的才有）
+	var mxp := Profile.mastery_xp(id)
+	if have or mxp > 0:
+		var ml := Profile.mastery_level(id)
+		var mrow := HBoxContainer.new()
+		mrow.add_theme_constant_override("separation", 10)
+		v.add_child(mrow)
+		mrow.add_child(UiKit.label("熟练度", 14, UiKit.MIST))
+		mrow.add_child(UiKit.num("%d" % ml, 18, UiKit.GOLD if ml > 0 else UiKit.MIST, 0))
+		var mb := UiKit.bar(UiKit.GOLD, 150, 5)
+		mb.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		if ml >= Data.MASTERY_MAX:
+			mb.value = 1.0
+		else:
+			var lo := int(Data.MASTERY_XP[ml])
+			mb.value = float(mxp - lo) / float(int(Data.MASTERY_XP[ml + 1]) - lo)
+		mrow.add_child(mb)
+		var nxt: Dictionary = Data.MASTERY_PERKS.get(ml + 1, {})
+		if not nxt.is_empty():
+			mrow.add_child(UiKit.label("下一级：%s" % nxt["text"], 13, UiKit.DIM))
 	var pellets := int(w["pellets"])
 	var dmg := float(w["damage"]) * pellets
 	var stats := GridContainer.new()
@@ -167,7 +199,18 @@ func _weapon_card(id: String, mx: Dictionary) -> Control:
 	stats.add_theme_constant_override("v_separation", 2)
 	v.add_child(stats)
 	var sc := UiKit.DIM if locked else UiKit.MOON
-	stats.add_child(UiKit.stat_bar("伤害", dmg / mx["dmg"], ("%d×%d" % [int(w["damage"]), pellets]) if pellets > 1 else str(int(w["damage"])), sc, 120))
+	var dtext := ("%d×%d" % [int(w["damage"]), pellets]) if pellets > 1 else str(int(w["damage"]))
+	match str(w["mode"]):
+		"burst":
+			dtext = "%d×%d" % [int(w["damage"]), int(w["burst"])]
+			dmg *= float(w["burst"])
+		"charge":
+			dtext = "%d~%d" % [int(w["damage"]), int(float(w["damage"]) * float(w["charge_k"]))]
+			dmg *= float(w["charge_k"]) * 0.5
+	if w.has("splash_dmg"):
+		dtext = "%d+%d" % [int(w["damage"]), int(w["splash_dmg"])]
+		dmg += float(w["splash_dmg"])
+	stats.add_child(UiKit.stat_bar("伤害", minf(dmg / mx["dmg"], 1.0), dtext, sc, 120))
 	stats.add_child(UiKit.stat_bar("射速", float(w["rpm"]) / mx["rpm"], str(int(w["rpm"])), sc, 120))
 	stats.add_child(UiKit.stat_bar("弹匣", float(w["mag"]) / mx["mag"], str(int(w["mag"])), sc, 120))
 	stats.add_child(UiKit.stat_bar("爆头", float(w["headshot"]) / mx["hs"], "×%.1f" % float(w["headshot"]), sc, 120))
@@ -271,11 +314,38 @@ func _enchant_tab() -> void:
 
 # ------------------------------------------------------------------ 配件：买一次永久有（卖了暗器再买回来还在）；同一个部位只能装一个
 
+var _pick_weapon := ""
+
+
+## 上面一排：选哪把暗器（配件、外观页用）
+func _weapon_picker() -> void:
+	var owned: Array = Profile.loadout
+	if not _pick_weapon in owned:
+		_pick_weapon = str(world.player.gun.id) if world.player.gun.id in owned else str(owned[0])
+	var row := HFlowContainer.new()
+	row.add_theme_constant_override("h_separation", 8)
+	row.add_theme_constant_override("v_separation", 6)
+	_list.add_child(row)
+	for w in owned:
+		var b := UiKit.button(str(Data.WEAPONS[w]["name"]), 16, w == _pick_weapon)
+		var ww := str(w)
+		b.pressed.connect(func():
+			_pick_weapon = ww
+			_look_skin = ""
+			_look_charm = null
+			refresh())
+		row.add_child(b)
+
+
 func _attach_block(id: String) -> void:
-	var w: Dictionary = Data.WEAPONS[id]
-	_list.add_child(UiKit.section(str(w["name"]), UiKit.GOLD))
-	for a in Data.ATTACH_OK.get(id, []):
+	var cur_slot := ""
+	for a in _attach_sorted(id):
 		var at: Dictionary = Data.ATTACH[a]
+		if str(at["slot"]) != cur_slot:
+			cur_slot = str(at["slot"])
+			for s in Data.ATTACH_SLOTS:
+				if s[0] == cur_slot:
+					_list.add_child(UiKit.section(str(s[1]), UiKit.GOLD))
 		var on: bool = Profile.attach_of(id, str(at["slot"])) == a
 		var h := _row(UiKit.JADE if on else Color(0, 0, 0, 0))
 		var v := VBoxContainer.new()
@@ -286,8 +356,6 @@ func _attach_block(id: String) -> void:
 		top.add_theme_constant_override("separation", 10)
 		v.add_child(top)
 		top.add_child(UiKit.bold(str(at["name"]), 19, UiKit.MOON))
-		var slot_name: String = {"sight": "瞄具", "muzzle": "枪口", "under": "枪管下"}.get(str(at["slot"]), "")
-		top.add_child(UiKit.chip(slot_name, UiKit.MIST, 12))
 		if on:
 			top.add_child(UiKit.chip("装着", UiKit.JADE, 12))
 		v.add_child(UiKit.label(str(at["desc"]), 14, UiKit.MIST))
@@ -311,6 +379,16 @@ func _attach_block(id: String) -> void:
 					world.hud.toast("装上了%s" % at["name"], UiKit.GOLD)
 				refresh())
 			h.add_child(b2)
+
+
+## 这把暗器能装的配件，按部位排（瞄具、枪口、枪管下、弹匣、枪托）
+func _attach_sorted(id: String) -> Array:
+	var out: Array = []
+	for s in Data.ATTACH_SLOTS:
+		for a in Data.ATTACH_OK.get(id, []):
+			if str(Data.ATTACH[a]["slot"]) == str(s[0]):
+				out.append(a)
+	return out
 
 
 func _upgrade_block(id: String) -> void:
@@ -358,15 +436,19 @@ func _upgrade_block(id: String) -> void:
 
 # ------------------------------------------------------------------ 外观：三列卡片，大色块预览
 
+var _preview: GunPreview
+var _look_skin := ""             # 正在预览的皮肤（点卡片先看，不用先买）
+var _look_charm: Variant = null  # 正在预览的挂件（null = 这把暗器挂着的）
+var _paint: PaintPanel
+
+
 func _looks_tab() -> void:
-	_list.add_child(UiKit.section("暗器皮肤（所有暗器通用，队友也看得到）", UiKit.JADE))
-	var g1 := GridContainer.new()
-	g1.columns = 3
-	g1.add_theme_constant_override("h_separation", 10)
-	g1.add_theme_constant_override("v_separation", 10)
-	_list.add_child(g1)
-	for id in Data.GUN_SKIN_ORDER:
-		g1.add_child(_look_card("skin", id))
+	if Profile.loadout.is_empty():
+		_list.add_child(UiKit.label("身上没有暗器。先买一把", 18, UiKit.MIST))
+	else:
+		_list.add_child(UiKit.section("给哪把暗器换外观（每把可以穿不同的皮肤、挂不同的挂件）", UiKit.JADE))
+		_weapon_picker()
+		_gun_looks(_pick_weapon)
 	_list.add_child(UiKit.section("装扮（长袍和帽子，第一人称能看到袖子）", UiKit.JADE))
 	var g2 := GridContainer.new()
 	g2.columns = 3
@@ -375,6 +457,265 @@ func _looks_tab() -> void:
 	_list.add_child(g2)
 	for id in Data.OUTFIT_ORDER:
 		g2.add_child(_look_card("outfit", id))
+
+
+## 一把暗器的外观：左边 3D 预览（可以拖着转），右边正在看的皮肤 / 挂件和按钮；下面皮肤、挂件卡片、熟练度
+func _gun_looks(w: String) -> void:
+	var worn := Profile.skin_for(w)
+	if _look_skin == "" or not Data.GUN_SKINS.has(_look_skin):
+		_look_skin = worn
+	var charm_now := Profile.charm_for(w)
+	var charm_show: String = charm_now if _look_charm == null else str(_look_charm)
+	var top := HBoxContainer.new()
+	top.add_theme_constant_override("separation", 18)
+	_list.add_child(top)
+	if _preview == null:
+		_preview = GunPreview.new(Vector2i(720, 330))
+	top.add_child(_preview)
+	_preview.show_gun(w, _look_skin, null, charm_show)
+	var info := VBoxContainer.new()
+	info.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	info.add_theme_constant_override("separation", 8)
+	top.add_child(info)
+	var sk: Dictionary = Data.GUN_SKINS[_look_skin]
+	info.add_child(UiKit.kicker("皮肤", UiKit.GOLD))
+	info.add_child(UiKit.title(str(sk["name"]), 34))
+	var ds := UiKit.label(str(sk.get("desc", "")), 15, UiKit.MIST)
+	ds.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	ds.custom_minimum_size.x = 380
+	info.add_child(ds)
+	var tags := HBoxContainer.new()
+	tags.add_theme_constant_override("separation", 6)
+	info.add_child(tags)
+	for t in _skin_tags(sk):
+		tags.add_child(UiKit.chip(t, UiKit.MIST, 12))
+	var acts := HFlowContainer.new()
+	acts.add_theme_constant_override("h_separation", 8)
+	acts.add_theme_constant_override("v_separation", 6)
+	info.add_child(acts)
+	var id := _look_skin
+	if id == worn:
+		acts.add_child(UiKit.chip("这把正穿着", UiKit.GOLD, 14))
+	if Profile.owns_skin(w, id):
+		if id != worn:
+			var b := UiKit.button("装到%s" % Data.WEAPONS[w]["name"], 16, true)
+			b.pressed.connect(func():
+				Profile.wear_skin(w, id)
+				Sfx.play("switch", -4.0)
+				world.on_look_changed()
+				refresh())
+			acts.add_child(b)
+		if id in Profile.skins and not Data.GUN_SKINS[id].has("mastery"):
+			var ba := UiKit.button("所有暗器都用", 16)
+			ba.pressed.connect(func():
+				Profile.wear_skin("", id)
+				Sfx.play("switch", -4.0)
+				world.on_look_changed()
+				world.hud.toast("所有暗器都换上了【%s】" % sk["name"], UiKit.GOLD)
+				refresh())
+			acts.add_child(ba)
+	elif sk.has("mastery"):
+		acts.add_child(UiKit.chip("%s熟练度 %d 级解锁（现在 %d 级）" % [Data.WEAPONS[w]["name"], int(sk["mastery"]), Profile.mastery_level(w)], UiKit.DIM, 14))
+	elif bool(sk.get("paint", false)):
+		acts.add_child(UiKit.chip("还没画", UiKit.DIM, 14))
+	elif sk.has("boss"):
+		acts.add_child(UiKit.chip("打 Boss 解锁", UiKit.DIM, 14))
+	elif sk.has("codex"):
+		acts.add_child(UiKit.chip("集齐猎魂录解锁", UiKit.DIM, 14))
+	else:
+		var bb := _price_button(int(sk["price"]), true, "%d  购买" % int(sk["price"]))
+		bb.pressed.connect(func():
+			if Profile.buy_look("skin", id):
+				Profile.wear_skin(w, id)
+				Sfx.play("coin", -2.0)
+				world.on_look_changed()
+				world.hud.toast("买到了【%s】，已经装到%s上（别的暗器也能用）" % [sk["name"], Data.WEAPONS[w]["name"]], UiKit.GOLD)
+			refresh())
+		acts.add_child(bb)
+	var pb := UiKit.button("自己画" if not GunSkin.has_paint(w) else "接着画", 16)
+	pb.pressed.connect(func(): _open_paint(w))
+	acts.add_child(pb)
+	info.add_child(UiKit.label("按住预览拖动可以转着看", 13, UiKit.DIM))
+
+	# 皮肤卡片
+	_list.add_child(UiKit.section("皮肤（点一下先在上面看效果）", UiKit.MIST))
+	var g := GridContainer.new()
+	g.columns = 4
+	g.add_theme_constant_override("h_separation", 8)
+	g.add_theme_constant_override("v_separation", 8)
+	_list.add_child(g)
+	for sid in Data.GUN_SKIN_ORDER:
+		g.add_child(_skin_card(w, sid, worn))
+	# 挂件
+	_list.add_child(UiKit.section("挂件（挂在暗器上，跑起来会晃）", UiKit.MIST))
+	var cg := HFlowContainer.new()
+	cg.add_theme_constant_override("h_separation", 8)
+	cg.add_theme_constant_override("v_separation", 8)
+	_list.add_child(cg)
+	cg.add_child(_charm_card(w, "", charm_now, charm_show))
+	for cid in Data.CHARM_ORDER:
+		cg.add_child(_charm_card(w, cid, charm_now, charm_show))
+	# 熟练度
+	var ml := Profile.mastery_level(w)
+	_list.add_child(UiKit.section("%s 熟练度 %d / %d（用它打死魂兽涨）" % [Data.WEAPONS[w]["name"], ml, Data.MASTERY_MAX], UiKit.MIST))
+	var pr := HFlowContainer.new()
+	pr.add_theme_constant_override("h_separation", 8)
+	pr.add_theme_constant_override("v_separation", 6)
+	_list.add_child(pr)
+	for lv in range(2, Data.MASTERY_MAX + 1):
+		var perk: Dictionary = Data.MASTERY_PERKS.get(lv, {})
+		if perk.is_empty():
+			continue
+		pr.add_child(UiKit.chip("%d 级 · %s" % [lv, perk["text"]], UiKit.GOLD if ml >= lv else UiKit.DIM, 13, ml >= lv))
+
+
+## 皮肤是什么质感（卡片、预览旁边的小标签）
+func _skin_tags(sk: Dictionary) -> Array:
+	var out: Array = []
+	var pat := str(sk.get("pat", "plain"))
+	var names := {"wood": "木纹", "fade": "渐变", "damascus": "折叠钢纹", "carbon": "碳纤维编织", "marble": "玉脉", "flow": "流光", "lava": "熔岩裂纹",
+		"galaxy": "星云", "scales": "龙鳞", "pearl": "珠光变色", "circuit": "回路", "ice": "冰晶", "smoke": "流烟", "caustic": "水纹", "aurora": "极光", "brushed": "拉丝", "web": "蛛网"}
+	if names.has(pat):
+		out.append(str(names[pat]))
+	if float(sk.get("body_metal", float(sk.get("metal", 0.0)) * 0.6)) >= 0.8:
+		out.append("金属反光" if float(sk.get("body_rough", 0.3)) > 0.1 else "镜面")
+	if float(sk.get("coat", 0.0)) > 0.5:
+		out.append("清漆")
+	if pat in ["flow", "lava", "galaxy", "circuit", "ice", "smoke", "caustic", "aurora", "web"]:
+		out.append("会动")
+	if bool(sk.get("paint", false)):
+		out.append("自己画")
+	return out
+
+
+func _skin_card(w: String, sid: String, worn: String) -> Control:
+	var sk: Dictionary = Data.GUN_SKINS[sid]
+	var owned := Profile.owns_skin(w, sid)
+	var accent := UiKit.GOLD if sid == worn else (UiKit.JADE if sid == _look_skin else Color(0, 0, 0, 0))
+	var b := UiKit.card_button(accent if accent.a > 0.0 else Color(1, 1, 1, 0.2))
+	b.custom_minimum_size = Vector2(300, 74)
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 10)
+	h.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	UiKit.fill(h)
+	h.offset_left = 10
+	h.offset_right = -10
+	b.add_child(h)
+	h.add_child(_swatch(sk))
+	var v := VBoxContainer.new()
+	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	v.alignment = BoxContainer.ALIGNMENT_CENTER
+	v.add_theme_constant_override("separation", 2)
+	h.add_child(v)
+	v.add_child(UiKit.bold(str(sk["name"]), 17, UiKit.MOON if owned else UiKit.MIST))
+	var st := ""
+	if sid == worn:
+		st = "穿着"
+	elif owned:
+		st = "已有"
+	elif sk.has("mastery"):
+		st = "熟练度 %d 级" % int(sk["mastery"])
+	elif bool(sk.get("paint", false)):
+		st = "自己画"
+	elif sk.has("boss"):
+		st = "Boss 解锁"
+	elif sk.has("codex"):
+		st = "猎魂录解锁"
+	else:
+		st = "%d 金魂币" % int(sk["price"])
+	v.add_child(UiKit.label(st, 13, UiKit.GOLD if sid == worn else (UiKit.JADE if owned else UiKit.DIM)))
+	b.pressed.connect(func():
+		_look_skin = sid
+		refresh())
+	return b
+
+
+## 皮肤色块：几条颜色（底色、第二色、发光色）
+func _swatch(sk: Dictionary) -> Control:
+	var pal: Dictionary = sk.get("pal", {})
+	var cols: Array = [pal.get("lacquer", WeaponModels.BASE_PAL["lacquer"]), pal.get("wood", WeaponModels.BASE_PAL["wood"]),
+		sk.get("c2", pal.get("gold", WeaponModels.BASE_PAL["gold"])), sk.get("c3", sk.get("glow", Color(0.35, 0.95, 0.8))), pal.get("gold", WeaponModels.BASE_PAL["gold"])]
+	var sw := Control.new()
+	sw.custom_minimum_size = Vector2(52, 52)
+	sw.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	sw.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var metal := float(sk.get("body_metal", float(sk.get("metal", 0.0)) * 0.6)) >= 0.8
+	sw.draw.connect(func():
+		if bool(sk.get("paint", false)):
+			for i in 5:
+				sw.draw_rect(Rect2(i * 10.4, 0, 10.4, 52), Color.from_hsv(i / 5.0, 0.7, 0.95))
+		else:
+			sw.draw_rect(Rect2(0, 0, 52, 30), cols[0])
+			sw.draw_rect(Rect2(0, 30, 26, 22), cols[1])
+			sw.draw_rect(Rect2(26, 30, 26, 22), cols[2])
+			sw.draw_rect(Rect2(0, 27, 52, 3), cols[4])
+			sw.draw_circle(Vector2(40, 14), 6.0, cols[3])
+		if metal:
+			# 金属：一道斜着的高光
+			sw.draw_colored_polygon(PackedVector2Array([Vector2(8, 0), Vector2(18, 0), Vector2(0, 30), Vector2(0, 16)]), Color(1, 1, 1, 0.35))
+		sw.draw_rect(Rect2(0, 0, 52, 52), Color(1, 1, 1, 0.25), false, 1.0))
+	return sw
+
+
+func _charm_card(w: String, cid: String, now: String, showing: String) -> Control:
+	var d: Dictionary = Data.CHARMS.get(cid, {"name": "不挂", "price": 0, "desc": "什么都不挂"})
+	var owned := cid == "" or cid in Profile.charms
+	var accent := UiKit.GOLD if cid == now else (UiKit.JADE if cid == showing else Color(1, 1, 1, 0.2))
+	var box := PanelContainer.new()
+	box.add_theme_stylebox_override("panel", UiKit.card_style(accent))
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 4)
+	v.custom_minimum_size.x = 190
+	box.add_child(v)
+	v.add_child(UiKit.bold(str(d["name"]), 17))
+	var ds := UiKit.label(str(d["desc"]), 12, UiKit.MIST)
+	ds.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	ds.custom_minimum_size.x = 170
+	v.add_child(ds)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	v.add_child(row)
+	var look := UiKit.button("看看", 13)
+	look.pressed.connect(func():
+		_look_charm = cid
+		refresh())
+	row.add_child(look)
+	if cid == now:
+		row.add_child(UiKit.chip("挂着", UiKit.GOLD, 12))
+	elif owned:
+		var b := UiKit.button("挂上" if cid != "" else "摘下", 13, true)
+		b.pressed.connect(func():
+			Profile.set_charm(w, cid)
+			_look_charm = null
+			Sfx.play("switch", -4.0)
+			world.on_look_changed()
+			refresh())
+		row.add_child(b)
+	else:
+		var b2 := UiKit.button("%d" % int(d["price"]), 13, true)
+		b2.disabled = Profile.money < int(d["price"])
+		b2.pressed.connect(func():
+			if Profile.buy_charm(cid):
+				Profile.set_charm(w, cid)
+				_look_charm = null
+				Sfx.play("coin", -2.0)
+				world.on_look_changed()
+			refresh())
+		row.add_child(b2)
+	return box
+
+
+## 自己画皮肤：打开画板（全屏，关掉回到外观页）
+func _open_paint(w: String) -> void:
+	if _paint == null:
+		_paint = PaintPanel.new()
+		add_child(_paint)
+		_paint.closed.connect(func():
+			_paint.visible = false
+			_look_skin = Profile.skin_for(_pick_weapon)
+			world.on_look_changed()
+			refresh())
+	_paint.open(w)
 
 
 func _look_card(kind: String, id: String) -> Control:

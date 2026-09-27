@@ -41,7 +41,12 @@
 | 没有防御，封号斗罗也被打 1-2 下就死 | 魂力护体：每级减伤 0.4%（`Data.level_armor`，武魂面板显示"护体"）；后期章节攻击倍数压平；普通咬 ×0.7，红圈大招不变 |
 | 第二章被咬中毒一直掉血很烦 | 去掉了（`CH_TRAIT[2] = ""`，曼陀罗蛇毒雾改成减速，碧磷蟾不带毒）。**别再加持续掉血** |
 | 武魂真身"和魂技有任何差别吗" | 关掉了（`Combo.TRUE_BODY = false`）。**加按钮 / 加倍数不算好玩**，要改结构：给玩家目标、风险、取舍、队友分工 |
-| 不要 roguelite（选卡、随机强化） | 方向是"组队猎魂兽王"：第十版的猎魂远征 |
+| 不要 roguelite（选卡、随机强化） | 方向是"组队猎魂兽王" |
+| 单人远征没法玩；猎到的魂环和普通怪掉的没区别；"刷怪只放在副本里" | 第十一版：野外只猎自己挑的魂兽（猎魂榜写明魂技），刷怪在秘境；单人吸收快（10 秒） |
+| 秘境卡脚、魂兽卡墙 | `_cyl_collider(pos, …)` 的 pos 是**圆柱的底**（以前传成中心，地面碰撞高了 1 米）；`Dungeon._keep_inside` 卡住 3 秒拉回中间 |
+| 猎物路太好找、没有探索感 | 爪痕追踪（`Hunt.clues`，按 F 查看，3 处锁定 45 秒），罗盘平时不标；`HUNT_REVEAL` 30 米 |
+| 我秒怪物（太简单） | 魂兽血量下限 `Data.hp_floor`（按队伍最强暗器的输出，至少 3~10 枪，打得慢的暗器有上限）；`Profile.output / World.team_output` |
+| 皮肤只是换色；要金属反光的质感、自己画、更多暗器 / 熟练度 / 配件 / 外观 | 第十二版（见版本历史 17） |
 
 ## 仓库和发布
 
@@ -190,26 +195,61 @@
 15. 第十版（2026-09-27）：用户试玩反馈"仇恨全岛、没防御、中毒烦、还是不好玩"，否掉了"魂环自选 / 猎王克制 / 融合技"，同意做**猎魂远征**（试玩只有星斗大森林）：
    - 修：仇恨范围（见上表）；魂兽被圆石头挤到地形下面会一直往下掉（凭空消失），`Beast._physics_process` 里低于地面 1.2 米就拉回地面；
      等级减伤 `Player.defense()`；`CH_POWER` 压成 1.0 / 1.2 / 1.4 / 1.6 / 1.8，`BITE_K` 0.7；第二章不中毒；武魂真身关掉
-   - 猎魂远征 `world/expedition.gd`（`Expedition`，World 持有 `world.expedition`，普通章节是 null）。章节号 +100 = 远征（`Data.EXP_CODE`，103 = 星斗大森林），
-     `World._init` 拆出 `_exp_mode`，`chapter_code()` 发给客人，`main.gd` 的 `_start_world / _travel` 认 ≥100；入口：主菜单"猎魂远征（试玩）"（单人）、任何一张图的渡船（联机）
-   - 一趟远征：
-     1. 猎物：房主按队伍谁卡瓶颈要什么年份挑一只王（`_target_spec`），在栖息地之间慢慢逛（`spawn_pos` 当"老家"，`Beast.home_speed`）；
-        不标准确位置：地上发光脚印（消息 expfp，170 米内画）、隔 24–34 秒吼一声（exproar，罗盘准 6 秒）、罗盘方向偏 ±35 度（`_fuzzy_pos`），55 米内才看清
-     2. 打死：钱 ×1.5、王魂进**背包**（`World.earn`、`Expedition.add_bag / add_mat`），魂环照常掉（王必掉）
-     3. 护法：远征里吸收魂环 = 站着 40 秒（`Player.channeling`：不能走、能开枪；被技能带离 5 米算放弃），房主每 7 秒从一个方向刷一波凶的（`focus_peer` = 吸收的人）；
-        吸收的人倒下 → 失败，魂环掉回原地（消息 expchend）。一次只能一个人吸收
-     4. 天色：黄昏 300 秒 → 夜晚 150 → 血月 240 → 夜晚 → 血月……（`Data.EXP_PHASE`，天空图 / 光 / 雾渐变 `_apply_phase`）；天黑了野怪更多（`_host_extra`、`_host_wild` 上限）
-     5. 血月：夜猎者（万年疾爪龙王，`EXP_HUNTER`，血 ×1.3）一直往营地外最近的人走，60 米内扑上去（`focus_peer`），速度上限 7.4（冲刺 8.6 甩得掉，`Beast.speed_cap`）；
-        船边营地 38 米它不进（`Beast.avoid_c / avoid_r / _nearest_ok`）；不逃回巢养伤；血月结束退回森林
-     6. 背包：船边按 F 存，乘当时的倍数（黄昏 ×1 / 夜晚 ×1.3 / 血月 ×1.8）；倒下背包掉在原地（金色光柱），自己走回去 F 捡；没捡回来又倒下，上一个就没了；
-        坐船离开先全部存；中途退出只带回一半。成就奖励照旧直接到手
-     7. 难度：房主按队伍平均等级算 `hp_k`（魂兽血量，魂技 `_dk` 也乘）、`dmg_k`（魂兽伤害）；猎物 / 夜猎者按人数加血 `team_k`
-   - 远征里没有：章节任务（`_host_check_quest` 直接返回，**不能改存档章节**）、悬赏、兽潮、固定的王、祭坛
-   - HUD：左上换成远征面板（天色 + 倒计时 + 存钱倍数、猎物卡、护法卡、背包）；罗盘"猎 / 夜 / 包 / 护"；夜猎者 90 米内心跳 + 屏幕发红 + 红条；击杀弹窗写"进背包"
-   - 联机消息：expst（每秒状态）、expfp、exproar、expchend、expchq、exphunt、expev
-   - 自动测试：`aggro`（仇恨 + 减伤）、`expedition`（整趟流程）、`expshot`（截图，要开窗口）、联机 `--autotest=host --exp=1` + `--autotest=client --exp=1`
-   - 字体是裁剪过的：新字要在 GB2312 一级字里，不然显示方框（本机没 Python 跑不了 `subset_fonts.py`；已经把"迁徙""漩涡"换成"过境""旋涡"）
+   - 第十版还做了一个"猎魂远征"试玩（单独的模式），用户试了说单人没法玩、吸收的魂环和普通怪掉的没区别——第十一版并进了正式玩法，远征模式删了（`expedition.gd` 只剩空壳，网页上传删不掉旧文件）
 
+16. 第十一版（2026-09-28，用户睡觉前授权"整个游戏新做、随便定内容、可以开窗口测试"，重点是游戏性、质感、可玩性）。按用户自己的想法改了结构：
+   **野外只猎指定的魂兽，刷怪只在秘境里。**
+   - 野外（`world.gd`）：不再有成群的凶暴魂兽（`_host_wild` 只刷少量胆小的）、兽潮（`_host_tide` 关了）、魂兽巢穴（`Nests` 不 setup）、固定的魂兽王（不 `_init_elites`）、悬赏（清空）。
+     普通魂兽**不掉魂环**（`_host_maybe_drop_ring` 只剩魂兽王分支）。引魂索钓魂兽照旧（钓鱼、卖钱、练空中连击）
+   - 猎魂（`world/hunt.gd`，`Hunt`，`world.hunt`）：
+     - 猎魂榜：L 键或码头边的告示牌（`WorldBuilder._board`，`board_pos`）→ `Hud.open_board`。列出这座岛陆地上 / 天上的魂兽（水里的不行），
+       每只两个年份（`Hunt.base_age` 和再高一档），**卡片上写着吸收后会领悟的魂技**（`Hunt.skill_preview` = `Data.skill_for`，和吸收时算的一样）
+     - 挑了 → 消息 hreq → 房主在离大家远的地方刷一只魂兽王（`hunt_role = "target"`，血量 ×(0.55 + 0.4×多的人数)），在栖息地之间逛（`home_speed`）
+     - 不标准确位置：发光脚印 hfp、吼声 hroar（罗盘准 6 秒）、罗盘方向偏 ±35 度，55 米内弹"发现猎物"
+     - **吸收任何魂环都要站着**（`Hunt.host_absorb`，消息 absorb 由它接管）：单人 10 秒、只来一小波；联机 25 秒、每 7 秒一波冲吸收的人（`focus_peer`），队友护法；
+       吸收的人倒下 / 被技能带离 5 米 → 失败，魂环掉回原地（hchend / hchq）
+   - 秘境（`world/dungeon.gd`，`Dungeon`，`world.dungeon`）：
+     - 每座岛三个入口（`_place_portals` 按岛的数据算，每台电脑一样；离码头近的一层、远的三层），年份 `Data.dg_age`（`CH_AGE` + 层数），推荐等级 `dg_level`
+     - 场地在地图外高空 `ARENA = (900, 420, 0)`（比远处的山高，不然会插进山里），`Island.add_floor` 让 `height_at` 在场地里返回平台高度——红圈、脚印、落地、魂兽物理都照常用
+     - 一局：准备 5 秒 → 三波（`DG_TIERS.waves`，联机每多一人 +2）从三个兽门出来 → 秘境之主（魂兽王，`hunt_role = "dgboss"`，不逃回巢）+ 场地红圈陨石 → 通关：金魂币、修为、宝箱（回血丹、唐莲、二层以上魂骨）、
+       魂环（卡瓶颈的人）、王魂；记最快时间（`Profile.stats["dg_best_章_层"]`）；完成章节任务 dungeon
+     - 每局一个随机词条 `DG_MODS`（兽潮 / 坚甲 / 陨星 / 疾风 / 狂暴），奖励跟着涨
+     - 同时只有一局；队友随时从同一个入口进来；人都走了（或都倒下回码头）就结束；被打飞出墙的魂兽拉回来（`_keep_inside`）
+     - 消息 dgst / dgenter / dgin / dgleave / dggate / dgboss / dgmet / dgclear / dgend
+   - 章节任务：通关一次秘境 → 修炼到 N 级 → 祭坛 → Boss → 渡船（`CHAPTERS.quests`，类型 dungeon）；`KING_XP_LEVELS` 2.5 → 1.5
+   - 第一次进第十一版：章节横幅后弹一次"新玩法"（`Profile.stats["v11_intro"]`）
+   - 自动测试：`huntrun`（猎魂榜 → 踪迹 → 打死 → 吸收，学到的就是卡片上的魂技 → 倒下打断）、`dungeon`（三个入口 → 进 → 打完 → 奖励 / 宝箱 / 纪录 / 任务 → 离开 → 倒下失败）、
+     `dgshot`（截图，要开窗口）、联机 `--autotest=host --dg=1` + `--autotest=client --dg=1`
+   - **魂兽掉到地形下面**：追人时被圆石头挤下去会一直掉（第十版发现），`Beast._physics_process` 里拉回地面
+   - **倒下不再丢暗器**（`Player.drop_guns_on_death` 返回空）：用户两个真存档的 `weapons` 都是空的（倒下丢光了），89 级只能空手打——"打不动、一来就死"的一大原因。
+     存档版本 4（`Profile.VERSION`）：版本 3 的存档读进来时，`upgrades` 里有的暗器全部还回去；任务下标往后挪一格（新章节任务多了两个）
+   - 自动测试 `bot`：`--from_save=profile.json --tier=0`，拿玩家真存档的拷贝（只读）让机器人站在台子上自动瞄准开枪打一局秘境，看掉多少血、多久通关——调单人难度用。
+     `migrate`：旧存档任务下标升级
+   - 秘境调过的数（按机器人）：小怪血量 `DG_MOB_HP` 0.75、出场间隔 1.1 秒、单人每波 3/4/5（一层）
+
+17. 第十一版补丁 + 第十二版（2026-09-28，用户试玩第十一版的 6 条反馈 + 要求枪械系统大改）：
+   - 补丁：秘境碰撞（见上表）、爪痕追踪（`Hunt.clues / read_clue / located`，消息 hst 里带 region 和 clues）、
+     远处 / 狙击 / 爆炸必飘伤害数字（`World._apply_hits` 的 heavy）、冲撞型魂兽贴身直接咬（`Beast` 的 "charge" 分支）、
+     血量下限 `Data.hp_floor`（`REF_KIT / HP_SHOTS / HP_TTK / HP_FOLLOW / ELITE_FLOOR`，`Data.weapon_output` 把三连发 / 蓄力 / 爆炸算进输出），
+     后面章节秘境小怪伤害再乘 `DG_MOB_DMG_CH`
+   - 新暗器（`Data.WEAPONS`，`WEAPON_ORDER` 十把）：梅花袖箭 meihua（mode "burst"，`burst / burst_gap`）、龙须针 longxu（射手，pierce 2）、
+     子母追魂夺命胆 zimu（`splash / splash_dmg / children`，`World._blast / _child_blast`，消息 blast）、含沙射影 hansha（`spinup`，`Gun.heat`，模型里 Rotor 会转）、
+     观音泪 guanyin（mode "charge"，`charge / charge_k`，`Player._charge_input`，`Gun.charge`，满了穿透 8 只 + 光束；准星外一圈蓄力环 `Crosshair`；模型里 Tear 随蓄力变亮）。
+     副手 `Data.SIDEARMS`（2 号键在袖箭和梅花袖箭之间换，`Player.sidearms / _is_side`）。`local_fire(g, …, k, pierce_over)`，命中结算拆成 `World._apply_hits`
+   - 配件：新部位 mag（扩容 / 快拔 / 魂晶弹匣）、stock（轻型 / 战术枪托），枪口补偿器、消音器（`quiet`：枪声小、没火光），斜握把，4 倍镜（`WeaponModels._x4`）；
+     `Data.ATTACH_SLOTS`，`apply_attach` 支持 mag_k / reload_k / dmg_k / ads_k / move_k / recoil_all / quiet。瞄具和配件用自己的黑色材质（`WeaponModels._om`），不跟皮肤
+   - 熟练度：`Profile.mastery`（暗器 -> 经验），`Data.MASTERY_XP / MASTERY_PERKS / mastery_gain / mastery_bonus`，`World._mastery_kill`（本地击杀时按手里的暗器算），
+     加成在 `Profile.weapon_stats` 里；3 / 6 / 10 级送这把暗器的皮肤（皮肤里 `"mastery": N`）
+   - 皮肤材质：`player/gun_skin.gd`（`GunSkin`）一个着色器画 18 种花纹（木纹、渐变、大马士革、碳纤维、玉脉、流光、熔岩、星云、龙鳞、珠光、回路、冰晶、暗影烟、水波、极光、拉丝、蛛网），
+     按"暗器根节点坐标"算（`bind_part` 把零件相对根节点的变换写进 instance uniform），金属靠天空反射。`Data.GUN_SKINS` 每项加了 pat / c2 / c3 / body_metal / body_rough / coat / glow_k 等字段（说明在 data.gd 里）。
+     每把暗器单独穿：`Profile.skin_of / skin_for / owns_skin / wear_skin`；联机同步 skin_of（hello 第 9 项、prog 第 6 项、info "skins"）
+   - 自己画：`ui/paint_panel.gd`（`PaintPanel`），画布 512×256 从右侧面投影（`GunSkin.box2to1(WeaponModels.side_box(id))`，左边枪尾右边枪口），
+     存 `user://paint/<存档文件名>_<暗器>.png`，质感 `Profile.paint[暗器].finish`（`Data.PAINT_FINISH`）；队友看到的是原色
+   - 挂件：`Data.CHARMS`，`Profile.charms / charm_of`，`WeaponModels._charm`（节点 Charm，`ViewModel._animate_extras` 像摆一样晃）
+   - 暗器铺：暗器卡片显示开火方式和熟练度；配件页先选暗器、按部位分；外观页 = 选暗器 + 3D 预览（`ui/gun_preview.gd`，`GunPreview`，可拖动转）+ 皮肤卡片（点了先预览）+ 挂件 + 熟练度 + "自己画"
+   - 自动测试：`guns2`（五把新暗器的机制、熟练度、新配件、10 × 28 个暗器皮肤组合、自己画、挂件、外观页和画板）、`gunshots`（截图，要开窗口）
+   - **教训**：PowerShell 拼接文件时读一个超长路径的文件失败（要 `\\?\` 前缀），`$t2` 变成空，结果把 data.gd 写成了 0 字节——
+     从 v11 的补丁包 + 会话记录里的每次修改重放才恢复。**写回文件前先检查新内容的长度**，读写都用短路径（`%TEMP%\rec`）
 ## 还没做 / 可以继续
 
 - Boss 写实模型：免费 CC0 里没有合适的，要用户提供素材；现在靠着色器 + 光环 + 死亡神光
@@ -238,8 +278,8 @@ xvfb-run -a -s "-screen 0 1280x720x24" godot --path . --rendering-driver vulkan 
 # 联机：先起服务器，再开房主和客人（见 README）
 ```
 
-- autotest 阶段：`phys`、`hunt:<栖息地,...>`、`shop`、`recoil`、`sniper`、`ring`、`boss`、`boat`、`tour`、`hudshot`、`uishots`（全部界面截图）、`kings`、`aggro`、`expedition`、`expshot`、`done`；模式 `solo / shots / host / client / zoo / measure / vm`（host / client 加 `--exp=1` 测远征联机）。
-- `expedition` 会改等级和魂环，放在 `--plan` 最后面，别和 `ring` 这种要新存档的阶段连着跑。
+- autotest 阶段：`phys`、`hunt:<栖息地,...>`、`shop`、`recoil`、`sniper`、`ring`、`boss`、`boat`、`tour`、`hudshot`、`uishots`（全部界面截图）、`kings`、`aggro`、`huntrun`、`dungeon`、`dgshot`、`guns2`、`gunshots`、`bot`、`done`；模式 `solo / shots / host / client / zoo / measure / vm`（host / client 加 `--dg=1` 测猎魂和秘境联机）。
+- `huntrun` 会改等级和魂环，放在 `--plan` 最后面，别和 `ring` 这种要新存档的阶段连着跑。
 - 改了中文文字（新字）后要重跑 `tools/subset_fonts.py <原始 otf 目录>`，不然新字会显示成方框。原始字体在 notofonts/noto-cjk 的 raw.githubusercontent.com 上。
 
 ## 素材和工具

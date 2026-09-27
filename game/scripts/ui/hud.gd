@@ -306,7 +306,7 @@ func _build_top_left() -> void:
 
 
 func update_quest() -> void:
-	if not is_node_ready() or world._exp_mode:
+	if not is_node_ready():
 		return
 	var ch: int = world.chapter
 	var qs: Array = Data.CHAPTERS[ch]["quests"]
@@ -364,7 +364,7 @@ func _king_data() -> Array:
 				out.append({"key": str(key), "name": nm, "b": null, "t": float(e["t"]), "age": int(e["age"])})
 	else:
 		for b: Beast in world.beasts.values():
-			if b.alive() and b.temper == "elite" and b.exp_role == "":
+			if b.alive() and b.temper == "elite" and b.hunt_role == "":
 				out.append({"key": str(b.id), "name": b.display_name(), "b": b, "age": b.age})
 	return out
 
@@ -372,6 +372,7 @@ func _king_data() -> Array:
 ## 左上的狩猎目标：一只王一张卡（怪物猎人那样）。活着的：方向箭头、距离、血条、状态；死了的：重生倒计时
 func _update_kings(dt: float) -> void:
 	_kings_t -= dt
+	_kings.visible = not (world.dungeon and world.dungeon.inside)
 	# 只列活着的（打死了在等重生的不占地方）
 	var data := _king_data().filter(func(e): return e["b"] != null)
 	var sig := ""
@@ -650,15 +651,25 @@ func _draw_compass() -> void:
 
 func _compass_marks() -> Array:
 	var out: Array = []
+	# 在秘境里：岛上的东西都不标，只标队友
+	if world.dungeon and world.dungeon.inside:
+		for id in world.remotes:
+			if world.remotes[id].global_position.distance_to(world.player.global_position) < 120.0:
+				out.append([world.remotes[id].global_position, "·", Color(0.45, 0.8, 1.0)])
+		return out
 	out.append([world.builder.shop_door, "铺", UiKit.GOLD])
 	out.append([world.island.altar_pos, "坛", Color(1.0, 0.45, 0.4)])
 	if int(Data.CHAPTERS[world.chapter].get("next", 0)) > 0:
 		out.append([world.builder.boat_pos, "船", UiKit.JADE])
 	for b: Beast in world.beasts.values():
-		if b.alive() and b.temper == "elite" and b.exp_role == "":
+		if b.alive() and b.temper == "elite" and b.hunt_role == "":
 			out.append([b.global_position, "王", Color(1.0, 0.6, 0.25)])
-	if world.expedition:
-		out.append_array(world.expedition.compass_marks())
+	if world.hunt:
+		out.append_array(world.hunt.compass_marks())
+	if world.dungeon:
+		out.append_array(world.dungeon.compass_marks())
+	if world.builder.board_pos != Vector3.ZERO and not (world.dungeon and world.dungeon.inside):
+		out.append([world.builder.board_pos, "榜", Color(1.0, 0.78, 0.5)])
 	if world.boss and not world.boss.dead:
 		out.append([world.boss.center(), "主", Color(1.0, 0.3, 0.35)])
 	for id in world.remotes:
@@ -1163,7 +1174,13 @@ func _update_hotbar(p: Player) -> void:
 				if p.primaries().size() > 1:
 					nm += "…"
 			1:
-				nm = "袖箭" if Profile.has_weapon("xiujian") else "空手"
+				# 副手：拿着的那把；没拿着就显示上次用的（按 2 在袖箭和梅花袖箭之间换）
+				var ss: Array = p.sidearms()
+				if ss.is_empty():
+					nm = "空手"
+				else:
+					var sid := p.gun.id if (p.slot == 1 and p.gun.id in ss) else (p._side_pick if p._side_pick in ss else str(ss[0]))
+					nm = str(Data.WEAPONS[sid]["name"]) + ("…" if ss.size() > 1 else "")
 			2:
 				nm = "唐莲 %d" % Profile.item_count("grenade") if Profile.item_count("grenade") > 0 else ""
 			3:
@@ -1309,11 +1326,7 @@ func kill_popup(money: int, xp: int, tags: Array, _species: String, _age: int) -
 	var xl := UiKit.bold("+%d 修为" % xp, 16, Color(0.85, 0.9, 1.0), 3)
 	xl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	row.add_child(xl)
-	if world.expedition:
-		# 远征：金魂币先进背包
-		var bl := UiKit.bold("进背包", 14, UiKit.GOLD, 3)
-		bl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		row.add_child(bl)
+
 	# 字少一点：魂兽名字、爆头 / 空中击杀这些标签都不写了，只有连杀才提一句
 	for t in tags:
 		var ts := str(t)
@@ -1797,7 +1810,8 @@ func _build_pause() -> void:
 		["T", "丢出手上的东西"], ["H", "回血丹"],
 		["X", "收起暗器（跑得快）"], ["V", "检视暗器"],
 		["K", "武魂和魂骨"], ["J", "成就"],
-		["M", "地图"], ["Tab", "魂师榜（悬赏）"],
+		["M", "地图"], ["Tab", "魂师榜"],
+		["L", "猎魂榜（挑魂兽去猎）"],
 	]
 	if Combo.TRUE_BODY:
 		keys.append(["Z", "武魂真身（连击充满）"])
@@ -1963,6 +1977,9 @@ func close_panels() -> void:
 	if _boat_picker and is_instance_valid(_boat_picker):
 		_close_boat_picker()
 		return
+	if _board and is_instance_valid(_board):
+		_close_board()
+		return
 	_shop.visible = false
 	_wuhun.visible = false
 	world.set_ui_open(false)
@@ -2059,11 +2076,10 @@ func open_boat_picker(dests: Array) -> void:
 	row.add_theme_constant_override("v_separation", 14)
 	v.add_child(row)
 	for ch in dests:
-		var is_exp := int(ch) >= Data.EXP_CODE
-		var d: Dictionary = Data.CHAPTERS[int(ch) % Data.EXP_CODE]
+		var d: Dictionary = Data.CHAPTERS[int(ch)]
 		var lv: Array = d.get("levels", [1, 20])
 		var fwd: bool = int(ch) > int(world.chapter)
-		var accent := Color(1.0, 0.45, 0.3) if is_exp else (UiKit.GOLD if fwd else UiKit.JADE)
+		var accent := UiKit.GOLD if fwd else UiKit.JADE
 		var card := UiKit.card_button(accent)
 		card.custom_minimum_size = Vector2(320, 150)
 		row.add_child(card)
@@ -2072,14 +2088,117 @@ func open_boat_picker(dests: Array) -> void:
 		cv.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		card.add_child(cv)
 		UiKit.place(cv, Vector4(0, 0, 1, 1), Vector4(22, 20, -22, -18))
-		cv.add_child(UiKit.kicker("猎魂远征 · 试玩" if is_exp else ("下一站" if fwd else "回去"), accent, 13))
+		cv.add_child(UiKit.kicker("下一站" if fwd else "回去", accent, 13))
 		cv.add_child(UiKit.title(str(d["name"]), 28, Color.WHITE))
-		cv.add_child(UiKit.label("难度跟着队伍等级走" if is_exp else "推荐 %d ~ %d 级" % [int(lv[0]), int(lv[1])], 15, UiKit.MIST))
+		cv.add_child(UiKit.label("推荐 %d ~ %d 级" % [int(lv[0]), int(lv[1])], 15, UiKit.MIST))
 		var c2 := int(ch)
 		card.pressed.connect(func():
 			world.board(c2)
 			_close_boat_picker())
 	world.set_ui_open(true)
+
+
+## 猎魂榜（L）：这座岛能猎的魂兽，每只写明它的魂环给你哪个魂技；每只有两个年份可选（年份高的更难打、魂技更强）
+var _board: Control
+
+
+func toggle_board() -> void:
+	if _board and is_instance_valid(_board):
+		_close_board()
+	elif not world.ui_open:
+		open_board()
+
+
+func open_board() -> void:
+	if _board and is_instance_valid(_board):
+		_board.queue_free()
+	var fs := _fullscreen(1260, 0)
+	_board = fs[0]
+	var v: VBoxContainer = fs[1]
+	_panel_head(v, "猎魂榜", "挑一只魂兽去猎", "L / Esc", _close_board)
+	var nr := Profile.rings.size()
+	var tip := ""
+	if nr >= Data.MAX_RINGS:
+		tip = "十个魂环都齐了：猎到的魂环会炼成修为"
+	elif Profile.at_bottleneck():
+		tip = "你卡在 %d 级瓶颈：要吸收第%s魂环（至少%s）。卡片上写的就是你会领悟的魂技——想要哪个就猎哪只" % [Profile.level, Data.RING_NAMES[nr], Data.age_name(int(Data.RING_MIN_AGE[nr]))]
+	else:
+		tip = "第%s魂环要到 %d 级才能吸收（去秘境刷修为）。现在猎到的魂环会炼成修为；卡片上是到时候你会领悟的魂技" % [Data.RING_NAMES[nr], (nr + 1) * 10]
+	var tl := UiKit.label(tip, 17, Color(0.9, 0.92, 0.96))
+	tl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	tl.custom_minimum_size.x = 1200
+	v.add_child(tl)
+	var hunt: Hunt = world.hunt
+	var cur: Beast = world.beasts.get(hunt.target_id) if hunt.target_id != 0 else null
+	if cur and cur.alive():
+		v.add_child(UiKit.label("现在的猎物：%s（再挑一只就换掉它）" % cur.display_name(), 16, Color(1.0, 0.75, 0.45)))
+	var grid := HFlowContainer.new()
+	grid.add_theme_constant_override("h_separation", 14)
+	grid.add_theme_constant_override("v_separation", 14)
+	v.add_child(grid)
+	var base := hunt.base_age()
+	for sp in hunt.species_list():
+		var bd: Dictionary = Data.BEASTS[sp]
+		var card := PanelContainer.new()
+		card.add_theme_stylebox_override("panel", UiKit.card_style(Color(1.0, 0.62, 0.3, 0.5), Color(0.05, 0.06, 0.085, 0.9)))
+		card.custom_minimum_size = Vector2(396, 0)
+		grid.add_child(card)
+		var cv := VBoxContainer.new()
+		cv.add_theme_constant_override("separation", 8)
+		card.add_child(cv)
+		var head := HBoxContainer.new()
+		head.add_theme_constant_override("separation", 10)
+		cv.add_child(head)
+		var nm := UiKit.title(str(bd["name"]), 28, Color.WHITE)
+		head.add_child(nm)
+		var hab := UiKit.chip(str(Data.HABITATS.get(str(bd["habitat"]), {"name": ""})["name"]), UiKit.MIST, 12)
+		hab.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		head.add_child(hab)
+		var ages: Array = [base]
+		if base < 3:
+			ages.append(base + 1)
+		for age in ages:
+			var sid := hunt.skill_preview(str(sp), int(age))
+			var s: Dictionary = Data.SKILLS.get(sid, {})
+			var col: Color = Data.AGES[int(age)]["glow"]
+			var box := PanelContainer.new()
+			box.add_theme_stylebox_override("panel", UiKit.glass_style(0.35, 10, 8))
+			cv.add_child(box)
+			var bv := VBoxContainer.new()
+			bv.add_theme_constant_override("separation", 4)
+			box.add_child(bv)
+			var r1 := HBoxContainer.new()
+			r1.add_theme_constant_override("separation", 8)
+			bv.add_child(r1)
+			var ic := UiKit.icon(UiKit.skill_icon(sid), 26, col)
+			ic.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+			r1.add_child(ic)
+			r1.add_child(UiKit.chip(Data.age_name(int(age)), col, 13, int(age) != 3))
+			var sn := UiKit.bold(str(s.get("name", "")), 19, UiKit.GOLD, 0)
+			sn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			r1.add_child(sn)
+			if int(age) > base:
+				r1.add_child(UiKit.chip("更难 · 更强", Color(1.0, 0.5, 0.4), 12))
+			var d := UiKit.label(str(s.get("desc", "")), 14, Color(0.82, 0.85, 0.9))
+			d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			d.custom_minimum_size.x = 350
+			bv.add_child(d)
+			var go := UiKit.button("去猎%s%s王" % [Data.age_name(int(age)), bd["name"]], 16, int(age) == base)
+			var sp2 := str(sp)
+			var a2 := int(age)
+			go.pressed.connect(func():
+				hunt.request(sp2, a2)
+				_close_board())
+			bv.add_child(go)
+	world.set_ui_open(true)
+	Sfx.play("ui_click", -4.0)
+
+
+func _close_board() -> void:
+	if _board and is_instance_valid(_board):
+		_board.queue_free()
+	_board = null
+	world.set_ui_open(false)
 
 
 func _close_boat_picker() -> void:
@@ -2209,7 +2328,7 @@ func _process(dt: float) -> void:
 		_scope.kind = "scope" if bool(p.gun.d.get("variable", false)) else "x2"
 		_scope.zoom = Settings.scope_zoom if bool(p.gun.d.get("variable", false)) else float(p.gun.d.get("zoom", 2.0))
 		_scope.fade = clampf((p.ads - 0.6) / 0.15, 0.0, 1.0)
-	crosshair.visible = not p.scoped and (p.ads < 0.7 or p.gun.d["mode"] == "melee")
+	crosshair.visible = (not p.scoped and (p.ads < 0.7 or p.gun.d["mode"] == "melee")) or p.gun.charge > 0.0
 
 	var it: Dictionary = world.nearest_interactable() if not p.dead else {}
 	_set_interact(str(it.get("text", "")))
@@ -2219,7 +2338,11 @@ func _process(dt: float) -> void:
 	if Input.is_action_just_pressed("map") and not world.paused and not world.ui_open:
 		_bigmap.visible = not _bigmap.visible
 		Sfx.play("ui_click", -6.0)
-	_minimap.visible = not _bigmap.visible
+	# 秘境场地在地图外面：小地图、大地图都不显示
+	var in_dg: bool = world.dungeon != null and world.dungeon.inside
+	if in_dg:
+		_bigmap.visible = false
+	_minimap.visible = not _bigmap.visible and not in_dg
 	var show_scores: bool = Input.is_action_pressed("scoreboard") and not world.paused
 	if show_scores != _scores.visible:
 		_scores.visible = show_scores
@@ -2243,12 +2366,16 @@ func _draw_hurt() -> void:
 
 
 func _quest_target() -> Variant:
-	var q: Dictionary = {} if world._exp_mode else Data.quest(world.chapter, world.quest_idx)
-	if world.expedition:
-		var em: Variant = world.expedition.marker()
-		if em != null:
-			return em
-	match str(q.get("target", "")):
+	var q: Dictionary = Data.quest(world.chapter, world.quest_idx)
+	if world.hunt:
+		var hm: Variant = world.hunt.marker()
+		if hm != null:
+			return hm
+	var inside: bool = world.dungeon != null and world.dungeon.inside
+	match "" if inside else str(q.get("target", "")):
+		"dungeon":
+			if not world.dungeon.portals.is_empty():
+				return (world.dungeon.portals[0]["pos"] as Vector3) + Vector3(0, 3.0, 0)
 		"shop":
 			return world.builder.shop_door
 		"altar":

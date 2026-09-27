@@ -566,9 +566,10 @@ func death_burst(pos: Vector3, color: Color, age: int) -> void:
 
 
 ## 伤害数字：从命中点往上飘，出来时弹一下
-func damage_number(pos: Vector3, amount: float, headshot: bool, kill := false) -> void:
-	# 用户嫌满屏都是字：普通命中不飘数字，只有爆头（黄）和击杀（红）
-	if not headshot and not kill:
+func damage_number(pos: Vector3, amount: float, headshot: bool, kill := false, force := false) -> void:
+	# 用户嫌满屏都是字：普通命中不飘数字，只有爆头（黄）和击杀（红）；
+	# 狙击这种一发一发的、打远处的（force）也飘，不然打中了没感觉
+	if not headshot and not kill and not force:
 		return
 	var l := U.label3d(str(roundi(amount)), 72 if headshot or kill else 56, Color(1, 0.86, 0.3) if headshot else Color(1, 1, 1), 12)
 	l.font = Data.font_num

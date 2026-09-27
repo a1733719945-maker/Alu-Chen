@@ -20,7 +20,11 @@ var reloading := false
 var reload_t := 0.0
 var reload_total := 0.0
 var cycling := 0.0               # 拉栓剩余时间
-var burst_left := 0
+var burst_left := 0              # 三连发还剩几箭没出
+var burst_t := 0.0               # 离下一箭还有多久
+var charge := 0.0                # 蓄力进度 0~1（观音泪）
+var charge_full := false
+var heat := 0.0                  # 转速 0~1（含沙射影：越打越快）
 var _pattern: Array = []
 
 
@@ -37,7 +41,16 @@ func set_stats(stats: Dictionary) -> void:
 
 
 func interval() -> float:
-	return 60.0 / float(d["rpm"])
+	var rpm := float(d["rpm"])
+	if d.has("spinup"):
+		# 刚开火只有一半射速，转起来才到满
+		rpm *= lerpf(0.45, 1.0, heat)
+	return 60.0 / rpm
+
+
+## 蓄力的伤害倍数（1 ~ charge_k）
+func charge_mult() -> float:
+	return lerpf(1.0, float(d.get("charge_k", 1.0)), charge)
 
 
 ## 每帧更新。speed_k 是换弹速度加成（增幅魂技）。返回事件列表（给音效、动画用）
@@ -51,6 +64,8 @@ func update(dt: float, speed_k := 1.0) -> Array:
 			ev.append("cycled")
 	if since_shot > 0.08:
 		bloom = move_toward(bloom, 0.0, float(d["bloom_recover"]) * dt)
+	if since_shot > 0.15:
+		heat = move_toward(heat, 0.0, dt / 0.6)
 	if since_shot > float(d["recover_delay"]):
 		recoil = recoil.move_toward(Vector2.ZERO, float(d["recover_speed"]) * dt)
 		# 回正得差不多了，连射计数也清零
@@ -73,12 +88,15 @@ func update(dt: float, speed_k := 1.0) -> Array:
 
 
 func ready_to_fire() -> bool:
-	return fire_cd <= 0.0 and cycling <= 0.0 and ammo > 0 and (not reloading or (d["per_shell"] and ammo > 0))
+	return fire_cd <= 0.0 and cycling <= 0.0 and burst_left <= 0 and ammo > 0 and (not reloading or (d["per_shell"] and ammo > 0))
 
 
 func start_reload() -> bool:
 	if reloading or ammo >= int(d["mag"]):
 		return false
+	burst_left = 0
+	charge = 0.0
+	charge_full = false
 	reloading = true
 	reload_t = 0.0
 	reload_total = float(d["reload"]) if (ammo > 0 or d["per_shell"]) else float(d["reload_empty"])
@@ -102,6 +120,8 @@ func shoot(ads: float) -> Vector2:
 		cancel_reload()
 	ammo -= 1
 	fire_cd = interval()
+	if d.has("spinup"):
+		heat = minf(heat + fire_cd / float(d["spinup"]), 1.0)
 	since_shot = 0.0
 	var idx := mini(int(spray), _pattern.size() - 1)
 	var step: Vector2 = _pattern[idx]

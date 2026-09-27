@@ -84,7 +84,7 @@ func setup(p_world: Node, id: int, p_info: Dictionary) -> void:
 
 func set_info(p_info: Dictionary) -> void:
 	info = p_info
-	_apply_look(str(info.get("outfit", "default")), str(info.get("skin", "default")))
+	_apply_look(str(info.get("outfit", "default")), str(info.get("skin", "default")), info.get("skins", {}) as Dictionary)
 	label.text = "%s\n%d 级%s" % [str(info.get("name", "魂师")), int(info.get("level", 1)), Data.titles(int(info.get("level", 1)))]
 	for c in ring_root.get_children():
 		c.queue_free()
@@ -96,9 +96,9 @@ func set_info(p_info: Dictionary) -> void:
 		r.name = "R%d" % i
 
 
-## 装扮（长袍颜色、点缀、帽子）和手里暗器的皮肤
-func _apply_look(outfit: String, skin: String) -> void:
-	var key := outfit + "|" + skin
+## 装扮（长袍颜色、点缀、帽子）和手里暗器的皮肤（skins：每把暗器单独穿的皮肤）
+func _apply_look(outfit: String, skin: String, skins := {}) -> void:
+	var key := outfit + "|" + skin + "|" + JSON.stringify(skins)
 	if key == _look:
 		return
 	_look = key
@@ -127,7 +127,7 @@ func _apply_look(outfit: String, skin: String) -> void:
 		(weapons[id2] as Node).queue_free()
 	weapons.clear()
 	for id2 in Data.WEAPON_ORDER:
-		var w := WeaponModels.build_small(id2, skin)
+		var w := WeaponModels.build_small(id2, str(skins.get(id2, skin)))
 		w.position = Vector3(0, -0.52, -0.15)
 		w.visible = false
 		arm_r.add_child(w)

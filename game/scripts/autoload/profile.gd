@@ -5,7 +5,7 @@ extends Node
 signal changed
 
 var path := "user://profile.json"   # 自动测试会换成别的文件，不碰玩家的存档
-const VERSION := 3          # 3：没有清单任务了（旧存档的任务进度清零），100 级，魂技槽，配件
+const VERSION := 4          # 3：没有清单任务了（旧存档的任务进度清零），100 级，魂技槽，配件；4：第十一版每章前面多了"通关秘境、修炼到 N 级"两个任务
 
 var money := 0
 var xp := 0
@@ -20,8 +20,13 @@ var bag := {}                # （旧版素材，已不用）
 var food := 100.0            # 饱食度
 var bait := "grass"          # 当前鱼饵
 var bounties: Array = []     # 悬赏 [{"ch", "species", "age", "affix", "reward"}]
-var skins: Array = ["default"]      # 拥有的暗器皮肤
-var skin := "default"
+var skins: Array = ["default"]      # 拥有的暗器皮肤（买的、Boss、猎魂录；熟练度皮肤和自己画的不在这里）
+var skin := "default"               # 没单独设过的暗器穿这个
+var skin_of := {}                   # 暗器 -> 皮肤（第十二版：每把暗器可以穿不同的皮肤）
+var charms: Array = []              # 买过的挂件
+var charm_of := {}                  # 暗器 -> 挂件
+var mastery := {}                   # 暗器 -> 熟练度经验
+var paint := {}                     # 暗器 -> {"finish": 颜料质感}（图存在 user://paint/）
 var outfits: Array = ["default"]    # 拥有的装扮
 var outfit := "default"
 var codex := {}                     # 猎魂录：魂兽 -> {"k": 杀了几只, "s": 星星（位：1 杀 5 只 / 2 带词缀 / 4 千年或精英）}
@@ -114,19 +119,41 @@ func load_profile() -> void:
 		skin = "default"
 	if not outfit in outfits:
 		outfit = "default"
+	skin_of = d.get("skin_of", {})
+	charms = (d.get("charms", []) as Array).filter(func(s): return Data.CHARMS.has(str(s)))
+	charm_of = d.get("charm_of", {})
+	mastery = d.get("mastery", {})
+	paint = d.get("paint", {})
 	chapter = int(d.get("chapter", 1))
 	max_chapter = maxi(int(d.get("max_chapter", chapter)), chapter)
 	quest = int(d.get("quest", 0))
 	quest_count = int(d.get("quest_count", 0))
-	if int(d.get("version", 1)) < 3:
+	var ver := int(d.get("version", 1))
+	if ver < 3:
 		# 旧存档：任务表换了，任务进度从头算（修炼到 X 级的任务，等级够了会马上完成）
 		quest = 0
 		quest_count = 0
 		for i in rings.size():
 			if i < 3 and int(skill_slots[i]) < 0:
 				skill_slots[i] = i
+	elif ver == 3:
+		# 第十一版：每章的任务从 [猎王, 祭坛, Boss, 坐船] 变成 [秘境, 修炼到 N 级, 祭坛, Boss, 坐船]，
+		# 已经过了第一个任务的往后挪一格（不然会卡在"击败 Boss"而祭坛又召唤不了）
+		if quest >= 1:
+			quest += 1
+		else:
+			quest_count = 0
 	kills = int(d.get("kills", 0))
 	loadout = d.get("loadout", weapons.duplicate())
+	if ver <= 3:
+		# 第十一版以前倒下会把手里的暗器丢掉（谁捡到归谁），玩家的存档因此暗器全没了、只能空手打。
+		# 买过、升级过的暗器都还回来
+		for w in upgrades:
+			if Data.WEAPONS.has(str(w)) and str(w) != "fist" and not str(w) in weapons:
+				weapons.append(str(w))
+				loadout.append(str(w))
+	if weapons.is_empty():
+		weapons = ["xiujian"]
 	# 旧存档里可能有已经删掉的暗器
 	weapons = weapons.filter(func(w): return Data.WEAPONS.has(w) and w != "fist")
 	_fix_loadout()
@@ -141,6 +168,7 @@ func save_profile() -> void:
 	var d := {
 		"version": VERSION, "money": money, "xp": xp, "level": level, "weapons": weapons,
 		"upgrades": upgrades, "items": items, "rings": rings, "bones": bones, "equipped": equipped, "bag": bag, "food": food, "bait": bait, "bounties": bounties, "skins": skins, "skin": skin, "outfits": outfits, "outfit": outfit, "codex": codex,
+		"skin_of": skin_of, "charms": charms, "charm_of": charm_of, "mastery": mastery, "paint": paint,
 		"skill_slots": skill_slots, "attach_owned": attach_owned, "attach_on": attach_on, "stats": stats, "achieved": achieved, "god": god, "max_chapter": max_chapter, "rebirth": rebirth, "boss_tier": boss_tier, "materials": materials, "enchant": enchant,
 		"chapter": chapter, "quest": quest, "quest_count": quest_count, "kills": kills, "loadout": loadout,
 	}
@@ -205,7 +233,8 @@ func do_rebirth() -> bool:
 	if not god:
 		return false
 	var keep := {"skins": skins, "skin": skin, "outfits": outfits, "outfit": outfit, "achieved": achieved, "stats": stats,
-		"codex": codex, "attach_owned": attach_owned, "money": money / 10, "rebirth": rebirth + 1}
+		"codex": codex, "attach_owned": attach_owned, "money": money / 10, "rebirth": rebirth + 1,
+		"skin_of": skin_of, "charms": charms, "charm_of": charm_of, "mastery": mastery, "paint": paint}
 	_defaults()
 	for k in keep:
 		set(k, keep[k])
@@ -232,6 +261,11 @@ func _defaults() -> void:
 	skin = "default"
 	outfits = ["default"]
 	outfit = "default"
+	skin_of = {}
+	charms = []
+	charm_of = {}
+	mastery = {}
+	paint = {}
 	codex = {}
 	skill_slots = [-1, -1, -1]
 	attach_owned = {}
@@ -438,7 +472,93 @@ func weapon_stats(id: String) -> Dictionary:
 	d["reload"] = d["reload"] * rk
 	d["reload_empty"] = d["reload_empty"] * rk
 	d["recoil_mult"] = float(d.get("recoil_mult", 1.0)) * clampf(1.0 - bone_bonus("recoil"), 0.4, 1.0)
+	# 熟练度：一点点手感（换弹、开镜、伤害、后坐）
+	var ml := mastery_level(id)
+	if ml > 0:
+		var mr := 1.0 - Data.mastery_bonus(ml, "reload")
+		d["reload"] = d["reload"] * mr
+		d["reload_empty"] = d["reload_empty"] * mr
+		d["ads_time"] = float(d["ads_time"]) * (1.0 - Data.mastery_bonus(ml, "ads"))
+		var mk := 1.0 + Data.mastery_bonus(ml, "dmg")
+		d["damage"] = d["damage"] * mk
+		if d.has("splash_dmg"):
+			d["splash_dmg"] = float(d["splash_dmg"]) * mk
+		d["recoil_mult"] = float(d["recoil_mult"]) * (1.0 - Data.mastery_bonus(ml, "recoil"))
 	return d
+
+
+# ------------------------------------------------------------------ 熟练度
+
+func mastery_xp(w: String) -> int:
+	return int(mastery.get(w, 0))
+
+
+func mastery_level(w: String) -> int:
+	return Data.mastery_level(mastery_xp(w))
+
+
+## 加熟练度，返回升到的新等级（没升级返回 -1）
+func add_mastery(w: String, n: int) -> int:
+	if not Data.WEAPONS.has(w) or w == "fist" or n <= 0:
+		return -1
+	var before := mastery_level(w)
+	mastery[w] = mastery_xp(w) + n
+	mark_dirty()
+	var after := mastery_level(w)
+	return after if after > before else -1
+
+
+# ------------------------------------------------------------------ 每把暗器的皮肤、挂件
+
+## 这把暗器现在穿的皮肤
+func skin_for(w: String) -> String:
+	var s := str(skin_of.get(w, skin))
+	return s if owns_skin(w, s) else ("default" if not owns_skin(w, skin) else skin)
+
+
+## 这把暗器能不能穿这款皮肤：买的 / Boss / 猎魂录是所有暗器通用；熟练度皮肤看这把的熟练度；自己画的要先画
+func owns_skin(w: String, id: String) -> bool:
+	var d: Dictionary = Data.GUN_SKINS.get(id, {})
+	if d.is_empty():
+		return false
+	if d.has("mastery"):
+		return mastery_level(w) >= int(d["mastery"])
+	if bool(d.get("paint", false)):
+		return GunSkin.has_paint(w)
+	return id in skins
+
+
+## 给一把暗器穿皮肤；w 空 = 所有暗器（能穿的都换上，其余不动）
+func wear_skin(w: String, id: String) -> void:
+	if w == "":
+		if id in skins:
+			skin = id
+			skin_of.clear()
+	elif owns_skin(w, id):
+		skin_of[w] = id
+	mark_dirty()
+
+
+func charm_for(w: String) -> String:
+	var c := str(charm_of.get(w, ""))
+	return c if c in charms else ""
+
+
+func buy_charm(id: String) -> bool:
+	if id in charms or not Data.CHARMS.has(id) or not spend(int(Data.CHARMS[id]["price"])):
+		return false
+	charms.append(id)
+	mark_dirty()
+	return true
+
+
+## 挂上 / 摘下（同一个再点一次就摘下）
+func set_charm(w: String, id: String) -> void:
+	if charm_for(w) == id or id == "":
+		charm_of.erase(w)
+	elif id in charms:
+		charm_of[w] = id
+	mark_dirty()
 
 
 # ------------------------------------------------------------------ 道具
@@ -564,7 +684,20 @@ func codex_kill(sp: String, age: int, has_affix: bool, elite: bool) -> int:
 
 
 func max_hp() -> float:
-	return (100.0 + (level - 1) * 5.0 + bone_bonus("hp") * (1.0 + level * 0.02) + codex_stars() * 3.0) * rebirth_power()
+	return (100.0 + (level - 1) * 7.0 + bone_bonus("hp") * (1.0 + level * 0.02) + codex_stars() * 3.0) * rebirth_power()
+
+
+## 自己最强的一把暗器的输出（x = 一发，y = 每秒），魂兽血量下限按它算（Data.hp_floor）
+func output() -> Vector2:
+	var best := Vector2.ZERO
+	for id in weapons:
+		if not Data.WEAPONS.has(str(id)):
+			continue
+		var d := weapon_stats(str(id))
+		var o := Data.weapon_output(d) * Data.level_damage(level) * rebirth_power()
+		if o.y > best.y:
+			best = o
+	return best
 
 
 func max_soul() -> float:

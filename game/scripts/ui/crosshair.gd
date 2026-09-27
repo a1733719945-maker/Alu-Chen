@@ -37,6 +37,17 @@ func _draw() -> void:
 	var len := 9.0
 	var ads := player.ads
 	var line_a := 1.0 - ads * 0.85
+	# 观音泪蓄力：一圈从上面顺时针走满，满了变金色、一闪一闪
+	var gch := player.gun.charge
+	if gch > 0.0:
+		var full := gch >= 0.98
+		var tc: Color = player.gun.d["tracer"]
+		var pulse := 0.75 + 0.25 * sin(Time.get_ticks_msec() / 60.0)
+		var cc := Color(1.0, 0.85, 0.4, pulse) if full else Color(tc.r, tc.g, tc.b, 0.9)
+		draw_arc(c, 28.0, 0.0, TAU, 64, Color(0, 0, 0, 0.35), 5.0, true)
+		draw_arc(c, 28.0, -PI / 2, -PI / 2 + TAU * gch, 64, cc, 3.5 if not full else 4.5, true)
+	if player.scoped:
+		return
 	if player.lure.state == Lure.S.CHARGING:
 		# 蓄力圈
 		var k := clampf(player.lure.charge / float(Data.LURE["charge_time"]), 0.0, 1.0)

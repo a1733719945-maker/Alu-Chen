@@ -189,7 +189,7 @@ const ELITE_RESPAWN := 360.0
 const ELITE_MAX := 3
 const KING_BIND_TIME := 5.0      # 捆魂：按住几秒
 const KING_BIND_CD := 18.0
-const KING_XP_LEVELS := 2.5      # 打死一只魂兽王，全队每人多拿大约这一章 2.5 级的修为（主线靠猎王，不靠刷小怪）
+const KING_XP_LEVELS := 1.5      # 打死一只魂兽王，全队每人多拿大约这一章 2.5 级的修为（主线靠猎王，不靠刷小怪）
 
 # ================================================================ 魂导附魔：用魂兽王掉的"王魂"给暗器附魔，命中有几率触发
 # mats：哪些魂兽王的王魂能用（任意组合凑够 n 个）；kind 是命中效果（SkillSystem.host_empower）
@@ -287,11 +287,18 @@ func item_color(kind: String, key: String) -> Color:
 #   hip / ads    腰射 / 开镜 的基础散布（度）
 #   move         全速移动时额外增加的散布；air 跳在空中；crouch 蹲下乘的系数
 #   bloom        每发增加的散布，停火后按 bloom_recover 每秒恢复；刚开第一枪最准
-const WEAPON_ORDER := ["xiujian", "zhuge", "kongque", "baoyu", "zhuihun"]
+# 第十二版多了五把，每把一种新机制：梅花袖箭（三连发）、龙须针（精确射手）、子母追魂夺命胆（爆炸 + 子弹再炸）、
+# 含沙射影（越打越快的机枪）、观音泪（按住蓄力，满了一箭穿透所有）
+const WEAPON_ORDER := ["xiujian", "meihua", "baoyu", "zhuge", "longxu", "kongque", "zimu", "hansha", "zhuihun", "guanyin"]
+# 副手（2 号键，一直在身上的那种小暗器）；其余的是主暗器（1 号键，按一次换下一把）
+const SIDEARMS := ["xiujian", "meihua"]
 # 拿着暗器跑的速度（越重越慢）；空手最快
-const MOVE_K := {"xiujian": 0.96, "zhuge": 0.92, "kongque": 0.88, "baoyu": 0.9, "zhuihun": 0.84, "fist": 1.15}
-# 暗器跟着章节开放：第一章只有袖箭和梨花针，第二章诸葛神弩，第三章孔雀翎，第四章追魂穿心弩
-const WEAPON_UNLOCK := {"xiujian": 1, "baoyu": 1, "zhuge": 2, "kongque": 3, "zhuihun": 4}
+const MOVE_K := {"xiujian": 0.96, "meihua": 0.96, "zhuge": 0.92, "longxu": 0.88, "kongque": 0.88, "baoyu": 0.9, "zimu": 0.88,
+	"hansha": 0.8, "zhuihun": 0.84, "guanyin": 0.9, "fist": 1.15}
+# 暗器跟着章节开放
+const WEAPON_UNLOCK := {"xiujian": 1, "baoyu": 1, "meihua": 1, "zhuge": 2, "longxu": 2, "kongque": 3, "zimu": 3, "zhuihun": 4, "hansha": 4, "guanyin": 5}
+# 开火方式的中文（暗器铺卡片上）
+const MODE_NAME := {"semi": "单发", "auto": "连发", "bolt": "拉栓", "burst": "三连发", "charge": "蓄力"}
 
 const WEAPONS := {
 	"xiujian": {
@@ -359,6 +366,78 @@ const WEAPONS := {
 		"impulse": 7.0, "lift": 0.45, "shake": 0.7,
 		"tracer": Color(1.0, 0.95, 0.7), "sound": "zhuihun_fire", "bolt": true,
 	},
+	# ---- 第十二版新增 ----
+	# 三连发：扣一下出三箭（burst），三箭之间 burst_gap 秒；射速 rpm 是两次扣扳机之间
+	"meihua": {
+		"name": "梅花袖箭", "cat": "手枪", "desc": "扣一下连出三箭，像梅花一样落在一处。三箭都爆头最痛。",
+		"price": 1500, "mode": "burst", "burst": 3, "burst_gap": 0.055, "rpm": 150, "damage": 30.0, "headshot": 2.0, "pellets": 1,
+		"mag": 21, "reload": 1.25, "reload_empty": 1.6, "per_shell": false,
+		"range": 150.0, "falloff": Vector3(35, 100, 0.6),
+		"hip": 1.3, "ads": 0.25, "move": 1.1, "air": 3.5, "crouch": 0.8,
+		"bloom": 0.3, "bloom_max": 3.0, "bloom_recover": 7.0,
+		"pattern": [Vector2(0, 1.0), Vector2(0.2, 1.2), Vector2(-0.2, 1.4)], "jitter": 0.3, "ads_recoil": 0.8,
+		"view_punch": 1.3, "recover_delay": 0.14, "recover_speed": 12.0,
+		"ads_fov": 0.86, "ads_time": 0.12, "ads_move": 0.8,
+		"impulse": 1.5, "lift": 0.5, "shake": 0.1,
+		"tracer": Color(1.0, 0.55, 0.72), "sound": "xiujian_fire", "pitch": 1.18, "bolt": true,
+	},
+	# 精确射手：一发一发，开镜几乎没有散布，爆头倍数高，能穿两只
+	"longxu": {
+		"name": "龙须针", "cat": "射手", "desc": "细如龙须，远处一针入脑。开镜极准，爆头 ×2.6，能穿透两只。",
+		"price": 6000, "mode": "semi", "rpm": 240, "damage": 88.0, "headshot": 2.6, "pellets": 1,
+		"mag": 10, "reload": 2.0, "reload_empty": 2.5, "per_shell": false, "pierce": 2,
+		"range": 400.0, "falloff": Vector3(80, 300, 0.75),
+		"hip": 3.0, "ads": 0.04, "move": 2.5, "air": 5.0, "crouch": 0.75,
+		"bloom": 0.9, "bloom_max": 4.0, "bloom_recover": 6.0,
+		"pattern": [Vector2(0.1, 3.2)], "jitter": 0.5, "ads_recoil": 0.75,
+		"view_punch": 2.8, "recover_delay": 0.08, "recover_speed": 12.0,
+		"ads_fov": 0.8, "ads_time": 0.2, "ads_move": 0.7,
+		"impulse": 3.0, "lift": 0.5, "shake": 0.25,
+		"tracer": Color(0.7, 0.9, 1.0), "sound": "kongque_fire", "pitch": 0.8, "bolt": true,
+	},
+	# 爆炸：打到哪里炸到哪里（splash 米内，中心伤害 splash_dmg，边上三成）；炸完再散出 children 颗子弹，0.3 秒后各炸一次
+	"zimu": {
+		"name": "子母追魂夺命胆", "cat": "爆破", "desc": "母胆炸开，再散出三颗子胆各炸一次。打一群最好，一颗一颗往里装。",
+		"price": 18000, "mode": "semi", "rpm": 70, "damage": 70.0, "headshot": 1.5, "pellets": 1,
+		"splash": 4.5, "splash_dmg": 110.0, "children": 3,
+		"mag": 4, "reload": 0.6, "reload_empty": 0.6, "per_shell": true,
+		"range": 120.0, "falloff": Vector3(40, 120, 0.8),
+		"hip": 2.2, "ads": 0.8, "move": 1.5, "air": 3.0, "crouch": 0.85,
+		"bloom": 0.0, "bloom_max": 0.0, "bloom_recover": 1.0,
+		"pattern": [Vector2(0, 6.0)], "jitter": 0.8, "ads_recoil": 0.9,
+		"view_punch": 4.5, "recover_delay": 0.12, "recover_speed": 10.0,
+		"ads_fov": 0.88, "ads_time": 0.2, "ads_move": 0.75,
+		"impulse": 5.0, "lift": 1.0, "shake": 0.5,
+		"tracer": Color(1.0, 0.55, 0.2), "sound": "baoyu_fire", "pitch": 0.7, "bolt": false,
+	},
+	# 机枪：按住越打越快（spinup 秒从一半射速转到满），弹匣很大，很重
+	"hansha": {
+		"name": "含沙射影", "cat": "机枪", "desc": "机括越转越快，一匣九十发。刚开火慢，按住一秒多才到最快。很重。",
+		"price": 32000, "mode": "auto", "rpm": 840, "spinup": 1.2, "damage": 40.0, "headshot": 1.6, "pellets": 1,
+		"mag": 90, "reload": 3.4, "reload_empty": 3.9, "per_shell": false,
+		"range": 180.0, "falloff": Vector3(35, 120, 0.6),
+		"hip": 2.6, "ads": 0.7, "move": 1.4, "air": 4.0, "crouch": 0.7,
+		"bloom": 0.12, "bloom_max": 2.5, "bloom_recover": 4.0,
+		"pattern": "smg", "recoil_scale": 1.6, "jitter": 0.3, "ads_recoil": 0.7,
+		"view_punch": 0.9, "recover_delay": 0.1, "recover_speed": 18.0,
+		"ads_fov": 0.86, "ads_time": 0.26, "ads_move": 0.6,
+		"impulse": 0.7, "lift": 0.35, "shake": 0.08,
+		"tracer": Color(0.95, 0.85, 0.5), "sound": "zhuge_fire", "pitch": 0.75, "bolt": true,
+	},
+	# 蓄力：按住左键蓄力（charge 秒蓄满），松开发射，伤害 ×(1 ~ charge_k)；蓄满了穿透一路上所有魂兽，散布也跟着收拢
+	"guanyin": {
+		"name": "观音泪", "cat": "蓄力", "desc": "唐门第一暗器。按住蓄力，松开出手；蓄满一滴泪，贯穿一路上所有魂兽。",
+		"price": 120000, "mode": "charge", "charge": 1.0, "charge_k": 5.0, "rpm": 240, "damage": 180.0, "headshot": 2.2, "pellets": 1,
+		"mag": 6, "reload": 2.4, "reload_empty": 2.8, "per_shell": false,
+		"range": 600.0, "falloff": Vector3(600, 600, 1.0),
+		"hip": 2.5, "ads": 0.3, "move": 1.5, "air": 3.0, "crouch": 0.8,
+		"bloom": 0.0, "bloom_max": 0.0, "bloom_recover": 1.0,
+		"pattern": [Vector2(0, 5.0)], "jitter": 0.4, "ads_recoil": 0.8,
+		"view_punch": 4.0, "recover_delay": 0.12, "recover_speed": 10.0,
+		"ads_fov": 0.82, "ads_time": 0.2, "ads_move": 0.7,
+		"impulse": 6.0, "lift": 0.6, "shake": 0.45,
+		"tracer": Color(0.8, 0.95, 1.0), "sound": "zhuihun_fire", "pitch": 1.25, "bolt": true,
+	},
 	# 一把暗器都没有（全卖了 / 丢了）：空手打，伤害跟等级涨
 	"fist": {
 		"name": "空手", "cat": "", "desc": "没暗器的时候用拳头打。",
@@ -408,18 +487,92 @@ const ATTACH := {
 	"red": {"name": "红点瞄具", "slot": "sight", "price": 0.3, "ads_fov": 0.8, "desc": "开镜时一颗红点，比照门清楚"},
 	"holo": {"name": "全息瞄具", "slot": "sight", "price": 0.35, "ads_fov": 0.78, "desc": "圈点准星，近中距离好用"},
 	"x2": {"name": "2 倍镜", "slot": "sight", "price": 0.5, "zoom": 2.2, "desc": "开镜放大 2 倍多（全屏瞄准镜）"},
+	"x4": {"name": "4 倍镜", "slot": "sight", "price": 0.55, "zoom": 4.0, "desc": "开镜放大 4 倍（全屏瞄准镜），中远距离"},
 	"scope": {"name": "狙击镜", "slot": "sight", "price": 0.6, "zoom": 6.0, "variable": true, "desc": "4~12 倍，开镜后滚轮调倍率，调好会记住"},
 	"brake": {"name": "枪口制退器", "slot": "muzzle", "price": 0.3, "recoil_v": 0.72, "desc": "连射上跳 -28%"},
+	"comp": {"name": "补偿器", "slot": "muzzle", "price": 0.3, "recoil_h": 0.6, "recoil_v": 0.9, "desc": "左右抖动 -40%，上跳 -10%"},
+	"silencer": {"name": "消音器", "slot": "muzzle", "price": 0.35, "quiet": true, "recoil_v": 0.9, "desc": "枪声小、没有枪口火光，上跳 -10%"},
 	"grip": {"name": "垂直握把", "slot": "under", "price": 0.3, "recoil_h": 0.55, "spread": 0.85, "desc": "左右抖动 -45%，散布 -15%"},
+	"angled": {"name": "斜握把", "slot": "under", "price": 0.25, "ads_k": 0.8, "recoil_v": 0.92, "desc": "开镜快 20%，上跳 -8%"},
 	"laser": {"name": "激光指示器", "slot": "under", "price": 0.2, "hip": 0.65, "desc": "腰射散布 -35%"},
+	"extmag": {"name": "扩容弹匣", "slot": "mag", "price": 0.35, "mag_k": 1.5, "reload_k": 1.15, "desc": "弹匣 +50%，换弹慢 15%"},
+	"fastmag": {"name": "快拔弹匣", "slot": "mag", "price": 0.3, "reload_k": 0.7, "desc": "换弹快 30%"},
+	"soulmag": {"name": "魂晶弹匣", "slot": "mag", "price": 0.6, "dmg_k": 1.06, "mag_k": 0.8, "desc": "伤害 +6%，弹匣 -20%（箭头泛着魂光）"},
+	"lstock": {"name": "轻型枪托", "slot": "stock", "price": 0.25, "ads_k": 0.75, "move_k": 1.04, "desc": "开镜快 25%，跑得快 4%"},
+	"hstock": {"name": "战术枪托", "slot": "stock", "price": 0.3, "recoil_all": 0.82, "ads_k": 1.1, "desc": "后坐 -18%，开镜慢 10%"},
 }
+const ATTACH_SLOTS := [["sight", "瞄具"], ["muzzle", "枪口"], ["under", "枪管下"], ["mag", "弹匣"], ["stock", "枪托"]]
 const ATTACH_OK := {
-	"xiujian": ["red", "brake", "laser"],
-	"baoyu": ["red", "holo", "grip", "laser"],
-	"zhuge": ["red", "holo", "x2", "brake", "grip", "laser"],
-	"kongque": ["red", "holo", "x2", "scope", "brake", "grip", "laser"],
-	"zhuihun": ["x2", "scope", "brake", "laser"],
+	"xiujian": ["red", "brake", "comp", "silencer", "laser", "extmag", "fastmag", "soulmag"],
+	"meihua": ["red", "holo", "brake", "comp", "silencer", "laser", "extmag", "fastmag", "soulmag"],
+	"baoyu": ["red", "holo", "grip", "angled", "laser", "extmag", "fastmag", "lstock", "hstock"],
+	"zhuge": ["red", "holo", "x2", "brake", "comp", "silencer", "grip", "angled", "laser", "extmag", "fastmag", "soulmag", "lstock", "hstock"],
+	"longxu": ["red", "holo", "x2", "x4", "scope", "brake", "comp", "silencer", "grip", "angled", "laser", "extmag", "fastmag", "soulmag", "lstock", "hstock"],
+	"kongque": ["red", "holo", "x2", "x4", "scope", "brake", "comp", "silencer", "grip", "angled", "laser", "extmag", "fastmag", "soulmag", "lstock", "hstock"],
+	"zimu": ["red", "holo", "x2", "grip", "angled", "laser", "fastmag", "lstock", "hstock"],
+	"hansha": ["red", "holo", "x2", "x4", "brake", "comp", "grip", "angled", "laser", "extmag", "fastmag", "soulmag", "lstock", "hstock"],
+	"zhuihun": ["x2", "x4", "scope", "brake", "silencer", "laser", "extmag", "fastmag", "soulmag", "lstock", "hstock"],
+	"guanyin": ["red", "holo", "x2", "x4", "scope", "laser", "soulmag", "lstock", "hstock"],
 }
+
+# ================================================================ 暗器熟练度：用哪把打死魂兽，哪把涨熟练度（每把暗器自己算）
+# 升级给一点点手感（换弹、开镜、伤害、后坐），3 / 6 / 10 级送这把暗器专属的质感皮肤
+const MASTERY_XP := [0, 60, 160, 320, 540, 820, 1180, 1620, 2160, 2800, 3600]   # 到第 i 级一共要多少
+const MASTERY_MAX := 10
+const MASTERY_PERKS := {
+	2: {"reload": 0.05, "text": "换弹快 5%"},
+	3: {"skin": "steel", "text": "皮肤「精钢」"},
+	4: {"ads": 0.08, "text": "开镜快 8%"},
+	5: {"dmg": 0.03, "text": "伤害 +3%"},
+	6: {"skin": "blackgold", "text": "皮肤「黑金」"},
+	7: {"recoil": 0.08, "text": "后坐 -8%"},
+	8: {"dmg": 0.03, "text": "伤害再 +3%"},
+	9: {"reload": 0.05, "text": "换弹再快 5%"},
+	10: {"skin": "master", "text": "皮肤「唐门大师 · 流光」"},
+}
+
+
+## 打死一只给多少熟练度：年份越高越多，爆头、空中、魂兽王另加
+func mastery_gain(age: int, head: bool, air: bool, elite: bool) -> int:
+	return 10 + 5 * clampi(age, 0, 4) + (5 if head else 0) + (3 if air else 0) + (60 if elite else 0)
+
+
+func mastery_level(xp: int) -> int:
+	var lv := 0
+	for i in MASTERY_XP.size():
+		if xp >= int(MASTERY_XP[i]):
+			lv = i
+	return mini(lv, MASTERY_MAX)
+
+
+## 熟练度到 lv 级一共给了多少某项加成（reload / ads / dmg / recoil）
+func mastery_bonus(lv: int, key: String) -> float:
+	var t := 0.0
+	for k in MASTERY_PERKS:
+		if int(k) <= lv:
+			t += float(MASTERY_PERKS[k].get(key, 0.0))
+	return t
+
+
+# ================================================================ 自己画的皮肤：画上去的颜料是什么质感
+const PAINT_FINISH := {
+	"matte": {"name": "哑光", "metal": 0.0, "rough": 0.85, "coat": 0.0},
+	"gloss": {"name": "亮漆", "metal": 0.0, "rough": 0.35, "coat": 1.0},
+	"metal": {"name": "金属", "metal": 0.9, "rough": 0.25, "coat": 0.0},
+	"chrome": {"name": "镜面", "metal": 1.0, "rough": 0.06, "coat": 0.0},
+}
+const PAINT_FINISH_ORDER := ["matte", "gloss", "metal", "chrome"]
+
+# ================================================================ 挂件：挂在暗器上，走路、开火会晃（纯外观，每把暗器单独挂）
+const CHARMS := {
+	"tassel": {"name": "红流苏", "price": 800, "desc": "一串红穗子，跑起来甩来甩去"},
+	"jade": {"name": "玉佩", "price": 2500, "desc": "一块碧玉平安扣，下面坠着穗子"},
+	"bell": {"name": "金铃", "price": 4000, "desc": "一只小金铃，开火时晃一下"},
+	"rabbit": {"name": "柔骨兔", "price": 6000, "desc": "一只小兔子挂件"},
+	"ring": {"name": "魂环挂坠", "price": 12000, "desc": "一枚小魂环，颜色是你最高的魂环"},
+	"lotus": {"name": "唐莲", "price": 30000, "desc": "一朵发光的小唐莲"},
+}
+const CHARM_ORDER := ["tassel", "jade", "bell", "rabbit", "ring", "lotus"]
 
 
 func attach_price(weapon: String, a: String) -> int:
@@ -523,43 +676,104 @@ const TIDE_GAP := [380.0, 520.0]
 const TIDE_TIME := 75.0
 
 # ================================================================ 外观：暗器皮肤、装扮（暗器铺"外观"页买；打败每章 Boss 送一款）
-# pal：换掉暗器模型的哪些材质颜色；glow：发光部件的颜色；metal：金属感
+# 第十二版：皮肤不再只是换颜色（用户："要质感，例如金属反光那种"）。每款皮肤是一种材质（GunSkin 着色器）：
+#   pal       暗器上各部分的底色（wood 木身 / lacquer 漆身 / black 黑件 / bronze 青铜 / gold 金 / iron 铁）
+#   pat       身子（木、漆、黑件）的花纹：wood 木纹 fade 渐变 damascus 大马士革 carbon 碳纤维 marble 玉石纹 flow 流光 lava 熔岩
+#             galaxy 星河 scales 龙鳞 pearl 珠光 circuit 回路 ice 冰晶 smoke 暗影烟 caustic 水波 aurora 极光 brushed 拉丝 web 蛛网；
+#             pat_wood / pat_lacquer / pat_black 单独指定某一部分
+#   c2 / c3   花纹的第二、第三个颜色（c3 一般是发光色）；glow_k 发光强度；speed 动画快慢；scale 花纹大小
+#   body_metal / body_rough / coat   身子的金属度、粗糙度、清漆；trim_pat / trim_metal / trim_rough 包边（青铜金铁）
+#   glow      发光小部件（翎羽、魂晶）的颜色
+# 解锁：price 金魂币买；boss 打败 Boss；codex 集齐猎魂录；mastery 这把暗器熟练度到几级；paint 自己画
 const GUN_SKINS := {
-	"default": {"name": "唐门原色", "price": 0, "desc": "木头、朱漆、青铜，唐门的老样子"},
-	"jade": {"name": "碧玉", "price": 2000, "desc": "整块碧玉雕出来的暗器，温润发亮",
-		"pal": {"wood": Color(0.2, 0.55, 0.42), "lacquer": Color(0.16, 0.5, 0.38), "bronze": Color(0.92, 0.92, 0.86), "gold": Color(0.96, 0.95, 0.88), "iron": Color(0.75, 0.85, 0.8), "black": Color(0.08, 0.18, 0.14)}, "glow": Color(0.4, 1.0, 0.7), "metal": 0.4},
-	"blood": {"name": "血玉", "price": 5000, "desc": "暗红血玉，金色包边，杀气很重",
-		"pal": {"wood": Color(0.32, 0.03, 0.05), "lacquer": Color(0.5, 0.02, 0.05), "bronze": Color(0.18, 0.17, 0.19), "gold": Color(1.0, 0.72, 0.28), "iron": Color(0.14, 0.13, 0.14), "black": Color(0.05, 0.02, 0.02)}, "glow": Color(1.0, 0.15, 0.1), "metal": 0.6},
-	"ice": {"name": "寒冰", "price": 12000, "desc": "极北寒冰打磨，冷光闪闪",
-		"pal": {"wood": Color(0.72, 0.86, 0.96), "lacquer": Color(0.55, 0.76, 0.95), "bronze": Color(0.86, 0.95, 1.0), "gold": Color(0.7, 0.9, 1.0), "iron": Color(0.6, 0.72, 0.84), "black": Color(0.2, 0.3, 0.42)}, "glow": Color(0.4, 0.9, 1.0), "metal": 0.8},
-	"shadow": {"name": "暗影", "price": 30000, "desc": "通体哑光黑，幽紫色的光",
-		"pal": {"wood": Color(0.06, 0.05, 0.07), "lacquer": Color(0.1, 0.06, 0.12), "bronze": Color(0.12, 0.1, 0.14), "gold": Color(0.55, 0.3, 0.9), "iron": Color(0.08, 0.08, 0.1), "black": Color(0.03, 0.03, 0.04)}, "glow": Color(0.7, 0.35, 1.0), "metal": 0.3},
-	"dragon": {"name": "金龙", "price": 90000, "desc": "纯金打造，金光闪闪，土豪专用",
-		"pal": {"wood": Color(0.85, 0.62, 0.2), "lacquer": Color(0.95, 0.72, 0.25), "bronze": Color(1.0, 0.82, 0.35), "gold": Color(1.0, 0.9, 0.5), "iron": Color(0.8, 0.6, 0.25), "black": Color(0.45, 0.3, 0.1)}, "glow": Color(1.0, 0.85, 0.4), "metal": 1.0},
-	"star": {"name": "星河", "price": 160000, "desc": "深蓝夜空里流着星光",
-		"pal": {"wood": Color(0.05, 0.07, 0.2), "lacquer": Color(0.08, 0.1, 0.3), "bronze": Color(0.5, 0.6, 1.0), "gold": Color(0.8, 0.85, 1.0), "iron": Color(0.1, 0.12, 0.25), "black": Color(0.02, 0.03, 0.08)}, "glow": Color(0.5, 0.7, 1.0), "metal": 0.7},
-	"mandala": {"name": "曼陀罗", "price": 0, "boss": "mandala", "desc": "打败湖主 · 千年曼陀罗蛇解锁",
-		"pal": {"wood": Color(0.3, 0.12, 0.35), "lacquer": Color(0.42, 0.1, 0.45), "bronze": Color(0.35, 0.75, 0.35), "gold": Color(0.6, 1.0, 0.4), "iron": Color(0.2, 0.15, 0.22)}, "glow": Color(0.7, 1.0, 0.4), "metal": 0.4},
-	"spider": {"name": "魔蛛", "price": 0, "boss": "spider", "desc": "打败森林之主 · 人面魔蛛解锁",
-		"pal": {"wood": Color(0.08, 0.06, 0.06), "lacquer": Color(0.3, 0.02, 0.04), "bronze": Color(0.6, 0.05, 0.08), "gold": Color(0.9, 0.2, 0.2), "iron": Color(0.12, 0.1, 0.1)}, "glow": Color(1.0, 0.2, 0.25), "metal": 0.5},
-	"titan": {"name": "泰坦", "price": 0, "boss": "titan", "desc": "打败星斗之王 · 泰坦巨猿解锁",
-		"pal": {"wood": Color(0.35, 0.28, 0.22), "lacquer": Color(0.45, 0.36, 0.28), "bronze": Color(0.55, 0.5, 0.45), "gold": Color(1.0, 0.7, 0.3), "iron": Color(0.3, 0.28, 0.26)}, "glow": Color(1.0, 0.6, 0.2), "metal": 0.3},
-	"frostdragon": {"name": "冰霜巨龙", "price": 0, "boss": "icedragon", "desc": "打败极北之主 · 冰霜巨龙解锁",
-		"pal": {"wood": Color(0.9, 0.95, 1.0), "lacquer": Color(0.7, 0.85, 1.0), "bronze": Color(0.4, 0.7, 1.0), "gold": Color(0.6, 0.95, 1.0), "iron": Color(0.8, 0.88, 0.95)}, "glow": Color(0.5, 0.95, 1.0), "metal": 0.9},
-	"lake": {"name": "湖光", "price": 0, "codex": "island", "desc": "集齐湖心岛的猎魂录（每种魂兽三颗星）解锁",
-		"pal": {"wood": Color(0.55, 0.75, 0.85), "lacquer": Color(0.35, 0.6, 0.8), "bronze": Color(0.95, 0.95, 1.0), "gold": Color(0.7, 0.95, 1.0), "iron": Color(0.5, 0.6, 0.7)}, "glow": Color(0.6, 0.9, 1.0), "metal": 0.6},
-	"sunset": {"name": "落日", "price": 0, "codex": "forest", "desc": "集齐落日森林的猎魂录解锁",
-		"pal": {"wood": Color(0.7, 0.35, 0.15), "lacquer": Color(0.85, 0.4, 0.12), "bronze": Color(1.0, 0.75, 0.4), "gold": Color(1.0, 0.8, 0.45), "iron": Color(0.45, 0.25, 0.15)}, "glow": Color(1.0, 0.6, 0.25), "metal": 0.5},
-	"starwood": {"name": "星斗", "price": 0, "codex": "deepforest", "desc": "集齐星斗大森林的猎魂录解锁",
-		"pal": {"wood": Color(0.1, 0.18, 0.2), "lacquer": Color(0.08, 0.3, 0.35), "bronze": Color(0.4, 0.8, 1.0), "gold": Color(0.5, 1.0, 0.95), "iron": Color(0.12, 0.2, 0.25)}, "glow": Color(0.3, 0.9, 1.0), "metal": 0.5},
-	"aurora": {"name": "极光", "price": 0, "codex": "snow", "desc": "集齐极北之地的猎魂录解锁",
-		"pal": {"wood": Color(0.85, 0.9, 1.0), "lacquer": Color(0.5, 0.95, 0.75), "bronze": Color(0.8, 0.6, 1.0), "gold": Color(0.6, 1.0, 0.85), "iron": Color(0.7, 0.75, 0.9)}, "glow": Color(0.5, 1.0, 0.8), "metal": 0.7},
-	"tide": {"name": "海潮", "price": 0, "codex": "sea", "desc": "集齐海神岛的猎魂录解锁",
-		"pal": {"wood": Color(0.05, 0.3, 0.4), "lacquer": Color(0.1, 0.5, 0.6), "bronze": Color(0.9, 0.85, 0.6), "gold": Color(1.0, 0.95, 0.7), "iron": Color(0.1, 0.25, 0.3)}, "glow": Color(0.4, 1.0, 1.0), "metal": 0.6},
-	"abyss": {"name": "深海", "price": 0, "boss": "whale", "desc": "打败海神岛之主 · 深海魔鲸解锁",
-		"pal": {"wood": Color(0.03, 0.12, 0.2), "lacquer": Color(0.04, 0.2, 0.3), "bronze": Color(0.2, 0.6, 0.7), "gold": Color(0.4, 0.95, 0.9), "iron": Color(0.05, 0.15, 0.2)}, "glow": Color(0.3, 1.0, 0.9), "metal": 0.6},
+	"default": {"name": "唐门原色", "price": 0, "desc": "木纹、朱漆、青铜，唐门的老样子",
+		"pat": "plain", "pat_wood": "wood", "coat": 0.6, "body_rough": 0.45, "trim_rough": 0.32},
+	"paint": {"name": "自己画", "price": 0, "paint": true, "desc": "在暗器铺 → 外观 → 自己画，每把暗器画自己的",
+		"pat": "plain", "coat": 0.6, "body_rough": 0.45},
+	"carbon": {"name": "碳纤维", "price": 4000, "desc": "黑色碳纤维编织，清漆面，红色金属包边",
+		"pal": {"wood": Color(0.1, 0.1, 0.11), "lacquer": Color(0.1, 0.1, 0.11), "black": Color(0.07, 0.07, 0.08), "bronze": Color(0.32, 0.33, 0.35), "gold": Color(0.85, 0.1, 0.08), "iron": Color(0.3, 0.31, 0.33)},
+		"pat": "carbon", "c2": Color(0.02, 0.02, 0.025), "glow": Color(1.0, 0.25, 0.2), "trim_rough": 0.22},
+	"jade": {"name": "碧玉", "price": 2000, "desc": "整块碧玉雕出来，玉里有细细的发光玉脉",
+		"pal": {"wood": Color(0.2, 0.55, 0.42), "lacquer": Color(0.16, 0.5, 0.38), "bronze": Color(0.92, 0.92, 0.86), "gold": Color(0.96, 0.95, 0.88), "iron": Color(0.75, 0.85, 0.8), "black": Color(0.08, 0.2, 0.15)},
+		"pat": "marble", "c2": Color(0.5, 0.85, 0.68), "c3": Color(0.5, 1.0, 0.75), "glow_k": 0.5, "body_metal": 0.0, "body_rough": 0.12, "coat": 1.0, "glow": Color(0.4, 1.0, 0.7)},
+	"chrome": {"name": "镜面铬", "price": 8000, "desc": "镜子一样的铬，照得出天空",
+		"pal": {"wood": Color(0.86, 0.87, 0.9), "lacquer": Color(0.86, 0.87, 0.9), "black": Color(0.3, 0.3, 0.32), "bronze": Color(1.0, 0.8, 0.45), "gold": Color(1.0, 0.82, 0.45), "iron": Color(0.8, 0.8, 0.82)},
+		"pat": "plain", "body_metal": 1.0, "body_rough": 0.04, "trim_pat": "plain", "trim_rough": 0.08, "glow": Color(0.6, 0.9, 1.0)},
+	"blood": {"name": "血玉", "price": 5000, "desc": "暗红血玉，玉脉里流着红光，金色包边",
+		"pal": {"wood": Color(0.32, 0.03, 0.05), "lacquer": Color(0.45, 0.02, 0.05), "bronze": Color(0.18, 0.17, 0.19), "gold": Color(1.0, 0.72, 0.28), "iron": Color(0.14, 0.13, 0.14), "black": Color(0.06, 0.02, 0.02)},
+		"pat": "marble", "c2": Color(0.7, 0.08, 0.1), "c3": Color(1.0, 0.18, 0.1), "glow_k": 0.8, "body_rough": 0.14, "coat": 1.0, "trim_rough": 0.15, "glow": Color(1.0, 0.15, 0.1)},
+	"ice": {"name": "寒冰", "price": 12000, "desc": "极北寒冰打磨，边缘透着冷光，冰屑一闪一闪",
+		"pal": {"wood": Color(0.72, 0.86, 0.96), "lacquer": Color(0.55, 0.76, 0.95), "bronze": Color(0.86, 0.95, 1.0), "gold": Color(0.7, 0.9, 1.0), "iron": Color(0.6, 0.72, 0.84), "black": Color(0.25, 0.36, 0.5)},
+		"pat": "ice", "c2": Color(0.9, 0.97, 1.0), "c3": Color(0.5, 0.9, 1.0), "glow_k": 1.0, "body_metal": 0.3, "body_rough": 0.08, "coat": 1.0, "glow": Color(0.4, 0.9, 1.0)},
+	"damascus": {"name": "大马士革", "price": 20000, "desc": "千层折叠钢，一圈圈弯曲的钢纹，金色包边",
+		"pal": {"wood": Color(0.62, 0.63, 0.66), "lacquer": Color(0.62, 0.63, 0.66), "black": Color(0.3, 0.3, 0.32), "bronze": Color(0.95, 0.75, 0.35), "gold": Color(0.95, 0.75, 0.35), "iron": Color(0.4, 0.41, 0.43)},
+		"pat": "damascus", "c2": Color(0.16, 0.17, 0.19), "body_metal": 1.0, "body_rough": 0.2, "trim_rough": 0.18, "glow": Color(1.0, 0.8, 0.4)},
+	"shadow": {"name": "暗影", "price": 30000, "desc": "通体哑光黑，表面飘着一缕缕紫色的烟",
+		"pal": {"wood": Color(0.05, 0.045, 0.06), "lacquer": Color(0.07, 0.05, 0.09), "bronze": Color(0.12, 0.1, 0.14), "gold": Color(0.55, 0.3, 0.9), "iron": Color(0.08, 0.08, 0.1), "black": Color(0.03, 0.03, 0.04)},
+		"pat": "smoke", "c2": Color(0.12, 0.06, 0.16), "c3": Color(0.7, 0.35, 1.0), "glow_k": 1.8, "body_rough": 0.75, "glow": Color(0.7, 0.35, 1.0)},
+	"fade": {"name": "渐变镭射", "price": 40000, "desc": "阳极氧化的金属，从金色渐变到粉紫，糖果一样的光泽",
+		"pal": {"wood": Color(1.0, 0.82, 0.2), "lacquer": Color(1.0, 0.82, 0.2), "black": Color(0.35, 0.2, 0.6), "bronze": Color(0.9, 0.9, 0.92), "gold": Color(0.95, 0.95, 0.97), "iron": Color(0.85, 0.85, 0.88)},
+		"pat": "fade", "c2": Color(1.0, 0.3, 0.55), "c3": Color(0.35, 0.3, 1.0), "body_metal": 0.85, "body_rough": 0.16, "trim_rough": 0.1, "glow": Color(1.0, 0.5, 0.9)},
+	"magma": {"name": "熔岩", "price": 50000, "desc": "黑色岩壳，裂缝里的岩浆一明一暗",
+		"pal": {"wood": Color(0.13, 0.1, 0.09), "lacquer": Color(0.13, 0.1, 0.09), "black": Color(0.08, 0.06, 0.05), "bronze": Color(0.3, 0.2, 0.15), "gold": Color(1.0, 0.45, 0.12), "iron": Color(0.18, 0.15, 0.13)},
+		"pat": "lava", "c2": Color(0.35, 0.1, 0.02), "c3": Color(1.0, 0.38, 0.06), "glow_k": 3.2, "glow": Color(1.0, 0.45, 0.1)},
+	"pearl": {"name": "幻彩珠光", "price": 60000, "desc": "珍珠白底，换个角度看就变一种颜色",
+		"pal": {"wood": Color(0.92, 0.92, 0.96), "lacquer": Color(0.92, 0.92, 0.96), "black": Color(0.5, 0.5, 0.55), "bronze": Color(0.95, 0.95, 0.97), "gold": Color(1.0, 0.9, 0.95), "iron": Color(0.8, 0.8, 0.85)},
+		"pat": "pearl", "body_metal": 0.55, "body_rough": 0.18, "coat": 1.0, "trim_rough": 0.1, "glow": Color(0.8, 0.7, 1.0)},
+	"circuit": {"name": "魂导回路", "price": 80000, "desc": "魂导器一样的黑色机身，发光的回路里扫过一道光",
+		"pal": {"wood": Color(0.08, 0.09, 0.11), "lacquer": Color(0.08, 0.09, 0.11), "black": Color(0.05, 0.05, 0.06), "bronze": Color(0.2, 0.22, 0.25), "gold": Color(0.2, 0.85, 1.0), "iron": Color(0.14, 0.15, 0.17)},
+		"pat": "circuit", "c2": Color(0.15, 0.4, 0.5), "c3": Color(0.2, 0.9, 1.0), "glow_k": 2.5, "body_metal": 0.6, "body_rough": 0.3, "glow": Color(0.2, 0.9, 1.0)},
+	"dragon": {"name": "金龙", "price": 90000, "desc": "纯金龙鳞，一片一片刻出来的",
+		"pal": {"wood": Color(1.0, 0.78, 0.3), "lacquer": Color(1.0, 0.78, 0.3), "bronze": Color(1.0, 0.85, 0.45), "gold": Color(1.0, 0.9, 0.55), "iron": Color(0.8, 0.6, 0.25), "black": Color(0.5, 0.33, 0.1)},
+		"pat": "scales", "c2": Color(0.42, 0.26, 0.07), "body_metal": 1.0, "body_rough": 0.16, "trim_rough": 0.12, "glow": Color(1.0, 0.85, 0.4)},
+	"star": {"name": "星河", "price": 160000, "desc": "深蓝星云在暗器上慢慢流动，星星一闪一闪",
+		"pal": {"wood": Color(0.02, 0.03, 0.1), "lacquer": Color(0.02, 0.03, 0.1), "bronze": Color(0.5, 0.6, 1.0), "gold": Color(0.8, 0.85, 1.0), "iron": Color(0.1, 0.12, 0.25), "black": Color(0.01, 0.015, 0.05)},
+		"pat": "galaxy", "c2": Color(0.35, 0.15, 0.6), "c3": Color(0.85, 0.9, 1.0), "glow_k": 2.0, "body_rough": 0.2, "coat": 1.0, "glow": Color(0.5, 0.7, 1.0)},
+	# 熟练度皮肤（每把暗器自己练到 3 / 6 / 10 级）
+	"steel": {"name": "精钢", "price": 0, "mastery": 3, "desc": "这把暗器熟练度 3 级解锁：拉丝精钢，金色包边",
+		"pal": {"wood": Color(0.6, 0.62, 0.65), "lacquer": Color(0.6, 0.62, 0.65), "black": Color(0.22, 0.22, 0.24), "bronze": Color(0.9, 0.7, 0.35), "gold": Color(0.95, 0.75, 0.35), "iron": Color(0.45, 0.46, 0.48)},
+		"pat": "brushed", "body_metal": 1.0, "body_rough": 0.3, "glow": Color(0.6, 0.9, 1.0)},
+	"blackgold": {"name": "黑金", "price": 0, "mastery": 6, "desc": "这把暗器熟练度 6 级解锁：黑钢折叠纹，抛光金包边",
+		"pal": {"wood": Color(0.12, 0.12, 0.13), "lacquer": Color(0.12, 0.12, 0.13), "black": Color(0.05, 0.05, 0.05), "bronze": Color(1.0, 0.78, 0.3), "gold": Color(1.0, 0.8, 0.35), "iron": Color(0.9, 0.7, 0.3)},
+		"pat": "damascus", "c2": Color(0.03, 0.03, 0.035), "body_metal": 0.9, "body_rough": 0.28, "trim_pat": "plain", "trim_rough": 0.1, "glow": Color(1.0, 0.8, 0.35)},
+	"master": {"name": "唐门大师 · 流光", "price": 0, "mastery": 10, "desc": "这把暗器熟练度 10 级解锁：金身上流着金光",
+		"pal": {"wood": Color(0.95, 0.75, 0.3), "lacquer": Color(0.95, 0.75, 0.3), "black": Color(0.25, 0.18, 0.08), "bronze": Color(1.0, 0.95, 0.85), "gold": Color(1.0, 0.95, 0.85), "iron": Color(0.9, 0.85, 0.75)},
+		"pat": "flow", "c2": Color(1.0, 0.9, 0.5), "c3": Color(1.0, 0.82, 0.4), "glow_k": 2.2, "body_metal": 1.0, "body_rough": 0.15, "trim_rough": 0.08, "glow": Color(1.0, 0.85, 0.4)},
+	# Boss 皮肤
+	"mandala": {"name": "曼陀罗", "price": 0, "boss": "mandala", "desc": "打败湖主 · 千年曼陀罗蛇解锁：紫色蛇身上流着绿光",
+		"pal": {"wood": Color(0.3, 0.12, 0.35), "lacquer": Color(0.42, 0.1, 0.45), "bronze": Color(0.35, 0.75, 0.35), "gold": Color(0.6, 1.0, 0.4), "iron": Color(0.2, 0.15, 0.22)},
+		"pat": "flow", "c2": Color(0.5, 0.2, 0.55), "c3": Color(0.7, 1.0, 0.4), "glow_k": 2.0, "body_metal": 0.3, "body_rough": 0.3, "coat": 0.8, "glow": Color(0.7, 1.0, 0.4)},
+	"spider": {"name": "魔蛛", "price": 0, "boss": "spider", "desc": "打败森林之主 · 人面魔蛛解锁：黑底上发光的红色蛛网",
+		"pal": {"wood": Color(0.06, 0.045, 0.045), "lacquer": Color(0.1, 0.02, 0.03), "bronze": Color(0.6, 0.05, 0.08), "gold": Color(0.9, 0.2, 0.2), "iron": Color(0.12, 0.1, 0.1)},
+		"pat": "web", "c2": Color(0.3, 0.02, 0.04), "c3": Color(1.0, 0.15, 0.2), "glow_k": 2.5, "body_rough": 0.5, "glow": Color(1.0, 0.2, 0.25)},
+	"titan": {"name": "泰坦", "price": 0, "boss": "titan", "desc": "打败星斗之王 · 泰坦巨猿解锁：岩石身躯，裂缝透着火光",
+		"pal": {"wood": Color(0.3, 0.24, 0.2), "lacquer": Color(0.35, 0.27, 0.22), "bronze": Color(0.55, 0.5, 0.45), "gold": Color(1.0, 0.7, 0.3), "iron": Color(0.3, 0.28, 0.26)},
+		"pat": "lava", "c2": Color(0.35, 0.2, 0.1), "c3": Color(1.0, 0.55, 0.15), "glow_k": 2.2, "glow": Color(1.0, 0.6, 0.2)},
+	"frostdragon": {"name": "冰霜巨龙", "price": 0, "boss": "icedragon", "desc": "打败极北之主 · 冰霜巨龙解锁：冰蓝龙鳞",
+		"pal": {"wood": Color(0.82, 0.9, 1.0), "lacquer": Color(0.7, 0.85, 1.0), "bronze": Color(0.4, 0.7, 1.0), "gold": Color(0.6, 0.95, 1.0), "iron": Color(0.8, 0.88, 0.95)},
+		"pat": "scales", "pat_black": "ice", "c2": Color(0.3, 0.5, 0.78), "c3": Color(0.5, 0.95, 1.0), "glow_k": 1.0, "body_metal": 0.85, "body_rough": 0.12, "glow": Color(0.5, 0.95, 1.0)},
+	"abyss": {"name": "深海", "price": 0, "boss": "whale", "desc": "打败海神岛之主 · 深海魔鲸解锁：深海的光纹在暗器上流动",
+		"pal": {"wood": Color(0.03, 0.12, 0.2), "lacquer": Color(0.04, 0.2, 0.3), "bronze": Color(0.2, 0.6, 0.7), "gold": Color(0.4, 0.95, 0.9), "iron": Color(0.05, 0.15, 0.2)},
+		"pat": "caustic", "c2": Color(0.05, 0.25, 0.35), "c3": Color(0.3, 1.0, 0.9), "glow_k": 1.5, "body_rough": 0.25, "coat": 1.0, "glow": Color(0.3, 1.0, 0.9)},
+	# 猎魂录皮肤
+	"lake": {"name": "湖光", "price": 0, "codex": "island", "desc": "集齐湖心岛的猎魂录解锁：湖底的光纹",
+		"pal": {"wood": Color(0.55, 0.75, 0.85), "lacquer": Color(0.35, 0.6, 0.8), "bronze": Color(0.95, 0.95, 1.0), "gold": Color(0.7, 0.95, 1.0), "iron": Color(0.5, 0.6, 0.7)},
+		"pat": "caustic", "c2": Color(0.35, 0.6, 0.8), "c3": Color(0.85, 1.0, 1.0), "glow_k": 0.8, "body_metal": 0.5, "body_rough": 0.2, "glow": Color(0.6, 0.9, 1.0)},
+	"sunset": {"name": "落日", "price": 0, "codex": "forest", "desc": "集齐落日森林的猎魂录解锁：夕阳的渐变金属",
+		"pal": {"wood": Color(0.95, 0.75, 0.3), "lacquer": Color(0.95, 0.75, 0.3), "bronze": Color(1.0, 0.75, 0.4), "gold": Color(1.0, 0.8, 0.45), "iron": Color(0.45, 0.25, 0.15), "black": Color(0.3, 0.1, 0.1)},
+		"pat": "fade", "c2": Color(0.9, 0.35, 0.12), "c3": Color(0.45, 0.1, 0.25), "body_metal": 0.75, "body_rough": 0.22, "glow": Color(1.0, 0.6, 0.25)},
+	"starwood": {"name": "星斗", "price": 0, "codex": "deepforest", "desc": "集齐星斗大森林的猎魂录解锁：青色星云",
+		"pal": {"wood": Color(0.03, 0.1, 0.12), "lacquer": Color(0.03, 0.12, 0.14), "bronze": Color(0.4, 0.8, 1.0), "gold": Color(0.5, 1.0, 0.95), "iron": Color(0.12, 0.2, 0.25)},
+		"pat": "galaxy", "c2": Color(0.05, 0.35, 0.4), "c3": Color(0.5, 1.0, 0.95), "glow_k": 1.6, "body_rough": 0.25, "coat": 1.0, "glow": Color(0.3, 0.9, 1.0)},
+	"aurora": {"name": "极光", "price": 0, "codex": "snow", "desc": "集齐极北之地的猎魂录解锁：一条条飘动的极光",
+		"pal": {"wood": Color(0.06, 0.08, 0.14), "lacquer": Color(0.06, 0.08, 0.14), "bronze": Color(0.8, 0.6, 1.0), "gold": Color(0.6, 1.0, 0.85), "iron": Color(0.7, 0.75, 0.9)},
+		"pat": "aurora", "c2": Color(0.3, 1.0, 0.6), "c3": Color(0.6, 0.4, 1.0), "glow_k": 2.0, "body_rough": 0.3, "coat": 1.0, "glow": Color(0.5, 1.0, 0.8)},
+	"tide": {"name": "海潮", "price": 0, "codex": "sea", "desc": "集齐海神岛的猎魂录解锁：碧海水纹，金色包边",
+		"pal": {"wood": Color(0.05, 0.3, 0.4), "lacquer": Color(0.1, 0.45, 0.55), "bronze": Color(0.9, 0.85, 0.6), "gold": Color(1.0, 0.95, 0.7), "iron": Color(0.1, 0.25, 0.3)},
+		"pat": "caustic", "c2": Color(0.1, 0.5, 0.6), "c3": Color(0.7, 1.0, 1.0), "glow_k": 1.2, "body_rough": 0.2, "coat": 1.0, "glow": Color(0.4, 1.0, 1.0)},
 }
-const GUN_SKIN_ORDER := ["default", "jade", "blood", "ice", "shadow", "dragon", "star", "mandala", "spider", "titan", "frostdragon", "abyss", "lake", "sunset", "starwood", "aurora", "tide"]
+const GUN_SKIN_ORDER := ["default", "paint", "carbon", "jade", "chrome", "blood", "ice", "damascus", "shadow", "fade", "magma", "pearl", "circuit", "dragon", "star",
+	"steel", "blackgold", "master", "mandala", "spider", "titan", "frostdragon", "abyss", "lake", "sunset", "starwood", "aurora", "tide"]
 
 # ================================================================ 猎魂录：每张图的每种魂兽三颗星（在一张图多待的理由）
 # ★ 猎杀 5 只；★★ 猎杀一只带词缀的；★★★ 猎杀一只千年以上的，或者它的精英（王）
@@ -1045,9 +1259,10 @@ const BOSSES := {
 const CHAPTERS := {
 	1: {
 		"name": "第一章 · 湖心岛", "map": "island", "boss": "mandala", "next": 2, "levels": [1, 20], "boss_level": 15,
-		"intro": "圣魂村外的湖心小岛。甩出引魂索把魂兽拽上天，在空中打死它们。猎杀岛上的 3 只魂兽王，就能去北坡祭坛召唤湖主。",
+		"intro": "圣魂村外的湖心小岛。按 L 打开猎魂榜挑一只魂兽去猎，它的魂环决定你学到什么魂技；地图上的「秘」是秘境，进去刷修为和魂骨。",
 		"quests": [
-			{"type": "kings", "n": 3, "text": "猎杀岛上的 3 只魂兽王", "reward": 0},
+			{"type": "dungeon", "n": 1, "text": "通关一次这座岛的秘境（地图上的「秘」，走过去按 F）", "reward": 0, "target": "dungeon"},
+			{"type": "level", "n": 15, "text": "修炼到 15 级（秘境刷修为；卡在瓶颈就按 L 挑魂兽去猎）", "reward": 0},
 			{"type": "altar", "n": 1, "text": "去北边山坡的祭坛（按 F），召唤湖主 · 千年曼陀罗蛇", "reward": 0, "target": "altar"},
 			{"type": "boss", "n": 1, "text": "击败湖主 · 千年曼陀罗蛇", "reward": 0},
 			{"type": "boat", "n": 1, "text": "所有人到码头尽头的船边按 F，一起去落日森林", "reward": 0, "target": "boat"},
@@ -1057,7 +1272,8 @@ const CHAPTERS := {
 		"name": "第二章 · 落日森林", "map": "forest", "boss": "spider", "next": 3, "levels": [20, 40], "boss_level": 35,
 		"intro": "落日森林，傍晚的光从树缝里漏下来。这里的魂兽会反击：魔狼扑人，铁甲犀冲撞，金刚猿扔石头。",
 		"quests": [
-			{"type": "kings", "n": 3, "text": "猎杀岛上的 3 只魂兽王", "reward": 0},
+			{"type": "dungeon", "n": 1, "text": "通关一次这座岛的秘境（地图上的「秘」，走过去按 F）", "reward": 0, "target": "dungeon"},
+			{"type": "level", "n": 35, "text": "修炼到 35 级（秘境刷修为；卡在瓶颈就按 L 挑魂兽去猎）", "reward": 0},
 			{"type": "altar", "n": 1, "text": "去森林中心古树下的祭坛（按 F），召唤森林之主", "reward": 0, "target": "altar"},
 			{"type": "boss", "n": 1, "text": "击败森林之主 · 人面魔蛛", "reward": 0},
 			{"type": "boat", "n": 1, "text": "所有人上船（按 F），去星斗大森林", "reward": 0, "target": "boat"},
@@ -1067,7 +1283,8 @@ const CHAPTERS := {
 		"name": "第三章 · 星斗大森林", "map": "deepforest", "boss": "titan", "next": 4, "levels": [40, 60], "boss_level": 55,
 		"intro": "斗罗大陆最大的魂兽森林，古木参天、终年雾气环绕。这里没有十年魂兽了，百年、千年成群出没。",
 		"quests": [
-			{"type": "kings", "n": 3, "text": "猎杀岛上的 3 只魂兽王", "reward": 0},
+			{"type": "dungeon", "n": 1, "text": "通关一次这座岛的秘境（地图上的「秘」，走过去按 F）", "reward": 0, "target": "dungeon"},
+			{"type": "level", "n": 55, "text": "修炼到 55 级（秘境刷修为；卡在瓶颈就按 L 挑魂兽去猎）", "reward": 0},
 			{"type": "altar", "n": 1, "text": "去星斗古树下的祭坛（按 F），唤醒星斗之王", "reward": 0, "target": "altar"},
 			{"type": "boss", "n": 1, "text": "击败星斗之王 · 万年泰坦巨猿", "reward": 0},
 			{"type": "boat", "n": 1, "text": "所有人上船（按 F），去极北之地", "reward": 0, "target": "boat"},
@@ -1077,7 +1294,8 @@ const CHAPTERS := {
 		"name": "第四章 · 极北之地", "map": "snow", "boss": "icedragon", "next": 5, "levels": [60, 80], "boss_level": 75,
 		"intro": "终年冰雪的极北之地。千年魂兽遍地，万年魂兽开始出现。被咬会冻得走不快。",
 		"quests": [
-			{"type": "kings", "n": 3, "text": "猎杀岛上的 3 只魂兽王", "reward": 0},
+			{"type": "dungeon", "n": 1, "text": "通关一次这座岛的秘境（地图上的「秘」，走过去按 F）", "reward": 0, "target": "dungeon"},
+			{"type": "level", "n": 75, "text": "修炼到 75 级（秘境刷修为；卡在瓶颈就按 L 挑魂兽去猎）", "reward": 0},
 			{"type": "altar", "n": 1, "text": "去北边冰崖上的祭坛（按 F），召唤冰霜巨龙", "reward": 0, "target": "altar"},
 			{"type": "boss", "n": 1, "text": "击败极北之主 · 万年冰霜巨龙", "reward": 0},
 			{"type": "boat", "n": 1, "text": "所有人上船（按 F），去海神岛", "reward": 0, "target": "boat"},
@@ -1087,7 +1305,8 @@ const CHAPTERS := {
 		"name": "第五章 · 海神岛", "map": "sea", "boss": "whale", "next": 0, "levels": [80, 100], "boss_level": 95,
 		"intro": "传说中的海神岛，千年、万年海兽横行。打败十万年的深海魔鲸，吸收它的魂环，修炼到 100 级——成神。",
 		"quests": [
-			{"type": "kings", "n": 3, "text": "猎杀岛上的 3 只魂兽王", "reward": 0},
+			{"type": "dungeon", "n": 1, "text": "通关一次这座岛的秘境（地图上的「秘」，走过去按 F）", "reward": 0, "target": "dungeon"},
+			{"type": "level", "n": 95, "text": "修炼到 95 级（秘境刷修为；卡在瓶颈就按 L 挑魂兽去猎）", "reward": 0},
 			{"type": "altar", "n": 1, "text": "去北岸的海神祭坛（按 F），召唤深海魔鲸", "reward": 0, "target": "altar"},
 			{"type": "boss", "n": 1, "text": "击败海神岛之主 · 十万年深海魔鲸", "reward": 0},
 			{"type": "god", "n": 1, "text": "成神：修炼到 100 级，吸收第十魂环（十万年，深海魔鲸掉；祭坛可以再召唤它）", "reward": 0},
@@ -1144,30 +1363,83 @@ func roll_age(rng: RandomNumberGenerator, min_age := 0, chapter := 1) -> int:
 	return min_age
 
 
-## ================================================================ 猎魂远征（第十版试玩，见 world/expedition.gd）
-const EXP_CODE := 100                  # 章节号 + 100 = 这张图的远征（船、联机 init 都这么传）
-const EXP_CHAPTER := 3                 # 试玩只有星斗大森林
-const EXP_NAME := "猎魂远征 · 星斗大森林"
-## 天色轮换：黄昏 → 夜晚 → 血月 → 夜晚 → 血月……；k = 这时候回船存战利品的倍数
-const EXP_PHASE := {
-	"dusk": {"name": "黄昏", "t": 300.0, "k": 1.0, "next": "night"},
-	"night": {"name": "夜晚", "t": 150.0, "k": 1.3, "next": "blood"},
-	"blood": {"name": "血月", "t": 240.0, "k": 1.8, "next": "night"},
-}
-const EXP_CHANNEL := 40.0              # 护法：站着吸收魂环多少秒
-const EXP_WAVE_GAP := 7.0              # 护法时隔几秒来一波魂兽
-const EXP_REVEAL := 55.0               # 离猎物这么近才看得清它在哪
-const EXP_CAMP_R := 38.0               # 船边营地的半径（夜猎者不进来）
-const EXP_MONEY := 1.5                 # 远征里打怪的金魂币倍数（先进背包）
-const EXP_HUNTER := "raptor"           # 夜猎者：万年疾爪龙王
-const EXP_HUNTER_HP := 1.3
-const EXP_HUNTER_SPEED := 7.4          # 比走路（5.6）快，比冲刺（8.6）慢
+## ================================================================ 第十一版：野外猎魂 + 秘境（world/hunt.gd、world/dungeon.gd）
+## 野外不再刷怪：按 L（或码头边的猎魂榜）挑一只魂兽，卡片上写着它的魂环会给你哪个魂技。
+## 它在岛上游荡，不标准确位置：跟着发光的踪迹、听吼声找过去，55 米内才看得清。打倒它 → 站着吸收魂环（单人快，联机要队友护法）。
+## 刷修为、金魂币、魂骨在秘境：每座岛三个入口（地图上的「秘」），进去三波魂兽 → 秘境之主 → 宝箱。
+const HUNT_REVEAL := 30.0              # 离猎物这么近才看得到它（远了要看爪痕锁定）
+const HUNT_CHANNEL_SOLO := 10.0        # 单人吸收魂环站多久
+const HUNT_CHANNEL_TEAM := 25.0        # 联机吸收魂环站多久（队友护法）
+const HUNT_WAVE_GAP := 7.0             # 联机护法时隔几秒来一波
+const CH_AGE := {1: 0, 2: 1, 3: 1, 4: 2, 5: 2}   # 这一章猎物、一层秘境的年份（十年 / 百年 / 千年 / 万年）
 
+## 秘境三层：年份 = 这一章的基础年份 + 层数（最多万年）；waves = 每波几只（单人），联机每多一人每波 +2
+const DG_TIERS := [
+	{"name": "一层", "add": 0, "waves": [3, 4, 5], "reward": 1.0},
+	{"name": "二层", "add": 1, "waves": [4, 5, 6], "reward": 1.8},
+	{"name": "三层", "add": 2, "waves": [5, 6, 7], "reward": 3.0},
+]
+## 每次进秘境随机一个词条（换着花样打，奖励也跟着变）
+const DG_MODS := {
+	"swarm": {"name": "兽潮", "desc": "每波多来两只", "reward": 1.4, "color": Color(1.0, 0.6, 0.35)},
+	"armor": {"name": "坚甲", "desc": "魂兽血量 +50%", "reward": 1.3, "color": Color(0.7, 0.8, 1.0)},
+	"meteor": {"name": "陨星", "desc": "地上会出红圈砸陨石", "reward": 1.3, "color": Color(1.0, 0.4, 0.3)},
+	"swift": {"name": "疾风", "desc": "魂兽都跑得飞快", "reward": 1.3, "color": Color(0.5, 1.0, 0.8)},
+	"frenzy": {"name": "狂暴", "desc": "魂兽半血以下发狂", "reward": 1.3, "color": Color(1.0, 0.3, 0.5)},
+}
+const DG_BOSS_HP_SOLO := 0.45          # 秘境之主 / 猎物的血量（相对魂兽王）：单人
+const DG_BOSS_HP_PER := 0.4            # 每多一个人加这么多
+const DG_MOB_HP := 0.75                # 秘境小怪的血量（相对野外同样的魂兽）
+const DG_MOB_DMG := 0.75               # 秘境小怪的伤害
+const DG_MOB_DMG_CH := {1: 1.0, 2: 1.0, 3: 0.92, 4: 0.85, 5: 0.78}   # 后面几章再乘一点（机器人：第五章站着不动只用狙击，打到第三波才倒）
+
+
+## 这一章某层秘境的年份
+func dg_age(chapter: int, tier: int) -> int:
+	return clampi(int(CH_AGE.get(chapter, 0)) + int(DG_TIERS[tier]["add"]), 0, 3)
+
+
+## 某层秘境推荐等级
+func dg_level(chapter: int, tier: int) -> int:
+	var lv: Array = CHAPTERS[chapter]["levels"]
+	return int(lerpf(float(lv[0]) + 2.0, float(lv[1]), float(tier) / 2.0))
 
 ## 魂兽血量：基础 × 年份 × 章节（后面的图的魂兽厚得多，玩家的暗器、升级、等级、魂骨也跟着涨）
 ## 参考（按这一章的参考等级、主力暗器、升级估算，不算魂骨和魂技）：
 ##   第一章 袖箭 约 0.3 秒一只 · 第二章 诸葛神弩 0.5 秒 · 第三章 孔雀翎 0.9 秒 · 第四章 2.4 秒（狙击爆头一发）· 第五章 3.8 秒（魂骨、魂技能快一倍）
 const CH_HP := {1: 1.0, 2: 2.0, 3: 4.0, 4: 6.0, 5: 8.0}
+
+
+## 第十一版补丁：怪不再一枪一只（用户："伤害基本都是秒杀"）。
+## 魂兽血量有个下限：按这一章该有的暗器（REF_KIT：暗器、等级、伤害升级），最少要打 HP_SHOTS 下、持续开火 HP_TTK 秒；
+## 玩家的暗器比这一章强，下限也跟着涨（HP_FOLLOW：0.75 次方，强还是打得快一点，只是不会一枪一只）
+const REF_KIT := {1: ["xiujian", 10, 2], 2: ["zhuge", 30, 3], 3: ["kongque", 50, 3], 4: ["kongque", 70, 5], 5: ["zhuihun", 90, 5]}
+const HP_SHOTS := [3.0, 4.0, 5.0, 7.0, 10.0]
+const HP_TTK := [0.5, 0.8, 1.2, 1.7, 2.4]
+const HP_FOLLOW := 0.75
+const ELITE_FLOOR := 12.0              # 魂兽王 / 秘境之主的下限倍数
+
+
+## 一套暗器的输出：x = 一发的伤害，y = 每秒伤害
+func kit_output(weapon: String, level: int, upg_dmg: int) -> Vector2:
+	var d := weapon_stats(weapon, {"dmg": upg_dmg})
+	return weapon_output(d) * level_damage(level)
+
+
+func ref_output(chapter: int) -> Vector2:
+	var k: Array = REF_KIT.get(chapter, REF_KIT[1])
+	return kit_output(str(k[0]), int(k[1]), int(k[2]))
+
+
+## 这一章某个年份的魂兽，血量至少要这么多（player：玩家的输出，Vector2.ZERO = 按这一章的标准算）
+func hp_floor(chapter: int, age: int, player: Vector2) -> float:
+	var r := ref_output(chapter)
+	var p := player if player.x > 0.0 else r
+	var a := clampi(age, 0, HP_SHOTS.size() - 1)
+	var shot := pow(p.x, HP_FOLLOW) * pow(r.x, 1.0 - HP_FOLLOW)
+	var dps := pow(p.y, HP_FOLLOW) * pow(r.y, 1.0 - HP_FOLLOW)
+	# "最少几发"只是不让一枪一只：打得慢的（狙击、观音泪）不能因此要打五六发，最多按持续开火时间的 2.5 倍算
+	return maxf(minf(shot * HP_SHOTS[a], dps * HP_TTK[a] * 2.5), dps * HP_TTK[a])
 
 
 func beast_max_hp(species: String, age: int) -> float:
@@ -1217,11 +1489,13 @@ func weapon_stats(id: String, upgrades: Dictionary) -> Dictionary:
 	return d
 
 
-## 装上配件以后的数值：瞄具改开镜倍率、全屏瞄准镜；制退器 / 握把 / 激光改后坐和散布
+## 装上配件以后的数值：瞄具改开镜倍率、全屏瞄准镜；枪口 / 握把 / 激光改后坐和散布；弹匣改弹量、换弹、伤害；枪托改开镜、移速、后坐
 func apply_attach(d: Dictionary, on: Dictionary) -> Dictionary:
 	d["recoil_v"] = 1.0
 	d["recoil_h"] = 1.0
+	d["move_k"] = 1.0
 	d["attach"] = on.duplicate()
+	var ads_k := 1.0
 	for slot in on:
 		var a: Dictionary = ATTACH.get(str(on[slot]), {})
 		if a.is_empty():
@@ -1235,10 +1509,41 @@ func apply_attach(d: Dictionary, on: Dictionary) -> Dictionary:
 			d["ads_time"] = maxf(float(d["ads_time"]), 0.22)
 		d["recoil_v"] = float(d["recoil_v"]) * float(a.get("recoil_v", 1.0))
 		d["recoil_h"] = float(d["recoil_h"]) * float(a.get("recoil_h", 1.0))
+		d["recoil_mult"] = float(d.get("recoil_mult", 1.0)) * float(a.get("recoil_all", 1.0))
 		for k in ["hip", "ads", "move"]:
 			d[k] = float(d[k]) * float(a.get("spread", 1.0))
 		d["hip"] = float(d["hip"]) * float(a.get("hip", 1.0))
+		d["mag"] = maxi(int(round(float(d["mag"]) * float(a.get("mag_k", 1.0)))), 1)
+		for k in ["reload", "reload_empty"]:
+			d[k] = float(d[k]) * float(a.get("reload_k", 1.0))
+		d["damage"] = float(d["damage"]) * float(a.get("dmg_k", 1.0))
+		if d.has("splash_dmg"):
+			d["splash_dmg"] = float(d["splash_dmg"]) * float(a.get("dmg_k", 1.0))
+		d["move_k"] = float(d["move_k"]) * float(a.get("move_k", 1.0))
+		ads_k *= float(a.get("ads_k", 1.0))
+		if bool(a.get("quiet", false)):
+			d["quiet"] = true
+	d["ads_time"] = float(d["ads_time"]) * ads_k
 	return d
+
+
+## 一发和每秒的伤害（估算，给血量下限、暗器铺用）：三连发、蓄力、爆炸都算进去
+func weapon_output(d: Dictionary) -> Vector2:
+	var shot := float(d["damage"]) * float(d["pellets"])
+	var cycle := 60.0 / float(d["rpm"])
+	match str(d["mode"]):
+		"burst":
+			shot *= float(d.get("burst", 1))
+			cycle += float(d.get("burst_gap", 0.0)) * (float(d.get("burst", 1)) - 1.0)
+		"charge":
+			shot *= float(d.get("charge_k", 1.0))
+			cycle += float(d.get("charge", 0.0))
+		"bolt":
+			cycle = maxf(cycle, float(d.get("cycle", 0.0)))
+	if d.has("splash_dmg"):
+		# 母胆中心 + 三颗子胆（打一只的时候大约吃到一半）
+		shot += float(d["splash_dmg"]) * (1.0 + 0.45 * float(d.get("children", 0)) * 0.5)
+	return Vector2(shot, shot / maxf(cycle, 0.01))
 
 
 func upgrade_price(id: String, level: int) -> int:
