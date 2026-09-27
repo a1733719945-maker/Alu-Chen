@@ -20,6 +20,10 @@ enum State { AIR, GROUND, FLEE, GONE }
 
 const ESCAPE_AFTER := 24.0
 const FIERCE_GIVE_UP := 90.0     # 凶暴的魂兽最多缠人这么久
+# 仇恨范围（第十版，用户说"我复活了，隔着整个岛也要过来打我"）：
+# 凶暴的只盯 32 米内的人；已经在打的人 / 刚打过它的人，跑出 55 米才放弃
+const AGGRO_RANGE := 32.0
+const AGGRO_KEEP := 55.0
 const INTERP_DELAY := 0.1
 const FLAG_MARK := 1
 const FLAG_ROOT := 2
@@ -76,6 +80,14 @@ var _since_hit := 99.0
 var _thunder_cd := 0.0
 var _frenzy_on := false
 var _aggro_t := 0.0              # 精英：挨打后追人的时间
+var _foe := 0                    # 正在打的人（仇恨范围放宽到 AGGRO_KEEP）
+var focus_peer := 0              # 房主指定只打这个人（猎魂远征：护法时围攻吸魂环的人）
+var aggro_k := 1.0               # 仇恨范围倍数（远征的夜猎者看得更远）
+var exp_role := ""               # 猎魂远征：target 猎物 / hunter 夜猎者（HUD 不当普通的王显示）
+var speed_cap := 0.0             # 追人最快多少米/秒（夜猎者：比冲刺慢，跑得掉）
+var home_speed := 5.0            # 精英走回"老家"的速度（远征的猎物慢慢逛，夜猎者跟踪人）
+var avoid_c := Vector3.ZERO      # 不进去的区域（远征：船边营地），里面的人不打
+var avoid_r := 0.0
 var _roam := false               # 陆地魂兽跑回老家以后就在附近转悠，不会凭空消失
 var _roam_to := Vector3.ZERO
 var _roam_t := 0.0
@@ -250,6 +262,8 @@ func is_land_beast() -> bool:
 
 
 func display_name() -> String:
+	if exp_role == "hunter":
+		return "夜猎者 · %s%s王" % [Data.age_name(age), Data.BEASTS[species]["name"]]
 	if temper == "elite":
 		return "%s%s王" % [Data.age_name(age), Data.BEASTS[species]["name"]]
 	return str(Data.BEASTS[species]["name"])
@@ -421,6 +435,11 @@ func _physics_process(delta: float) -> void:
 	_update_effects(delta)
 	if state == State.GONE:
 		return
+	# 追人时撞上圆石头，会被物理挤到地形下面，然后一直往下掉（魂兽凭空消失）：拉回地面上
+	var gh: float = world.island.height_at(global_position.x, global_position.z)
+	if global_position.y < gh - 1.2:
+		global_position.y = gh + 0.4
+		linear_velocity.y = maxf(linear_velocity.y, 0.0)
 
 	if root_t > 0.0:
 		# 被蓝银草缠住：吊在原地
@@ -696,7 +715,7 @@ func _flee(delta: float, m: String, touching: bool) -> void:
 		"throw":
 			if not attacked:
 				attack_t += delta
-				var tp: Dictionary = world.nearest_player(global_position)
+				var tp: Dictionary = _pick_target()
 				if not tp.is_empty():
 					var dir: Vector3 = (tp["pos"] - global_position)
 					dir.y = 0
@@ -710,18 +729,72 @@ func _flee(delta: float, m: String, touching: bool) -> void:
 				_run_to_escape(delta, touching, 6.5, Data.BEASTS[species]["habitat"])
 
 
-## 凶暴：追着最近的玩家打，打完退一下再上，不逃
+func _avoided(p: Vector3) -> bool:
+	return avoid_r > 0.0 and Vector2(p.x - avoid_c.x, p.z - avoid_c.z).length() < avoid_r
+
+
+## 最近的、不在"不进去的区域"里的人（不限距离）
+func _nearest_ok() -> Dictionary:
+	if avoid_r <= 0.0:
+		return world.nearest_player(global_position)
+	var best := {}
+	var bd := INF
+	for p in world.alive_players():
+		if _avoided(p["pos"]):
+			continue
+		var d: float = (p["pos"] as Vector3).distance_to(global_position)
+		if d < bd:
+			bd = d
+			best = p
+	return best
+
+
+## 要打谁：房主指定的人 > 正在打的 / 刚打过它的（55 米内）> 32 米内最近的。都没有就返回空
+func _pick_target() -> Dictionary:
+	var pl: Array = world.alive_players()
+	if focus_peer != 0:
+		for p in pl:
+			if int(p["peer"]) == focus_peer and not _avoided(p["pos"]):
+				_foe = focus_peer
+				return p
+	var best := {}
+	var bd := INF
+	for p in pl:
+		var peer := int(p["peer"])
+		if _avoided(p["pos"]):
+			continue
+		var d: float = (p["pos"] as Vector3).distance_to(global_position)
+		var keep := peer == _foe or (peer == last_hitter and _since_hit < 10.0)
+		if d < (AGGRO_KEEP if keep else AGGRO_RANGE) * aggro_k and d < bd:
+			bd = d
+			best = p
+	_foe = int(best["peer"]) if not best.is_empty() else 0
+	return best
+
+
+## 凶暴：追着附近的玩家打，打完退一下再上，不逃
 func _fierce(delta: float, m: String, touching: bool) -> void:
 	_atk_cd -= delta
-	var tp: Dictionary = world.nearest_player(global_position)
+	var tp: Dictionary = _pick_target()
 	if tp.is_empty():
-		# 没人可打（都死了 / 隐身）：原地转悠，太久就走了
+		# 附近没人可打（都死了 / 隐身 / 跑远了）：慢慢走回出生的地方，太久就不凶了
 		_no_target_t += delta
 		if m in ["fly", "flutter"]:
 			gravity_scale = 0.0
 			linear_velocity = linear_velocity.lerp(Vector3(sin(life) * 3.0, 0.3, cos(life) * 3.0), 1.0 - exp(-2.0 * delta))
-		if _no_target_t > 12.0:
+		elif touching:
+			var home := spawn_pos - global_position
+			home.y = 0.0
+			var v := home.normalized() * 3.0 if home.length() > 3.0 else Vector3.ZERO
+			linear_velocity = Vector3(v.x, minf(linear_velocity.y, 0.5), v.z)
+			angular_velocity = Vector3.ZERO
+			if v != Vector3.ZERO:
+				_face(v.normalized(), 0.15)
+		if _no_target_t > 12.0 and focus_peer == 0 and temper == "fierce":
 			temper = "flee"
+			attacked = true
+			if is_land_beast():
+				_start_roam()
 		return
 	_no_target_t = 0.0
 	var tpos: Vector3 = tp["pos"]
@@ -808,6 +881,8 @@ func _fierce(delta: float, m: String, touching: bool) -> void:
 			elif m == "slither":
 				speed = 4.8
 			speed *= _spd()
+			if speed_cap > 0.0:
+				speed = minf(speed, speed_cap)
 			_face(dir, 0.35)
 			if dist > reach * 0.8:
 				if touching:
@@ -893,7 +968,7 @@ func _elite(delta: float, m: String, touching: bool) -> void:
 		_king_retreat_tick(delta, m, touching)
 		return
 	var home := spawn_pos
-	var tp: Dictionary = world.nearest_player(global_position)
+	var tp: Dictionary = _nearest_ok()
 	var fight := false
 	if not tp.is_empty():
 		var tpos: Vector3 = tp["pos"]
@@ -915,7 +990,7 @@ func _elite(delta: float, m: String, touching: bool) -> void:
 		if touching:
 			if to.length() > 2.5:
 				var dir := to.normalized()
-				linear_velocity = Vector3(dir.x * 5.0, minf(linear_velocity.y, 0.5), dir.z * 5.0)
+				linear_velocity = Vector3(dir.x * home_speed, minf(linear_velocity.y, 0.5), dir.z * home_speed)
 				_face(dir, 0.2)
 			else:
 				linear_velocity = Vector3(0, minf(linear_velocity.y, 0.5), 0)
@@ -1006,7 +1081,7 @@ func _swim(delta: float) -> void:
 		return
 	state = State.FLEE
 	gravity_scale = 0.2
-	var tp: Dictionary = world.nearest_player(global_position)
+	var tp: Dictionary = _pick_target()
 	if not (temper == "fierce" or temper == "elite"):
 		# 不凶的陆地魂兽掉进水里：往岸上（离人远的方向）游，不会凭空消失
 		var np2: Vector3 = world.nearest_player_pos(global_position)
@@ -1062,7 +1137,7 @@ func _swim(delta: float) -> void:
 func _attack_then_flee(delta: float, m: String, touching: bool) -> void:
 	if not attacked:
 		attack_t += delta
-		var tp: Dictionary = world.nearest_player(global_position)
+		var tp: Dictionary = _pick_target()
 		if tp.is_empty() or attack_t > 4.0:
 			attacked = true
 			return

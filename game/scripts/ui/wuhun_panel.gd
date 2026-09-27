@@ -78,10 +78,12 @@ func _left() -> void:
 	var need := Data.xp_to_next(Profile.level)
 	left.add_child(UiKit.stat_bar("修为", float(Profile.xp) / float(need), "%d / %d" % [Profile.xp, need], UiKit.GOLD, 150))
 	var st := HBoxContainer.new()
-	st.add_theme_constant_override("separation", 22)
+	st.add_theme_constant_override("separation", 16)
 	left.add_child(st)
 	st.add_child(_stat("体力", "%d" % int(Profile.max_hp()), Color(1.0, 0.5, 0.45)))
 	st.add_child(_stat("魂力", "%d" % int(Profile.max_soul()), Color(0.55, 0.72, 1.0)))
+	# 护体：等级（每级 0.4%）+ 魂骨的减伤
+	st.add_child(_stat("护体", "%d%%" % roundi(minf(Data.level_armor(Profile.level) + Profile.bone_bonus("dr"), 0.8) * 100.0), Color(0.6, 0.9, 0.75)))
 	st.add_child(_stat("魂环", "%d / %d" % [Profile.rings.size(), Data.MAX_RINGS], UiKit.GOLD))
 	if Profile.at_bottleneck():
 		var b := UiKit.chip("瓶颈 · 吸收第%s魂环才能继续升级" % Data.RING_NAMES[mini(Profile.rings.size(), Data.RING_NAMES.size() - 1)], UiKit.GOLD, 13)

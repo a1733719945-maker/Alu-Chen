@@ -62,6 +62,7 @@ var shield_t := 0.0
 var soul := 60.0
 var dead := false
 var busy_t := 0.0                # 吸收魂环时不能开枪
+var channeling := false          # 猎魂远征：正在吸收魂环（站着不能动，能开枪，队友护法）
 var buffs := {}                  # stat -> [amount, 剩余秒]
 # 魂兽招式带来的负面状态（Data.BEAST_SKILLS）
 var root_t := 0.0                # 定身（连按空格挣脱）
@@ -280,11 +281,16 @@ func heal(amount: float) -> void:
 	hp = minf(hp + amount, Profile.max_hp())
 
 
+## 总减伤比例（面板上显示的"护体"）
+func defense() -> float:
+	return Data.level_armor(Profile.level) + buff("dr") + Profile.bone_bonus("dr")
+
+
 func take_damage(amount: float, from_pos: Vector3) -> void:
 	if dead or amount <= 0.0 or invuln_t > 0.0:
 		return
-	# 减伤：魂技（金刚变、浴火、防御增幅）+ 魂骨，最多减 80%
-	amount *= 1.0 - clampf(buff("dr") + Profile.bone_bonus("dr"), 0.0, 0.8)
+	# 减伤：魂力护体（等级）+ 魂技（金刚变、浴火、防御增幅）+ 魂骨，最多减 80%
+	amount *= 1.0 - clampf(defense(), 0.0, 0.8)
 	if vuln_t > 0.0:
 		amount *= 1.3
 	var left := amount
@@ -510,6 +516,8 @@ func _physics_process(dt: float) -> void:
 	_update_status(dt)
 	if slow_t > 0.0:
 		max_speed *= 1.0 - slow_k
+	if channeling:
+		max_speed = 0.0
 	if root_t > 0.0:
 		max_speed = 0.0
 		if can_move and Input.is_action_just_pressed("jump"):
@@ -521,7 +529,7 @@ func _physics_process(dt: float) -> void:
 		wish = wish.normalized()
 	var hv := Vector3(velocity.x, 0, velocity.z)
 	var jump_held := can_move and Input.is_action_pressed("jump")
-	var jump_pressed := can_move and Input.is_action_just_pressed("jump") and root_t <= 0.0
+	var jump_pressed := can_move and Input.is_action_just_pressed("jump") and root_t <= 0.0 and not channeling
 	# 翻滚：移动中轻点 Ctrl。翻滚的前 0.36 秒无敌（躲 Boss 的重击、横扫、冲击环）
 	_roll_cd -= dt
 	if can_move and Input.is_action_just_pressed("crouch"):
@@ -529,7 +537,7 @@ func _physics_process(dt: float) -> void:
 	if _ctrl_t >= 0.0:
 		_ctrl_t += dt
 		if not Input.is_action_pressed("crouch"):
-			if _ctrl_t < 0.22 and wish.length() > 0.1 and _roll_cd <= 0.0 and is_on_floor() and fly_t <= 0.0:
+			if _ctrl_t < 0.22 and wish.length() > 0.1 and _roll_cd <= 0.0 and is_on_floor() and fly_t <= 0.0 and not channeling:
 				_roll_dir = wish.normalized()
 				_roll_t = 0.42
 				_roll_cd = 0.9

@@ -306,7 +306,7 @@ func _build_top_left() -> void:
 
 
 func update_quest() -> void:
-	if not is_node_ready():
+	if not is_node_ready() or world._exp_mode:
 		return
 	var ch: int = world.chapter
 	var qs: Array = Data.CHAPTERS[ch]["quests"]
@@ -364,7 +364,7 @@ func _king_data() -> Array:
 				out.append({"key": str(key), "name": nm, "b": null, "t": float(e["t"]), "age": int(e["age"])})
 	else:
 		for b: Beast in world.beasts.values():
-			if b.alive() and b.temper == "elite":
+			if b.alive() and b.temper == "elite" and b.exp_role == "":
 				out.append({"key": str(b.id), "name": b.display_name(), "b": b, "age": b.age})
 	return out
 
@@ -655,8 +655,10 @@ func _compass_marks() -> Array:
 	if int(Data.CHAPTERS[world.chapter].get("next", 0)) > 0:
 		out.append([world.builder.boat_pos, "船", UiKit.JADE])
 	for b: Beast in world.beasts.values():
-		if b.alive() and b.temper == "elite":
+		if b.alive() and b.temper == "elite" and b.exp_role == "":
 			out.append([b.global_position, "王", Color(1.0, 0.6, 0.25)])
+	if world.expedition:
+		out.append_array(world.expedition.compass_marks())
 	if world.boss and not world.boss.dead:
 		out.append([world.boss.center(), "主", Color(1.0, 0.3, 0.35)])
 	for id in world.remotes:
@@ -1307,6 +1309,11 @@ func kill_popup(money: int, xp: int, tags: Array, _species: String, _age: int) -
 	var xl := UiKit.bold("+%d 修为" % xp, 16, Color(0.85, 0.9, 1.0), 3)
 	xl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	row.add_child(xl)
+	if world.expedition:
+		# 远征：金魂币先进背包
+		var bl := UiKit.bold("进背包", 14, UiKit.GOLD, 3)
+		bl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		row.add_child(bl)
 	# 字少一点：魂兽名字、爆头 / 空中击杀这些标签都不写了，只有连杀才提一句
 	for t in tags:
 		var ts := str(t)
@@ -1518,7 +1525,10 @@ func _update_combo(dt: float) -> void:
 		_combo_hits.text = "连击 %d" % c.hits
 		_combo_mult.text = ("奖励 ×%.2f" % c.mult()) if c.mult() > 1.0 else ""
 		_combo_bar.value = c.decay_left()
-	# 武魂真身
+	# 武魂真身（第十版关掉了）
+	_tb_box.visible = Combo.TRUE_BODY
+	if not Combo.TRUE_BODY:
+		return
 	_tb_bar.value = c.meter
 	var ready := c.meter >= 1.0 and not c.active()
 	_tb_key.visible = ready
@@ -1788,8 +1798,9 @@ func _build_pause() -> void:
 		["X", "收起暗器（跑得快）"], ["V", "检视暗器"],
 		["K", "武魂和魂骨"], ["J", "成就"],
 		["M", "地图"], ["Tab", "魂师榜（悬赏）"],
-		["Z", "武魂真身（连击充满）"],
 	]
+	if Combo.TRUE_BODY:
+		keys.append(["Z", "武魂真身（连击充满）"])
 	for k in keys:
 		grid.add_child(UiKit.key_hint(str(k[0]), str(k[1]), 15, Color(0.85, 0.88, 0.92)))
 	var sc := CenterContainer.new()
@@ -2048,10 +2059,12 @@ func open_boat_picker(dests: Array) -> void:
 	row.add_theme_constant_override("v_separation", 14)
 	v.add_child(row)
 	for ch in dests:
-		var d: Dictionary = Data.CHAPTERS[int(ch)]
+		var is_exp := int(ch) >= Data.EXP_CODE
+		var d: Dictionary = Data.CHAPTERS[int(ch) % Data.EXP_CODE]
 		var lv: Array = d.get("levels", [1, 20])
 		var fwd: bool = int(ch) > int(world.chapter)
-		var card := UiKit.card_button(UiKit.GOLD if fwd else UiKit.JADE)
+		var accent := Color(1.0, 0.45, 0.3) if is_exp else (UiKit.GOLD if fwd else UiKit.JADE)
+		var card := UiKit.card_button(accent)
 		card.custom_minimum_size = Vector2(320, 150)
 		row.add_child(card)
 		var cv := VBoxContainer.new()
@@ -2059,9 +2072,9 @@ func open_boat_picker(dests: Array) -> void:
 		cv.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		card.add_child(cv)
 		UiKit.place(cv, Vector4(0, 0, 1, 1), Vector4(22, 20, -22, -18))
-		cv.add_child(UiKit.kicker("下一站" if fwd else "回去", UiKit.GOLD if fwd else UiKit.JADE, 13))
+		cv.add_child(UiKit.kicker("猎魂远征 · 试玩" if is_exp else ("下一站" if fwd else "回去"), accent, 13))
 		cv.add_child(UiKit.title(str(d["name"]), 28, Color.WHITE))
-		cv.add_child(UiKit.label("推荐 %d ~ %d 级" % [int(lv[0]), int(lv[1])], 15, UiKit.MIST))
+		cv.add_child(UiKit.label("难度跟着队伍等级走" if is_exp else "推荐 %d ~ %d 级" % [int(lv[0]), int(lv[1])], 15, UiKit.MIST))
 		var c2 := int(ch)
 		card.pressed.connect(func():
 			world.board(c2)
@@ -2230,7 +2243,11 @@ func _draw_hurt() -> void:
 
 
 func _quest_target() -> Variant:
-	var q: Dictionary = Data.quest(world.chapter, world.quest_idx)
+	var q: Dictionary = {} if world._exp_mode else Data.quest(world.chapter, world.quest_idx)
+	if world.expedition:
+		var em: Variant = world.expedition.marker()
+		if em != null:
+			return em
 	match str(q.get("target", "")):
 		"shop":
 			return world.builder.shop_door
@@ -2308,6 +2325,8 @@ func _draw_plates() -> void:
 		if d > max_d or cam.is_position_behind(top):
 			continue
 		var sp := cam.unproject_position(top)
+		if not sp.is_finite() or absf(sp.x) > 1.0e5 or absf(sp.y) > 1.0e5:
+			continue
 		var aimed := sp.distance_to(_plates.size * 0.5) < 140.0
 		if not elite and not aimed and not (hurt and d < 18.0):
 			continue

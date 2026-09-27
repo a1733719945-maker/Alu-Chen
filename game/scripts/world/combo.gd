@@ -8,7 +8,10 @@ extends Node
 ##   评级越高金魂币和修为越多（最高 ×2.5），命中音调跟着连击往上走，升评级屏幕一闪；S 以上队友也看得到。
 ## 武魂真身（原著的大招）：连击给它充能，满了按 Z 变身 12 秒——伤害 +120%、子弹不耗、跑得快，
 ##   天上显现武魂法相，身边 25 米的队友伤害 +30%。结束时一圈冲击波。
+## 第十版：武魂真身关掉了（用户说"这和魂技有任何差别吗"），连击只留评级和奖励倍数。
+##   TRUE_BODY 改回 true 就能打开。
 
+const TRUE_BODY := false
 const RANKS := [
 	["D", 0.0, 1.0, Color(0.7, 0.72, 0.78)],
 	["C", 8.0, 1.15, Color(0.55, 0.85, 1.0)],
@@ -65,7 +68,7 @@ func _add(p: float, count := true) -> void:
 	if count:
 		hits += 1
 	since = 0.0
-	if not active():
+	if TRUE_BODY and not active():
 		meter = minf(meter + p * TB_PER_POINT, 1.0)
 		if meter >= 1.0 and not _ready_told:
 			_ready_told = true
@@ -88,7 +91,7 @@ func hit(air: bool, head: bool) -> void:
 ## 自己打死了一只
 func kill(air: bool) -> void:
 	_add(4.0 if air else 1.5, false)
-	if not active():
+	if TRUE_BODY and not active():
 		meter = minf(meter + TB_PER_KILL, 1.0)
 
 
@@ -117,7 +120,7 @@ func _process(dt: float) -> void:
 			if g and g.ammo < int(g.d["mag"]) and int(g.d["mag"]) > 0:
 				g.ammo = int(g.d["mag"])
 				world.hud.on_ammo(g)
-	elif Input.is_action_just_pressed("true_body") and world.player and world.player.input_enabled:
+	elif TRUE_BODY and Input.is_action_just_pressed("true_body") and world.player and world.player.input_enabled:
 		activate()
 
 

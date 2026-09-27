@@ -120,12 +120,12 @@ const BEAST_SKILLS := {
 	"wolf": {"name": "狼嚎", "cd": 12.0, "wind": 0.9, "range": 25.0, "radius": 20.0, "at": "self", "dmg": 0.0, "howl": 6.0},
 	"rhino": {"name": "铁蹄震地", "cd": 9.0, "wind": 0.9, "range": 6.0, "radius": 5.5, "at": "self", "dmg": 1.3, "push": 7.0, "slow": 0.5, "dur": 2.0, "shield": true},
 	"ape": {"name": "金刚捶地", "cd": 8.0, "wind": 0.9, "range": 5.0, "radius": 5.0, "at": "self", "dmg": 1.5, "push": 9.0},
-	"snake": {"name": "曼陀罗毒雾", "cd": 9.0, "wind": 0.6, "range": 13.0, "radius": 3.6, "at": "target", "dmg": 0.4, "poison": 0.35, "dur": 5.0},
+	"snake": {"name": "曼陀罗毒雾", "cd": 9.0, "wind": 0.6, "range": 13.0, "radius": 3.6, "at": "target", "dmg": 0.7, "slow": 0.4, "dur": 2.0},
 	"stag": {"name": "鬼眼凝视", "cd": 11.0, "wind": 1.0, "range": 26.0, "radius": 2.0, "at": "target", "dmg": 0.8, "vuln": 6.0},
 	"bat": {"name": "吸血", "cd": 7.0, "wind": 0.5, "range": 4.0, "radius": 3.6, "at": "self", "dmg": 1.3, "heal": 3.0},
 	"raptor": {"name": "扑杀", "cd": 7.0, "wind": 0.55, "range": 12.0, "min": 4.0, "radius": 2.6, "at": "target", "dmg": 1.5, "root": 0.8, "leap": true},
 	"spiderling": {"name": "蛛网", "cd": 8.0, "wind": 0.5, "range": 14.0, "radius": 3.0, "at": "target", "dmg": 0.3, "slow": 0.65, "dur": 3.0},
-	"frog": {"name": "长舌卷人", "cd": 8.0, "wind": 0.6, "range": 12.0, "min": 3.0, "radius": 2.3, "at": "target", "dmg": 0.8, "pull": 15.0, "poison": 0.2, "dur": 3.0},
+	"frog": {"name": "长舌卷人", "cd": 8.0, "wind": 0.6, "range": 12.0, "min": 3.0, "radius": 2.3, "at": "target", "dmg": 0.8, "pull": 15.0},
 	"husky": {"name": "雪狼嚎", "cd": 12.0, "wind": 0.9, "range": 25.0, "radius": 20.0, "at": "self", "dmg": 0.0, "howl": 6.0},
 	"icedeer": {"name": "冰霜新星", "cd": 10.0, "wind": 1.0, "range": 7.0, "radius": 6.0, "at": "self", "dmg": 0.8, "root": 1.4},
 	"icehorn": {"name": "冰甲震地", "cd": 9.0, "wind": 0.9, "range": 7.0, "radius": 6.5, "at": "self", "dmg": 1.3, "push": 6.0, "slow": 0.5, "dur": 2.5, "shield": true},
@@ -512,7 +512,7 @@ const BOUNTY_N := 3
 # 每张图自己的"奇遇"（代替原来千篇一律的兽潮）：天色 / 天气变化 + 专属魂兽 + 一只王
 # mode：flock 天上飞过的一大群（打下来奖励 ×3），pack 从四面八方冲过来；env：天色天气
 const CH_EVENTS := {
-	1: {"name": "风铃鸟迁徙", "desc": "一大群风铃鸟从湖上飞过，在它们飞走之前打下来——每只奖励 ×3", "species": ["bird"], "n": 14, "mode": "flock", "king": "", "env": "gold", "color": Color(0.6, 1.0, 0.9)},
+	1: {"name": "风铃鸟过境", "desc": "一大群风铃鸟从湖上飞过，在它们飞走之前打下来——每只奖励 ×3", "species": ["bird"], "n": 14, "mode": "flock", "king": "", "env": "gold", "color": Color(0.6, 1.0, 0.9)},
 	2: {"name": "狼王夜袭", "desc": "天黑了。疾风狼王带着狼群从林子里扑出来，打死狼王必掉魂骨", "species": ["wolf"], "n": 10, "mode": "pack", "king": "wolf", "env": "night", "color": Color(1.0, 0.45, 0.35)},
 	3: {"name": "星斗兽潮", "desc": "星辰坠落，星斗大森林的魂兽成群冲出来，鬼眼鹿王压阵", "species": ["stag", "raptor", "spiderling"], "n": 12, "mode": "pack", "king": "stag", "env": "stars", "color": Color(0.7, 0.6, 1.0)},
 	4: {"name": "极北暴风雪", "desc": "暴风雪来了，看不远、走不快，雪原狼群借着风雪偷袭，冰甲龙王压阵", "species": ["husky", "snowape"], "n": 12, "mode": "pack", "king": "icehorn", "env": "blizzard", "color": Color(0.7, 0.9, 1.0)},
@@ -694,6 +694,12 @@ func level_damage(level: int) -> float:
 	return 1.0 + level * 0.012
 
 
+## 魂力护体：等级越高受到的伤害越少（每级 0.4%，90 级减 36%，最多 40%）
+## 第十版加的：用户说"没有任何加防御的东西，封号斗罗也被打 1-2 下就死"
+func level_armor(level: int) -> float:
+	return minf(level * 0.004, 0.4)
+
+
 ## 联机时"猎杀 N 只"的任务按人数加量（每多一个人 +75%），不然几个人一起打太快
 func quest_target(q: Dictionary, players: int) -> int:
 	var n := int(q.get("n", 1))
@@ -725,7 +731,7 @@ const SKILLS := {
 	"ld_scythe": {"name": "死神之镰", "type": "beam", "target": "dir", "range": 40.0, "damage": 90.0, "pierce": 5, "cost": 25, "cd": 7.0, "desc": "一道贯穿 40 米的镰刀光"},
 	"ld_reap": {"name": "镰影步", "type": "blink", "target": "dir", "dist": 14.0, "stat": "dmg", "amount": 0.3, "dur": 4.0, "cost": 20, "cd": 6.0, "desc": "瞬移到准星方向 14 米外，之后 4 秒伤害 +30%"},
 	"ld_fly": {"name": "飞镰", "type": "projectile", "target": "dir", "speed": 35.0, "radius": 4.0, "damage": 70.0, "impulse": 6.0, "cost": 30, "cd": 10.0, "desc": "掷出旋转飞镰，命中爆开"},
-	"ld_doom": {"name": "死神降临", "type": "blackhole", "target": "aim", "radius": 12.0, "pull_t": 2.0, "force": 20.0, "damage": 160.0, "impulse": 12.0, "cost": 55, "cd": 22.0, "desc": "准星处打开死亡漩涡，把魂兽拖进去再绞碎"},
+	"ld_doom": {"name": "死神降临", "type": "blackhole", "target": "aim", "radius": 12.0, "pull_t": 2.0, "force": 20.0, "damage": 160.0, "impulse": 12.0, "cost": 55, "cd": 22.0, "desc": "准星处打开死亡旋涡，把魂兽拖进去再绞碎"},
 	"ld_shadow": {"name": "镰刃风暴", "type": "orbit", "target": "self", "kind": "scythe", "n": 3, "radius": 3.5, "dur": 6.0, "damage": 45.0, "cost": 30, "cd": 12.0, "desc": "三把镰刀绕身旋转 6 秒，贴身的魂兽被切"},
 	# 香肠
 	"xc_heal": {"name": "香肠回复", "type": "heal", "target": "self", "radius": 15.0, "amount": 45.0, "cost": 25, "cd": 10.0, "desc": "15 米内所有队友回复 45 体力"},
@@ -1049,7 +1055,7 @@ const CHAPTERS := {
 	},
 	2: {
 		"name": "第二章 · 落日森林", "map": "forest", "boss": "spider", "next": 3, "levels": [20, 40], "boss_level": 35,
-		"intro": "落日森林，傍晚的光从树缝里漏下来。这里的魂兽会反击：魔狼扑人，铁甲犀冲撞，金刚猿扔石头，被咬会中毒。",
+		"intro": "落日森林，傍晚的光从树缝里漏下来。这里的魂兽会反击：魔狼扑人，铁甲犀冲撞，金刚猿扔石头。",
 		"quests": [
 			{"type": "kings", "n": 3, "text": "猎杀岛上的 3 只魂兽王", "reward": 0},
 			{"type": "altar", "n": 1, "text": "去森林中心古树下的祭坛（按 F），召唤森林之主", "reward": 0, "target": "altar"},
@@ -1103,9 +1109,13 @@ func age_color(age: int) -> Color:
 ## 每章魂兽的年份：第三章起没有十年的，第五章出万年（黑色魂环）。权重依次是 十年 / 百年 / 千年 / 万年
 const AGE_WEIGHTS := {1: [70.0, 28.0, 2.0, 0.0], 2: [30.0, 55.0, 15.0, 0.0], 3: [0.0, 55.0, 42.0, 3.0], 4: [0.0, 20.0, 60.0, 20.0], 5: [0.0, 0.0, 45.0, 55.0]}
 ## 每章魂兽的攻击力倍数，和每章魂兽的特点（被咬到时）
-const CH_POWER := {1: 1.0, 2: 1.35, 3: 1.8, 4: 2.3, 5: 3.0}
+## 第十版：后面章节的攻击力涨得比玩家血量快太多（第五章普通一口掉一半血），压平了；
+## 普通咬一口再 ×BITE_K，有前摇、能躲的招（红圈）保持原来的疼
+const CH_POWER := {1: 1.0, 2: 1.2, 3: 1.4, 4: 1.6, 5: 1.8}
 const BEAST_DMG := 1.8        # 魂兽伤害总倍数（用户说第一章升到 15 级基本没掉过血）
-const CH_TRAIT := {1: "", 2: "poison", 3: "pack", 4: "frost", 5: "drag"}
+const BITE_K := 0.7
+## 第二章原来是"被咬中毒持续掉血"，用户说一直掉血很烦，去掉了
+const CH_TRAIT := {1: "", 2: "", 3: "pack", 4: "frost", 5: "drag"}
 const TRAIT_TEXT := {
 	"poison": "这里的魂兽带毒：被咬会中毒，持续掉血",
 	"pack": "这里的魂兽成群：拽出一只，同窝的会跑来帮忙",
@@ -1132,6 +1142,26 @@ func roll_age(rng: RandomNumberGenerator, min_age := 0, chapter := 1) -> int:
 		if r <= 0.0:
 			return i
 	return min_age
+
+
+## ================================================================ 猎魂远征（第十版试玩，见 world/expedition.gd）
+const EXP_CODE := 100                  # 章节号 + 100 = 这张图的远征（船、联机 init 都这么传）
+const EXP_CHAPTER := 3                 # 试玩只有星斗大森林
+const EXP_NAME := "猎魂远征 · 星斗大森林"
+## 天色轮换：黄昏 → 夜晚 → 血月 → 夜晚 → 血月……；k = 这时候回船存战利品的倍数
+const EXP_PHASE := {
+	"dusk": {"name": "黄昏", "t": 300.0, "k": 1.0, "next": "night"},
+	"night": {"name": "夜晚", "t": 150.0, "k": 1.3, "next": "blood"},
+	"blood": {"name": "血月", "t": 240.0, "k": 1.8, "next": "night"},
+}
+const EXP_CHANNEL := 40.0              # 护法：站着吸收魂环多少秒
+const EXP_WAVE_GAP := 7.0              # 护法时隔几秒来一波魂兽
+const EXP_REVEAL := 55.0               # 离猎物这么近才看得清它在哪
+const EXP_CAMP_R := 38.0               # 船边营地的半径（夜猎者不进来）
+const EXP_MONEY := 1.5                 # 远征里打怪的金魂币倍数（先进背包）
+const EXP_HUNTER := "raptor"           # 夜猎者：万年疾爪龙王
+const EXP_HUNTER_HP := 1.3
+const EXP_HUNTER_SPEED := 7.4          # 比走路（5.6）快，比冲刺（8.6）慢
 
 
 ## 魂兽血量：基础 × 年份 × 章节（后面的图的魂兽厚得多，玩家的暗器、升级、等级、魂骨也跟着涨）

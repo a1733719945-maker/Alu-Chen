@@ -4,6 +4,7 @@ extends Control
 ## 样子（参考 Valorant / Apex 的主界面）：左边一列大字菜单，右边是选中武魂的立绘和九个武魂头像，底下三个存档位。
 
 signal solo
+signal expedition
 signal host_room
 signal join_room(code: String)
 signal quit
@@ -90,6 +91,10 @@ func _ready() -> void:
 	var b_solo := UiKit.menu_item("单人游戏", true, 32)
 	b_solo.pressed.connect(func(): solo.emit())
 	left.add_child(b_solo)
+	# 第十版：猎魂远征试玩（单人直接进；联机从任何一张图的渡船去）
+	var b_exp := UiKit.menu_item("猎魂远征（试玩）", false, 32)
+	b_exp.pressed.connect(func(): expedition.emit())
+	left.add_child(b_exp)
 	var b_host := UiKit.menu_item("创建联机房间", false, 32)
 	b_host.pressed.connect(func(): host_room.emit())
 	left.add_child(b_host)
@@ -113,7 +118,7 @@ func _ready() -> void:
 	var b_quit := UiKit.menu_item("退出", false, 32)
 	b_quit.pressed.connect(func(): quit.emit())
 	left.add_child(b_quit)
-	_buttons = [b_solo, b_host, b_join]
+	_buttons = [b_solo, b_exp, b_host, b_join]
 	var sp2 := Control.new()
 	sp2.custom_minimum_size.y = 10
 	left.add_child(sp2)

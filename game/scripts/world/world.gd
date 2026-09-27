@@ -29,6 +29,8 @@ var fx: Fx
 var hud: Hud
 var skills: SkillSystem
 var combo: Combo                  # 猎魂连击 + 武魂真身（world/combo.gd）
+var expedition: Expedition        # 猎魂远征（world/expedition.gd）；普通章节是 null
+var _exp_mode := false
 var loot: Loot
 var player: Player
 var players_root: Node3D
@@ -78,8 +80,35 @@ var _tide_total := 0
 var _tide_king_done := true
 
 
+## p_chapter ≥ Data.EXP_CODE：那张图的猎魂远征（比如 103 = 星斗大森林远征）
 func _init(p_chapter := 1) -> void:
 	chapter = p_chapter
+	if p_chapter >= Data.EXP_CODE:
+		_exp_mode = true
+		chapter = p_chapter - Data.EXP_CODE
+
+
+## 发给别人的章节号（远征要 +100）
+func chapter_code() -> int:
+	return chapter + (Data.EXP_CODE if _exp_mode else 0)
+
+
+func exp_dmg_k() -> float:
+	return expedition.dmg_k if expedition else 1.0
+
+
+func exp_hp_k() -> float:
+	return expedition.hp_k if expedition else 1.0
+
+
+## 自己赚到金魂币：远征里先进背包（回船存了才算），平时直接到手
+func earn(money: int) -> void:
+	if money <= 0:
+		return
+	if expedition:
+		expedition.add_bag(money)
+	else:
+		Profile.add_money(money)
 
 
 func _ready() -> void:
@@ -142,10 +171,17 @@ func _ready() -> void:
 	Profile.changed.connect(_on_profile_changed)
 	Sfx.play_ambient("ambient", -16.0)
 	capture_mouse(true)
+	_last_prog = [Profile.level, Profile.rings.size()]
+	if _exp_mode:
+		# 猎魂远征：没有章节任务、悬赏、兽潮、祭坛，左上角换成远征的目标
+		expedition = Expedition.new()
+		expedition.name = "Expedition"
+		expedition.world = self
+		add_child(expedition)
+		return
 	var ch_trait := str(Data.CH_TRAIT.get(chapter, ""))
 	hud.chapter_banner(str(ch["name"]), str(ch["intro"]) + (("\n" + str(Data.TRAIT_TEXT[ch_trait])) if ch_trait != "" else ""))
 	_ensure_bounties()
-	_last_prog = [Profile.level, Profile.rings.size()]
 	if Net.is_host():
 		get_tree().create_timer(0.5).timeout.connect(_host_check_quest)
 
@@ -656,6 +692,10 @@ func _host_spawn(owner: int, pos: Vector3, species: String, age: int, owner_pos:
 func _spawn_beast(id: int, species: String, age: int, pos: Vector3, vel: Vector3, owner: int, proxy: bool, temper := "flee", affixes: Array = []) -> Beast:
 	var b := Beast.new()
 	b.setup(self, id, species, age, owner, proxy, temper, affixes)
+	if expedition and not proxy:
+		# 远征：魂兽血量跟着队伍等级走（客人只按比例显示血条）
+		b.max_hp *= expedition.hp_k
+		b.hp = b.max_hp
 	beasts_root.add_child(b)
 	b.launch(pos, vel)
 	beasts[id] = b
@@ -735,7 +775,7 @@ func _host_kill(b: Beast) -> void:
 	if b.reward_k > 1.0:
 		mult *= b.reward_k
 		tags.append("鱼饵 ×%.1f" % b.reward_k)
-	var reward := roundi(base * mult * Data.KILL_MONEY)
+	var reward := roundi(base * mult * Data.KILL_MONEY * (Data.EXP_MONEY if expedition else 1.0))
 	var xp_total := roundi(xp * mult)
 	var rewards := {}
 	# 魂兽王是这一章的主线：全队每人再加一大笔修为（大约这一章 2.5 级），不用刷小怪升级
@@ -753,6 +793,8 @@ func _host_kill(b: Beast) -> void:
 	var msg := [b.id, killer, b.species, b.age, b.global_position, tags, rewards, st["kills"], st["earned"], b.affixes, b.temper == "elite"]
 	Net.send(0, "bk", msg)
 	_on_kill(msg)
+	if expedition:
+		expedition.host_on_kill(b)
 	# 词缀：分裂成两只小的；自爆（先出红圈）
 	if "split" in b.affixes:
 		for i in 2:
@@ -980,6 +1022,8 @@ func bounty_text(b: Dictionary) -> String:
 
 
 func _check_bounty(species: String, age: int, affixes: Array) -> void:
+	if _exp_mode:
+		return
 	for i in Profile.bounties.size():
 		var b: Dictionary = Profile.bounties[i]
 		if str(b["species"]) != species or age < int(b["age"]):
@@ -999,7 +1043,7 @@ func _check_bounty(species: String, age: int, affixes: Array) -> void:
 # ------------------------------------------------------------------ 奇遇：每张图自己的事件（Data.CH_EVENTS），隔 6~8 分钟一次
 
 func _host_tide(dt: float) -> void:
-	if boss or Data.autotest:
+	if boss or Data.autotest or _exp_mode:
 		return
 	var ev: Dictionary = Data.CH_EVENTS.get(chapter, {})
 	if _tide_left > 0:
@@ -1182,6 +1226,8 @@ func _host_wild(dt: float) -> void:
 		if not beasts.has(id):
 			_wild.erase(id)
 	var cap := (4 if boss else 8) + 2 * (_all_peers().size() - 1)
+	if expedition:
+		cap += int({"dusk": 0, "night": 3, "blood": 5}.get(expedition.phase, 0))
 	if _wild.size() >= cap:
 		return
 	var pl := alive_players()
@@ -1231,7 +1277,7 @@ func _update_music(dt: float) -> void:
 			_battle_hold = 8.0
 			break
 	var want := "explore"
-	if (boss and not boss.dead) or focus_king() != null:
+	if (boss and not boss.dead) or focus_king() != null or (expedition and expedition.hunter_near()):
 		want = "boss"
 	elif Time.get_ticks_msec() / 1000.0 < _tide_until:
 		want = "event"
@@ -1272,7 +1318,7 @@ func _host_spawn_wild(pos: Vector3, species: String, age: int, temper: String) -
 
 ## 房主：魂兽王出大招（地上先出圈，躲得开）
 func king_move(b: Beast, move: String, at: Vector3, wind: float) -> void:
-	var base: float = float(Data.BEASTS[b.species].get("hurt", 10.0)) * (1.0 + b.age * 0.5) * Data.ELITE_DMG * Data.BEAST_DMG * Profile.rebirth_hard()
+	var base: float = float(Data.BEASTS[b.species].get("hurt", 10.0)) * (1.0 + b.age * 0.5) * Data.ELITE_DMG * Data.BEAST_DMG * Profile.rebirth_hard() * exp_dmg_k()
 	var p := b.global_position
 	var r: float = 3.0 + BeastModels.body_size(b.species).x * float(Data.AGES[b.age]["scale"]) * b.size_k * 0.6
 	match move:
@@ -1459,7 +1505,9 @@ func _host_elites(dt: float) -> void:
 		if _t < 3.0:
 			return
 		_elite_init = true
-		_init_elites()
+		# 远征里不刷固定的王（猎物和夜猎者由 Expedition 管）
+		if not _exp_mode:
+			_init_elites()
 	for key in elites:
 		var e: Dictionary = elites[key]
 		if int(e["id"]) != 0:
@@ -1520,7 +1568,7 @@ func _host_spawn_elite(key: String) -> void:
 
 ## 魔狼 / 犀牛 咬到玩家（章节越后越疼，还带这一章的特点：毒 / 冰冻 / 拖拽）
 func beast_bite(b: Beast, peer: int, dmg: float) -> void:
-	dmg *= float(Data.CH_POWER.get(chapter, 1.0)) * Data.BEAST_DMG * Profile.rebirth_hard()
+	dmg *= float(Data.CH_POWER.get(chapter, 1.0)) * Data.BEAST_DMG * Data.BITE_K * Profile.rebirth_hard() * exp_dmg_k()
 	var ch_trait := str(Data.CH_TRAIT.get(chapter, ""))
 	if peer == Net.my_id:
 		player.take_damage(dmg, b.global_position)
@@ -1549,7 +1597,7 @@ func _apply_trait(ch_trait: String, from: Vector3, dmg: float) -> void:
 ## 金刚猿扔石头
 func beast_throw_rock(b: Beast, target: Vector3) -> void:
 	var from := b.global_position + Vector3(0, 1.4 * Data.AGES[b.age]["scale"], 0)
-	var dmg: float = float(Data.BEASTS[b.species].get("hurt", 12.0)) * (1.0 + b.age * 0.5) * float(Data.CH_POWER.get(chapter, 1.0)) * Data.BEAST_DMG
+	var dmg: float = float(Data.BEASTS[b.species].get("hurt", 12.0)) * (1.0 + b.age * 0.5) * float(Data.CH_POWER.get(chapter, 1.0)) * Data.BEAST_DMG * exp_dmg_k()
 	_host_hazard("rock", from, target, 1.0, 2.2, dmg)
 
 
@@ -1594,7 +1642,7 @@ func _on_btel(msg: Array) -> void:
 func host_beast_special(b: Beast, sk: Dictionary, at: Vector3) -> void:
 	var center: Vector3 = b.global_position if str(sk["at"]) == "self" else at
 	var r := float(sk["radius"]) * b.size_k
-	var base: float = float(Data.BEASTS[b.species].get("hurt", 8.0)) * (1.0 + b.age * 0.5) * (Data.ELITE_DMG if b.temper == "elite" else 1.0) * b._dmgk() * float(Data.CH_POWER.get(chapter, 1.0)) * Data.BEAST_DMG * Profile.rebirth_hard()
+	var base: float = float(Data.BEASTS[b.species].get("hurt", 8.0)) * (1.0 + b.age * 0.5) * (Data.ELITE_DMG if b.temper == "elite" else 1.0) * b._dmgk() * float(Data.CH_POWER.get(chapter, 1.0)) * Data.BEAST_DMG * Profile.rebirth_hard() * exp_dmg_k()
 	var dmg := base * float(sk.get("dmg", 1.0))
 	if sk.has("howl"):
 		for o: Beast in beasts.values():
@@ -1752,8 +1800,11 @@ func _on_kill(msg: Array) -> void:
 	_gain(int(mine[0]), int(mine[1]))
 	# 魂兽王：打死的人和附近 80 米的队友每人一个王魂（附魔材料）
 	if msg.size() > 10 and bool(msg[10]) and (killer == Net.my_id or player.global_position.distance_to(pos) < 80.0):
-		Profile.add_material(species, 1)
-		hud._show_banner("猎杀魂兽王！", "获得 %s王魂 ×1（暗器铺 → 附魔）· 必掉魂骨和魂环" % Data.BEASTS[species]["name"], UiKit.GOLD, 4.0)
+		if expedition:
+			expedition.add_mat(species, 1)
+		else:
+			Profile.add_material(species, 1)
+			hud._show_banner("猎杀魂兽王！", "获得 %s王魂 ×1（暗器铺 → 附魔）· 必掉魂骨和魂环" % Data.BEASTS[species]["name"], UiKit.GOLD, 4.0)
 		fx.ring_breakthrough(pos, Data.AGES[age]["glow"], 0)
 	if killer == Net.my_id:
 		Profile.kills += 1
@@ -1764,7 +1815,7 @@ func _on_kill(msg: Array) -> void:
 		_streak_at = now
 		var bonus := int(float(mine[0]) * 0.15 * mini(_streak - 1, 5))
 		if bonus > 0:
-			Profile.add_money(bonus)
+			earn(bonus)
 			tags = tags.duplicate()
 			tags.append("%s  +%d 金魂币" % [["", "", "双杀", "三连杀", "四连杀", "五连杀"][mini(_streak, 5)] if _streak <= 5 else "%d 连杀！" % _streak, bonus])
 		hud.kill_popup(int(mine[0]) + bonus, int(mine[1]), tags, species, age)
@@ -1784,7 +1835,7 @@ func _gain_essence(age: int, species: String) -> void:
 ## 自己拿到金魂币和修为
 func _gain(money: int, xp: int) -> void:
 	if money > 0:
-		Profile.add_money(money)
+		earn(money)
 	if xp > 0:
 		var was_cap := Profile.at_bottleneck()
 		var ups := Profile.add_xp(xp)
@@ -1999,7 +2050,11 @@ func interactables() -> Array:
 		var ess := why != "" and not Profile.at_bottleneck()
 		if ess:
 			t = "按 F 炼化%s魂环精华（+修为）" % Data.age_name(int(r["age"]))
+		if expedition and why == "":
+			t = "按 F 吸收%s魂环（要站着 %d 秒，队友护法）" % [Data.age_name(int(r["age"])), int(Data.EXP_CHANNEL)]
 		out.append({"id": "ring", "rid": rid, "pos": r["pos"], "r": 2.6, "text": t, "ok": why == "", "act": why == "" or ess, "essence": ess})
+	if expedition:
+		out.append_array(expedition.interactables())
 	return out
 
 
@@ -2012,15 +2067,19 @@ var _altar_cd := 0.0
 
 
 func _can_summon() -> bool:
-	if boss:
+	if boss or _exp_mode:
 		return false
 	var t := str(_cur_quest().get("type", ""))
 	return t == "altar" or (boss_cleared() and _altar_cd <= 0.0)
 
 
-## 渡船能去哪：Boss 打赢了可以去下一章；以前去过的岛随时能回去
+## 渡船能去哪：Boss 打赢了可以去下一章；以前去过的岛随时能回去；猎魂远征随时能去
+## 远征里：只能回原来的章节（存档里的章节）
 func boat_destinations() -> Array:
 	var out: Array = []
+	if _exp_mode:
+		return [Profile.chapter if Data.CHAPTERS.has(Profile.chapter) else 1]
+	out.append(Data.EXP_CODE + Data.EXP_CHAPTER)
 	var nxt := int(Data.CHAPTERS[chapter].get("next", 0))
 	for c in range(1, Data.CHAPTERS.size() + 1):
 		if c == chapter:
@@ -2035,6 +2094,8 @@ func _cur_quest() -> Dictionary:
 
 
 func _altar_text() -> String:
+	if _exp_mode:
+		return "祭坛（远征里不能召唤 Boss）"
 	if boss:
 		return "祭坛（Boss 已经出现了）"
 	if _cur_quest().get("type", "") == "altar":
@@ -2047,6 +2108,8 @@ func _altar_text() -> String:
 
 
 func _boat_text() -> String:
+	if expedition and expedition.has_bag():
+		return expedition.boat_text()
 	if boat_destinations().is_empty():
 		return "渡船：打败这里的 Boss 之后才能去下一个岛"
 	if _i_boarded:
@@ -2077,7 +2140,13 @@ func interact() -> void:
 				Net.send_host("altar", [])
 			else:
 				hud.toast(_altar_text(), Color(0.9, 0.9, 0.9))
+		"expbag":
+			if expedition:
+				expedition.pick_bag()
 		"boat":
+			if expedition and expedition.has_bag():
+				expedition.bank()
+				return
 			var ds := boat_destinations()
 			if ds.is_empty():
 				hud.toast(_boat_text(), Color(0.9, 0.9, 0.9))
@@ -2120,7 +2189,7 @@ func on_upgraded(_id: String) -> void:
 # ------------------------------------------------------------------ 任务（房主推进）
 
 func _host_quest_event(type: String, n: int, arg := "") -> void:
-	if not Net.is_host():
+	if not Net.is_host() or _exp_mode:
 		return
 	var q := _cur_quest()
 	if q.is_empty() or q["type"] != type:
@@ -2132,7 +2201,8 @@ func _host_quest_event(type: String, n: int, arg := "") -> void:
 
 
 func _host_check_quest() -> void:
-	if not Net.is_host():
+	# 远征不推进章节任务（也不能把存档的章节改成远征这张图）
+	if not Net.is_host() or _exp_mode:
 		return
 	var q := _cur_quest()
 	if q.is_empty():
@@ -2765,6 +2835,8 @@ func _on_player_died() -> void:
 	_down_t = 0.0
 	_fall_t = -1.0
 	_carry_t = 0.0
+	if expedition:
+		expedition.on_my_death()
 	player.carried = true
 	loot.gull_carry(player, true, -Net.my_id)
 	Net.send(0, "gullbody", [Net.my_id])
@@ -3009,7 +3081,9 @@ func on_message(from: int, type: String, data: Variant) -> void:
 		"ringgone":
 			_on_ring_gone(data)
 		"absorb":
-			if Net.is_host():
+			if Net.is_host() and expedition:
+				expedition.host_absorb(from, int(data[0]))
+			elif Net.is_host():
 				var rid := int(data[0])
 				if rings.has(rid):
 					var r: Dictionary = rings[rid]
@@ -3070,6 +3144,9 @@ func on_message(from: int, type: String, data: Variant) -> void:
 			builder.critter_hide(int(data[0]), float(data[1]))
 		"tb":
 			on_true_body(int(data[0]))
+		"expst", "expfp", "exproar", "expchend", "expchq", "exphunt", "expev":
+			if expedition:
+				expedition.on_message(from, type, data)
 		"crank":
 			var r := int(data[1])
 			hud.feed("%s 打出了 %s 级连击！" % [str(data[0]), Combo.RANKS[r][0]], Combo.RANKS[r][3])
@@ -3147,6 +3224,9 @@ func on_message(from: int, type: String, data: Variant) -> void:
 		"boat":
 			if Net.is_host():
 				var dest := int(data[0]) if (data is Array and (data as Array).size() > 0) else int(Data.CHAPTERS[chapter]["next"])
+				# 远征里坐船只能回房主存档的章节（客人那边显示的是他自己的章节）
+				if _exp_mode:
+					dest = int(boat_destinations()[0])
 				if dest in boat_destinations():
 					if dest != _boat_dest:
 						_boat_ready.clear()
@@ -3213,6 +3293,8 @@ func _on_boat_ready(msg: Array) -> void:
 	var dname := ""
 	if msg.size() > 3 and Data.CHAPTERS.has(int(msg[3])):
 		dname = "，去%s" % Data.CHAPTERS[int(msg[3])]["name"]
+	elif msg.size() > 3 and int(msg[3]) >= Data.EXP_CODE:
+		dname = "，去%s" % Data.EXP_NAME
 	if str(msg[2]) != "":
 		hud.feed("%s 上船了（%d/%d%s）" % [str(msg[2]), int(msg[0]), int(msg[1]), dname], Color(0.6, 0.85, 1.0))
 	if int(msg[0]) < int(msg[1]):
@@ -3220,8 +3302,15 @@ func _on_boat_ready(msg: Array) -> void:
 
 
 func _travel(next: int) -> void:
+	# 从远征回去：人在船边，背包先全部存好
+	if expedition:
+		expedition.bank()
+	# 去远征：不改存档里的章节和任务
+	if next >= Data.EXP_CODE:
+		travel_requested.emit(next)
+		return
 	Profile.max_chapter = maxi(Profile.max_chapter, next)
-	if Net.is_host():
+	if Net.is_host() and not _exp_mode:
 		Profile.chapter = next
 		Profile.quest = 0
 		Profile.quest_count = 0
@@ -3241,7 +3330,7 @@ func _send_init(to: int) -> void:
 	var bs := []
 	if boss and not boss.dead:
 		bs = [boss.kind, boss.max_hp, boss._anchor, boss.hp / boss.max_hp]
-	Net.send(to, "init", [chapter, quest_idx, quest_count, list, rl, bs, stats, loot.init_list()])
+	Net.send(to, "init", [chapter_code(), quest_idx, quest_count, list, rl, bs, stats, loot.init_list()])
 
 
 func _apply_init(d: Array) -> void:

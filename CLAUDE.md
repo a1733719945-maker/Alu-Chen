@@ -37,6 +37,11 @@
 | 魂兽没差异 | 每种魂兽一个有前摇、能躲的独门招式 |
 | 短时间小爽、中时间大爽 | 升级 / 配件 / 连杀是小爽；魂环突破、新魂技档次特效、Boss、新岛是大爽 |
 | 要有投入、紧迫感、耐玩 | 鱼饵、饱食度、词缀、悬赏、兽潮、精英、外观、每章更难 |
+| 复活了全岛的怪都来追我 | 凶暴的只追 32 米内的人（打过它 / 正在打的 55 米）`Beast.AGGRO_RANGE / _pick_target` |
+| 没有防御，封号斗罗也被打 1-2 下就死 | 魂力护体：每级减伤 0.4%（`Data.level_armor`，武魂面板显示"护体"）；后期章节攻击倍数压平；普通咬 ×0.7，红圈大招不变 |
+| 第二章被咬中毒一直掉血很烦 | 去掉了（`CH_TRAIT[2] = ""`，曼陀罗蛇毒雾改成减速，碧磷蟾不带毒）。**别再加持续掉血** |
+| 武魂真身"和魂技有任何差别吗" | 关掉了（`Combo.TRUE_BODY = false`）。**加按钮 / 加倍数不算好玩**，要改结构：给玩家目标、风险、取舍、队友分工 |
+| 不要 roguelite（选卡、随机强化） | 方向是"组队猎魂兽王"：第十版的猎魂远征 |
 
 ## 仓库和发布
 
@@ -182,6 +187,29 @@
    - 自动测试阶段 combo（逻辑）、comboshot（截图）
    - 用户对"好玩"的要求：**要改变每一刻手上的体验，不是调时长 / 数值**。下次想新玩法先想"打得好和打得烂有什么区别、有没有爽到顶的时刻、朋友之间有没有互动"
 
+15. 第十版（2026-09-27）：用户试玩反馈"仇恨全岛、没防御、中毒烦、还是不好玩"，否掉了"魂环自选 / 猎王克制 / 融合技"，同意做**猎魂远征**（试玩只有星斗大森林）：
+   - 修：仇恨范围（见上表）；魂兽被圆石头挤到地形下面会一直往下掉（凭空消失），`Beast._physics_process` 里低于地面 1.2 米就拉回地面；
+     等级减伤 `Player.defense()`；`CH_POWER` 压成 1.0 / 1.2 / 1.4 / 1.6 / 1.8，`BITE_K` 0.7；第二章不中毒；武魂真身关掉
+   - 猎魂远征 `world/expedition.gd`（`Expedition`，World 持有 `world.expedition`，普通章节是 null）。章节号 +100 = 远征（`Data.EXP_CODE`，103 = 星斗大森林），
+     `World._init` 拆出 `_exp_mode`，`chapter_code()` 发给客人，`main.gd` 的 `_start_world / _travel` 认 ≥100；入口：主菜单"猎魂远征（试玩）"（单人）、任何一张图的渡船（联机）
+   - 一趟远征：
+     1. 猎物：房主按队伍谁卡瓶颈要什么年份挑一只王（`_target_spec`），在栖息地之间慢慢逛（`spawn_pos` 当"老家"，`Beast.home_speed`）；
+        不标准确位置：地上发光脚印（消息 expfp，170 米内画）、隔 24–34 秒吼一声（exproar，罗盘准 6 秒）、罗盘方向偏 ±35 度（`_fuzzy_pos`），55 米内才看清
+     2. 打死：钱 ×1.5、王魂进**背包**（`World.earn`、`Expedition.add_bag / add_mat`），魂环照常掉（王必掉）
+     3. 护法：远征里吸收魂环 = 站着 40 秒（`Player.channeling`：不能走、能开枪；被技能带离 5 米算放弃），房主每 7 秒从一个方向刷一波凶的（`focus_peer` = 吸收的人）；
+        吸收的人倒下 → 失败，魂环掉回原地（消息 expchend）。一次只能一个人吸收
+     4. 天色：黄昏 300 秒 → 夜晚 150 → 血月 240 → 夜晚 → 血月……（`Data.EXP_PHASE`，天空图 / 光 / 雾渐变 `_apply_phase`）；天黑了野怪更多（`_host_extra`、`_host_wild` 上限）
+     5. 血月：夜猎者（万年疾爪龙王，`EXP_HUNTER`，血 ×1.3）一直往营地外最近的人走，60 米内扑上去（`focus_peer`），速度上限 7.4（冲刺 8.6 甩得掉，`Beast.speed_cap`）；
+        船边营地 38 米它不进（`Beast.avoid_c / avoid_r / _nearest_ok`）；不逃回巢养伤；血月结束退回森林
+     6. 背包：船边按 F 存，乘当时的倍数（黄昏 ×1 / 夜晚 ×1.3 / 血月 ×1.8）；倒下背包掉在原地（金色光柱），自己走回去 F 捡；没捡回来又倒下，上一个就没了；
+        坐船离开先全部存；中途退出只带回一半。成就奖励照旧直接到手
+     7. 难度：房主按队伍平均等级算 `hp_k`（魂兽血量，魂技 `_dk` 也乘）、`dmg_k`（魂兽伤害）；猎物 / 夜猎者按人数加血 `team_k`
+   - 远征里没有：章节任务（`_host_check_quest` 直接返回，**不能改存档章节**）、悬赏、兽潮、固定的王、祭坛
+   - HUD：左上换成远征面板（天色 + 倒计时 + 存钱倍数、猎物卡、护法卡、背包）；罗盘"猎 / 夜 / 包 / 护"；夜猎者 90 米内心跳 + 屏幕发红 + 红条；击杀弹窗写"进背包"
+   - 联机消息：expst（每秒状态）、expfp、exproar、expchend、expchq、exphunt、expev
+   - 自动测试：`aggro`（仇恨 + 减伤）、`expedition`（整趟流程）、`expshot`（截图，要开窗口）、联机 `--autotest=host --exp=1` + `--autotest=client --exp=1`
+   - 字体是裁剪过的：新字要在 GB2312 一级字里，不然显示方框（本机没 Python 跑不了 `subset_fonts.py`；已经把"迁徙""漩涡"换成"过境""旋涡"）
+
 ## 还没做 / 可以继续
 
 - Boss 写实模型：免费 CC0 里没有合适的，要用户提供素材；现在靠着色器 + 光环 + 死亡神光
@@ -210,7 +238,8 @@ xvfb-run -a -s "-screen 0 1280x720x24" godot --path . --rendering-driver vulkan 
 # 联机：先起服务器，再开房主和客人（见 README）
 ```
 
-- autotest 阶段：`phys`、`hunt:<栖息地,...>`、`shop`、`recoil`、`sniper`、`ring`、`boss`、`boat`、`tour`、`hudshot`、`uishots`（全部界面截图）、`kings`、`done`；模式 `solo / shots / host / client / zoo / measure / vm`。
+- autotest 阶段：`phys`、`hunt:<栖息地,...>`、`shop`、`recoil`、`sniper`、`ring`、`boss`、`boat`、`tour`、`hudshot`、`uishots`（全部界面截图）、`kings`、`aggro`、`expedition`、`expshot`、`done`；模式 `solo / shots / host / client / zoo / measure / vm`（host / client 加 `--exp=1` 测远征联机）。
+- `expedition` 会改等级和魂环，放在 `--plan` 最后面，别和 `ring` 这种要新存档的阶段连着跑。
 - 改了中文文字（新字）后要重跑 `tools/subset_fonts.py <原始 otf 目录>`，不然新字会显示成方框。原始字体在 notofonts/noto-cjk 的 raw.githubusercontent.com 上。
 
 ## 素材和工具

@@ -106,8 +106,11 @@ func _draw() -> void:
 	for rid in world.rings:
 		_dot(world.rings[rid]["pos"], Data.age_color(int(world.rings[rid]["age"])), 5.0, center, scale)
 	for b: Beast in world.beasts.values():
-		if b.alive() and b.temper == "elite":
+		# 远征的猎物不标在地图上（要跟踪迹找），夜猎者离得近才标
+		if b.alive() and b.temper == "elite" and b.exp_role == "":
 			_poi(b.global_position, "王", Color(1.0, 0.55, 0.15), center, scale, font, b.display_name() if big else "")
+		elif b.alive() and b.exp_role == "hunter" and b.global_position.distance_to(world.player.global_position) < 140.0:
+			_poi(b.global_position, "夜", Color(1.0, 0.25, 0.2), center, scale, font, "夜猎者" if big else "")
 	if world.nests:
 		for nid in world.nests.nests:
 			var ne: Dictionary = world.nests.nests[nid]
