@@ -57,7 +57,9 @@ func _ready() -> void:
 			_plan = ["phys", "hunt:burrow,meadow,flowers,water,reel", "shop", "recoil", "sniper", "ring", "boss", "boat", "hunt:den,swamp,mud", "boss", "boat",
 				"hunt:glade,roost,thicket,nest,bog", "boss", "boat",
 				"hunt:snowden,frostgrove,icefield,icecave,icelake", "boss", "boat",
-				"hunt:beach,cliff,reef,deep,abyss", "boss", "dungeon", "guns2", "huntrun", "done"]
+				"hunt:beach,cliff,reef,deep,abyss", "boss", "dungeon", "huntrun", "done"]
+			# 新暗器测试放在第一章买完暗器后面（要第一章的草地摆靶子；第五章海神岛没有草地）
+			_plan.insert(_plan.find("shop") + 1, "guns2")
 		"shots":
 			_shots = true
 			_shots_dir = str(args.get("out", "user://shots"))
@@ -1913,7 +1915,32 @@ func _run_dungeon() -> void:
 				return
 			_note("进了%s · 词条 %s" % [d.tier_name(int(d.run["tier"])), Data.DG_MODS[str(d.run["mod"])]["name"]])
 			_mem["waves"] = 0
-			_next(3)
+			_mem["walk"] = 0
+			_next(20)
+		20:
+			# 秘境里往东南西北各走 0.7 秒，都要走得动（用户：秘境往右走卡脚——场地在地图外 900 米，被地图边界挡住了）
+			var dirs := [["东", -PI / 2], ["北", 0.0], ["西", PI / 2], ["南", PI]]
+			var k := int(_mem["walk"])
+			if k >= dirs.size():
+				Input.action_release("move_forward")
+				_note("秘境里东南西北都走得动")
+				_next(3)
+				return
+			if not _mem.has("walk_from"):
+				p.look_to(float(dirs[k][1]), 0.0)
+				_mem["walk_from"] = p.global_position
+				_mem["walk_t"] = _step_t
+				Input.action_press("move_forward")
+				return
+			if _step_t - float(_mem["walk_t"]) < 0.7:
+				return
+			Input.action_release("move_forward")
+			var fwd := Basis(Vector3.UP, float(dirs[k][1])) * Vector3.FORWARD
+			var moved := (p.global_position - (_mem["walk_from"] as Vector3)).dot(fwd)
+			if not _check(moved > 1.5, "秘境里往%s走不动（只走了 %.1f 米）" % [dirs[k][0], moved]):
+				return
+			_mem.erase("walk_from")
+			_mem["walk"] = k + 1
 		3:
 			# 测试：场地里出来的魂兽一律秒掉
 			for b: Beast in w.beasts.values():
@@ -2578,8 +2605,9 @@ func _run_guns2() -> void:
 				if not _check(Profile.buy_weapon(id), "买不了 %s" % id):
 					return
 				w.on_bought_weapon(id)
+			# 在草地上摆靶子（别的地图没有草地就在码头边）
 			var m := w.island.habitat("meadow")
-			var c: Vector2 = m["center"]
+			var c: Vector2 = m.get("center", Vector2(w.island.spawn.x, w.island.spawn.z))
 			var base := Vector3(c.x, 0, c.y)
 			p.teleport(Vector3(base.x, w.island.height_at(base.x, base.z) + 0.5, base.z))
 			p.look_to(0.0, 0.0)
@@ -2829,6 +2857,14 @@ func _run_guns2() -> void:
 				return
 			w.hud.close_panels()
 			_note("外观页 3D 预览、画板画一笔、保存都没问题")
+			# 靶子收掉（后面的测试还在这张图上）
+			for k in _mem["dm"]:
+				var db: Beast = _mem["dm"][k]
+				if is_instance_valid(db) and db.alive():
+					w.beast_escaped(db, "despawn")
+			_mem.erase("dm")
+			Input.action_release("fire")
+			Input.action_release("aim")
 			_next_phase()
 
 

@@ -640,9 +640,10 @@ func _physics_process(dt: float) -> void:
 	# 浅水：走得慢
 	if not swimming and global_position.y < Island.WATER_Y + 0.1 and ground < Island.WATER_Y - 0.2:
 		hv *= 1.0 - clampf((Island.WATER_Y - ground) * 0.25, 0.0, 0.5) * dt * 8.0
-	# 地图边界
+	# 地图边界（秘境场地在地图外面 900 米，不算——以前在秘境里往东走会被这里挡住，像卡脚）
 	var out := Vector3(global_position.x, 0, global_position.z)
-	if out.length() > 150.0 and hv.dot(out.normalized()) > 0.0:
+	var in_dg: bool = world.dungeon != null and world.dungeon.inside
+	if out.length() > 150.0 and not in_dg and hv.dot(out.normalized()) > 0.0:
 		hv -= out.normalized() * hv.dot(out.normalized())
 	if _grapple_t <= 0.0:
 		velocity.x = hv.x
