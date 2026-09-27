@@ -57,6 +57,7 @@ func _register_inputs() -> void:
 		"inspect": [KEY_V],
 		"true_body": [KEY_Z],
 		"achievements": [KEY_J],
+		"hunt_board": [KEY_L],
 		"weapon_1": [KEY_1],
 		"weapon_2": [KEY_2],
 		"weapon_3": [KEY_3],

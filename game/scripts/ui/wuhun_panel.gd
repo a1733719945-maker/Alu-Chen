@@ -189,7 +189,7 @@ func _middle() -> void:
 				rh.add_child(b)
 		else:
 			rv.add_child(UiKit.kicker("第%s魂环 · %d 级 · 至少%s" % [Data.RING_NAMES[i], (i + 1) * 10, Data.age_name(Data.RING_MIN_AGE[i])], UiKit.DIM, 12))
-			rv.add_child(UiKit.label("吸收了才知道是什么魂技：同一种魂兽总给同一个魂技，年份越高越强", 13, UiKit.DIM))
+			rv.add_child(UiKit.label("按 L 看猎魂榜：挑哪只魂兽就学哪个魂技，年份越高越强", 13, UiKit.DIM))
 
 
 ## 右边：六个部位的魂骨 + 背包里的

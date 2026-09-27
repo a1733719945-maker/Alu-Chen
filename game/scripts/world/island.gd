@@ -156,8 +156,21 @@ func _generate() -> void:
 			heights[i + j * SIZE] = _raw_height(x, z)
 
 
+## 地图外面另搭的平台（秘境的场地）：[{"c": Vector2, "r2": 半径平方, "y": 高度}]。在里面 height_at 直接返回平台高度，
+## 所以魂兽、红圈、脚印、落地这些用到地面高度的东西在秘境里照常用
+var floors: Array = []
+
+
+func add_floor(center: Vector3, radius: float) -> void:
+	floors.append({"c": Vector2(center.x, center.z), "r2": radius * radius, "y": center.y})
+
+
 ## 任意位置的地面高度（和碰撞体一致的双线性插值）
 func height_at(x: float, z: float) -> float:
+	for f in floors:
+		var c: Vector2 = f["c"]
+		if (x - c.x) * (x - c.x) + (z - c.y) * (z - c.y) < float(f["r2"]):
+			return float(f["y"])
 	var fx := clampf(x + HALF, 0.0, SIZE - 1.001)
 	var fz := clampf(z + HALF, 0.0, SIZE - 1.001)
 	var i := int(fx)

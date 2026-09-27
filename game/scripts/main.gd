@@ -10,7 +10,7 @@ var world: World
 var _waiting_init := false
 var _queue: Array = []
 var _sailing := false        # 正在播开船动画：这期间收到的联机消息先存着，新地图建好再给它
-var _expedition := false     # 主菜单点了"猎魂远征"：单人直接进远征
+
 
 
 func _ready() -> void:
@@ -49,7 +49,7 @@ func _show_menu(status := "", error := false) -> void:
 	menu = MainMenu.new()
 	add_child(menu)
 	menu.solo.connect(start_solo)
-	menu.expedition.connect(start_expedition)
+
 	menu.host_room.connect(start_host)
 	menu.join_room.connect(start_join)
 	menu.quit.connect(func(): get_tree().quit())
@@ -58,12 +58,6 @@ func _show_menu(status := "", error := false) -> void:
 
 
 func start_solo() -> void:
-	_expedition = false
-	Net.start_offline()
-
-
-func start_expedition() -> void:
-	_expedition = true
 	Net.start_offline()
 
 
@@ -88,8 +82,7 @@ func start_join(code: String) -> void:
 
 func _on_connected(_code: String) -> void:
 	if Net.is_host():
-		_start_world(Data.EXP_CODE + Data.EXP_CHAPTER if _expedition else Profile.chapter, false)
-		_expedition = false
+		_start_world(Profile.chapter, false)
 		if Net.is_online():
 			world.hud.toast("已进入房间 %s。按 Esc 可以看到房间码，发给朋友就能加入" % Net.room_code, Color(1, 0.9, 0.6), 7.0)
 	else:
@@ -114,7 +107,7 @@ func _start_world(chapter: int, announce: bool) -> void:
 	if world:
 		world.queue_free()
 		world = null
-	if not Data.CHAPTERS.has(chapter % Data.EXP_CODE):
+	if not Data.CHAPTERS.has(chapter):
 		chapter = 1
 	world = World.new(chapter)
 	world.name = "World"
@@ -127,7 +120,7 @@ func _start_world(chapter: int, announce: bool) -> void:
 
 func _travel(chapter: int) -> void:
 	# 坐船换章节：先播开船动画（Remotion 做的），所有人一起换地图，换完再互相打招呼
-	if Data.autotest or not Data.CHAPTERS.has(chapter % Data.EXP_CODE):
+	if Data.autotest or not Data.CHAPTERS.has(chapter):
 		_start_world(chapter, true)
 		return
 	_sailing = true
@@ -137,7 +130,7 @@ func _travel(chapter: int) -> void:
 		world.hud.visible = false
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	var v := Voyage.new()
-	v.title = "前往 · %s" % (Data.EXP_NAME if chapter >= Data.EXP_CODE else str(Data.CHAPTERS[chapter]["name"]))
+	v.title = "前往 · %s" % Data.CHAPTERS[chapter]["name"]
 	add_child(v)
 	await v.finished
 	_sailing = false

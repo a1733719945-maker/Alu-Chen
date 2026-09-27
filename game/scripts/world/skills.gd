@@ -708,7 +708,7 @@ func _beam(origin: Vector3, dir: Vector3, length: float, dmg: float, pierce: int
 func _dk() -> float:
 	if Data.autotest:
 		return 1.0
-	return float(Data.CH_HP.get(int(world.chapter), 1.0)) * Profile.rebirth_hard() * world.exp_hp_k()
+	return float(Data.CH_HP.get(int(world.chapter), 1.0)) * Profile.rebirth_hard()
 
 
 func _sdmg(b: Beast, dmg: float, imp: Vector3, caster: int) -> bool:

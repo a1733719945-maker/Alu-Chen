@@ -53,6 +53,7 @@ var colliders: StaticBody3D
 var env: Environment
 var sun: DirectionalLight3D
 var shop_door := Vector3.ZERO
+var board_pos := Vector3.ZERO          # 猎魂榜（码头边的告示牌）
 var boat_pos := Vector3.ZERO
 var boat: Node3D
 
@@ -132,6 +133,7 @@ func build() -> void:
 	_dock()
 	_boat()
 	_shop()
+	_board()
 	_altar()
 	_signs()
 	_ambient_life()
@@ -2100,6 +2102,44 @@ func _shop() -> void:
 
 
 # ------------------------------------------------------------------ 祭坛
+
+## 猎魂榜：出生点旁边一块木告示牌，上面钉着几张画着魂兽的纸，挂一盏灯
+func _board() -> void:
+	var p := island.ground_point(island.spawn.x + 5.5, island.spawn.z - 4.0)
+	board_pos = p
+	var node := Node3D.new()
+	node.name = "HuntBoard"
+	node.position = p
+	node.rotation.y = -0.5
+	root.add_child(node)
+	var wood := _wood(Color(0.95, 0.78, 0.6))
+	for s in [-1.0, 1.0]:
+		U.part(node, U.cyl(0.08, 0.1, 2.6, 6), wood, Vector3(s * 1.0, 1.3, 0))
+	U.part(node, U.box(Vector3(2.4, 1.4, 0.1)), wood, Vector3(0, 1.75, 0))
+	U.part(node, U.box(Vector3(2.7, 0.14, 0.3)), wood, Vector3(0, 2.55, 0.05))
+	var paper := U.mat(Color(0.93, 0.88, 0.76), 0.95)
+	var pr := RandomNumberGenerator.new()
+	pr.seed = island.map_seed + 31
+	for k in 5:
+		var q := Vector3(-0.8 + k * 0.4, 1.75 + pr.randf_range(-0.35, 0.35), 0.06)
+		U.part(node, U.box(Vector3(0.34, 0.44, 0.01)), paper, q, Vector3(0, 0, pr.randf_range(-0.15, 0.15)), Vector3.ONE, false)
+		U.part(node, U.sphere(0.03, 6, 4), U.glow(Color(1.0, 0.45, 0.3), 2.0), q + Vector3(0, 0.17, 0.01), Vector3.ZERO, Vector3.ONE, false)
+	U.part(node, U.sphere(0.12, 10, 8), U.glow(Color(1.0, 0.7, 0.35), 4.0), Vector3(0, 2.4, 0.35), Vector3.ZERO, Vector3.ONE, false)
+	var l := OmniLight3D.new()
+	l.light_color = Color(1.0, 0.72, 0.4)
+	l.light_energy = 1.3
+	l.omni_range = 6.0
+	l.position = Vector3(0, 2.3, 0.6)
+	node.add_child(l)
+	var sh := BoxShape3D.new()
+	sh.size = Vector3(2.4, 2.6, 0.3)
+	_add_collider(sh, Transform3D(Basis(Vector3.UP, -0.5), p + Vector3(0, 1.3, 0)))
+	var t := U.label3d("猎魂榜", 56, Color(1.0, 0.8, 0.5))
+	t.visibility_range_end = 30.0
+	t.pixel_size = 0.012
+	t.position = p + Vector3(0, 3.1, 0)
+	root.add_child(t)
+
 
 func _altar() -> void:
 	var p := island.altar_pos

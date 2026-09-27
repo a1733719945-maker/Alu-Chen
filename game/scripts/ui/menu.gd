@@ -4,7 +4,6 @@ extends Control
 ## 样子（参考 Valorant / Apex 的主界面）：左边一列大字菜单，右边是选中武魂的立绘和九个武魂头像，底下三个存档位。
 
 signal solo
-signal expedition
 signal host_room
 signal join_room(code: String)
 signal quit
@@ -83,7 +82,7 @@ func _ready() -> void:
 	_main.add_child(left)
 	left.add_child(UiKit.kicker("斗罗大陆", UiKit.GOLD, 18))
 	left.add_child(UiKit.title("猎魂", 96, Color.WHITE))
-	var sub := UiKit.label("用引魂索把魂兽拽上天，用唐门暗器在空中击杀 · 最多 8 人联机", 16, UiKit.MIST)
+	var sub := UiKit.label("挑一只魂兽，追着踪迹猎它，吸收它的魂环 · 秘境里和朋友一起刷 · 最多 8 人联机", 16, UiKit.MIST)
 	left.add_child(sub)
 	var sp := Control.new()
 	sp.custom_minimum_size.y = 30
@@ -91,10 +90,6 @@ func _ready() -> void:
 	var b_solo := UiKit.menu_item("单人游戏", true, 32)
 	b_solo.pressed.connect(func(): solo.emit())
 	left.add_child(b_solo)
-	# 第十版：猎魂远征试玩（单人直接进；联机从任何一张图的渡船去）
-	var b_exp := UiKit.menu_item("猎魂远征（试玩）", false, 32)
-	b_exp.pressed.connect(func(): expedition.emit())
-	left.add_child(b_exp)
 	var b_host := UiKit.menu_item("创建联机房间", false, 32)
 	b_host.pressed.connect(func(): host_room.emit())
 	left.add_child(b_host)
@@ -118,7 +113,7 @@ func _ready() -> void:
 	var b_quit := UiKit.menu_item("退出", false, 32)
 	b_quit.pressed.connect(func(): quit.emit())
 	left.add_child(b_quit)
-	_buttons = [b_solo, b_exp, b_host, b_join]
+	_buttons = [b_solo, b_host, b_join]
 	var sp2 := Control.new()
 	sp2.custom_minimum_size.y = 10
 	left.add_child(sp2)
@@ -206,10 +201,10 @@ func _ready() -> void:
 	right.add_child(_skills_hint)
 
 	# ---- 底：按键说明和版本
-	var help := UiKit.label("WASD 移动 · 空格 跳 · 左键 射击 · 右键 瞄准 · G 引魂索 · Q / E / F 魂技 · F 交互 · 1-5 物品栏 · M 地图 · K 武魂 · Esc 暂停（里面有全部按键）", 13, UiKit.DIM)
+	var help := UiKit.label("WASD 移动 · 空格 跳 · 左键 射击 · 右键 瞄准 · G 引魂索 · Q / E / F 魂技 · F 交互 · L 猎魂榜 · M 地图 · K 武魂 · Esc 暂停（里面有全部按键）", 13, UiKit.DIM)
 	UiKit.place(help, Vector4(0, 1, 1, 1), Vector4(84, -38, -300, -14))
 	_main.add_child(help)
-	var ver := UiKit.label("版本 %s · 第六版" % ProjectSettings.get_setting("application/config/version", "0"), 13, UiKit.DIM)
+	var ver := UiKit.label("版本 %s · 第十一版" % ProjectSettings.get_setting("application/config/version", "0"), 13, UiKit.DIM)
 	ver.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	UiKit.place(ver, Vector4(1, 1, 1, 1), Vector4(-400, -38, -84, -14))
 	_main.add_child(ver)
@@ -285,7 +280,7 @@ func _pick_wuhun(i: int, silent := false) -> void:
 	_wuhun_kind.text = str(w["kind"])
 	for k in _wuhun_btns.size():
 		_tile_style(_wuhun_btns[k], k == i)
-	var lines := ["魂技不固定：吸收哪种魂兽的魂环，就领悟哪种魂技，吸收了才知道。", "同一种魂兽总给同一个魂技；魂兽年份越高，魂技越强。", "Q / E / F 三个键各放一个魂技，在 K 武魂面板里自己选装哪个。"]
+	var lines := ["魂技不固定：吸收哪种魂兽的魂环，就领悟哪种魂技——游戏里按 L 打开猎魂榜，每只魂兽会给什么魂技都写着。", "同一种魂兽总给同一个魂技；魂兽年份越高，魂技越强。", "Q / E / F 三个键各放一个魂技，在 K 武魂面板里自己选装哪个。"]
 	if not Profile.rings.is_empty():
 		lines.append("（已经有的魂技不会因为换武魂而改变）")
 	_skills_hint.text = "\n".join(lines)
