@@ -4,17 +4,19 @@ extends Node
 const PROTOCOL_VERSION := "m3-1"
 var autotest := false      # 自动测试时关掉随机的东西（精英、兽潮、饥饿、灵兽性格）
 
-## 字体：思源黑体（正文 Medium、强调 Bold、标题 Black），数字用 Barlow Condensed（窄体，像 FPS 游戏的弹药数）
+## 字体：正文思源黑体（Medium、强调 Bold）；标题、眉题用思源宋体（国风，用户："UI 往国风去改"；
+## 以前说过不要毛笔字，宋体是印刷体，不是毛笔）；数字用 Barlow Condensed（窄体，像 FPS 游戏的弹药数）
 var font_ui: Font = preload("res://assets/fonts/NotoSansSC-Medium.otf")
 var font_bold: Font = preload("res://assets/fonts/NotoSansSC-Bold.otf")
+var font_serif: Font = preload("res://assets/fonts/NotoSerifSC-Bold.otf")
 var font_title: Font
 var font_num: Font
 
 
 func _init() -> void:
 	var t := FontVariation.new()
-	t.base_font = preload("res://assets/fonts/NotoSansSC-Black.otf")
-	t.spacing_glyph = 2
+	t.base_font = preload("res://assets/fonts/NotoSerifSC-Black.otf")
+	t.spacing_glyph = 3
 	font_title = t
 	var n := FontVariation.new()
 	n.base_font = preload("res://assets/fonts/BarlowCondensed-Bold.woff")
@@ -23,8 +25,12 @@ func _init() -> void:
 	# 裁剪过的思源黑体里没有的生僻字，用系统里的中文字体补上（不然显示成方框）
 	var sys := SystemFont.new()
 	sys.font_names = PackedStringArray(["Microsoft YaHei UI", "Microsoft YaHei", "SimHei", "PingFang SC", "Noto Sans CJK SC", "WenQuanYi Micro Hei"])
-	for f: Font in [font_ui, font_bold, t.base_font]:
+	var serif_sys := SystemFont.new()
+	serif_sys.font_names = PackedStringArray(["SimSun", "Songti SC", "Noto Serif CJK SC", "Source Han Serif SC"])
+	for f: Font in [font_ui, font_bold]:
 		f.fallbacks = [sys]
+	for f: Font in [font_serif, t.base_font]:
+		f.fallbacks = [serif_sys, sys]
 
 # ================================================================ 灵相
 const WUHUN := [

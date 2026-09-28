@@ -4,21 +4,24 @@ extends RefCounted
 ##   打开的面板铺满全屏，背后的游戏画面虚化压暗（毛玻璃）；直角细边，不用粗黑描边；
 ##   标题上面一行小字做"眉题"；分页用下划线；数值用属性条，少写长句。
 ##   颜色：金色 = 主操作 / 灵环 / 灵石，青色 = 信息强调，红色 = 危险，其余都是白和灰。
-##   字体：标题思源黑体 Black，正文 Medium，数字 Barlow Condensed。
+##   字体：标题、眉题思源宋体，正文思源黑体 Medium，数字 Barlow Condensed。
+## 国风（用户："UI 往国风去改"）：颜色偏暖（墨、赭金、朱砂、青玉、月白），全屏面板背后一层淡淡的水墨远山，
+##   标题旁边一方朱红印章，小标题前一个金色菱形。
 
-const BG := Color(0.03, 0.04, 0.06, 0.92)
-const PANEL := Color(0.045, 0.055, 0.075, 0.9)
-const GLASS := Color(0.02, 0.03, 0.045, 0.5)     # HUD 上的半透明底
-const ROW := Color(1, 1, 1, 0.045)
-const ROW_HI := Color(1, 1, 1, 0.09)
-const LINE := Color(1, 1, 1, 0.12)
-const GOLD := Color(1.0, 0.78, 0.3)
-const JADE := Color(0.4, 0.8, 1.0)
-const RED := Color(1.0, 0.38, 0.32)
-const GREEN := Color(0.45, 0.95, 0.6)
-const MOON := Color(0.95, 0.96, 0.98)
-const MIST := Color(0.62, 0.67, 0.75)
-const DIM := Color(0.4, 0.44, 0.5)
+const BG := Color(0.045, 0.04, 0.035, 0.92)
+const PANEL := Color(0.06, 0.055, 0.05, 0.9)
+const GLASS := Color(0.03, 0.028, 0.025, 0.5)     # HUD 上的半透明底
+const ROW := Color(1.0, 0.95, 0.85, 0.045)
+const ROW_HI := Color(1.0, 0.95, 0.85, 0.09)
+const LINE := Color(1.0, 0.88, 0.62, 0.15)
+const GOLD := Color(0.98, 0.77, 0.36)
+const JADE := Color(0.45, 0.84, 0.76)
+const RED := Color(0.93, 0.33, 0.24)
+const GREEN := Color(0.5, 0.92, 0.6)
+const MOON := Color(0.97, 0.95, 0.9)
+const MIST := Color(0.7, 0.68, 0.63)
+const DIM := Color(0.46, 0.44, 0.4)
+const CINNABAR := Color(0.72, 0.13, 0.08)       # 印章的朱砂红
 
 
 ## 按锚点和偏移定位：anchor = (左, 上, 右, 下) 的 0..1 比例，off = 像素偏移
@@ -74,7 +77,7 @@ static func row_style(border := Color(0, 0, 0, 0)) -> StyleBoxFlat:
 ## 卡片：顶上一条彩色线
 static func card_style(accent := Color(0, 0, 0, 0), bg := ROW) -> StyleBoxFlat:
 	var st := _flat(bg, 20, 16, 2)
-	st.border_color = accent if accent.a > 0.0 else LINE
+	st.border_color = accent if accent.a > 0.0 else Color(GOLD.r, GOLD.g, GOLD.b, 0.18)
 	st.border_width_top = 2 if accent.a > 0.0 else 1
 	if accent.a <= 0.0:
 		st.set_border_width_all(1)
@@ -122,14 +125,34 @@ static func num(text: String, size := 40, color := MOON, outline := 4) -> Label:
 	return l
 
 
-## 眉题：标题上面的一行小字（灰色、字距拉开）
+## 眉题：标题上面的一行小字（宋体、字距拉开）
+static var _kick_font: FontVariation
+
+
 static func kicker(text: String, color := MIST, size := 14) -> Label:
 	var l := bold(text, size, color)
-	var f := FontVariation.new()
-	f.base_font = Data.font_bold
-	f.spacing_glyph = 3
-	l.add_theme_font_override("font", f)
+	if _kick_font == null:
+		_kick_font = FontVariation.new()
+		_kick_font.base_font = Data.font_serif
+		_kick_font.spacing_glyph = 4
+	l.add_theme_font_override("font", _kick_font)
 	return l
+
+
+## 一方朱红印章（面板标题旁边、结算面板）：方块 + 米白的宋体字
+static func seal(text: String, size := 22) -> PanelContainer:
+	var p := PanelContainer.new()
+	var st := _flat(CINNABAR, 6, 2, 4)
+	st.border_color = Color(0.85, 0.25, 0.18)
+	st.set_border_width_all(2)
+	p.add_theme_stylebox_override("panel", st)
+	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var l := label(text, size, Color(0.99, 0.93, 0.84))
+	l.add_theme_font_override("font", Data.font_title)
+	p.add_child(l)
+	p.rotation = -0.06
+	p.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	return p
 
 
 ## 面板标题：眉题 + 大标题
@@ -146,8 +169,11 @@ static func header(kick: String, text: String, color := MOON, size := 44) -> VBo
 ## 小标题 + 右边一条细线
 static func section(text: String, color := MIST, outline := 0) -> HBoxContainer:
 	var h := HBoxContainer.new()
-	h.add_theme_constant_override("separation", 12)
+	h.add_theme_constant_override("separation", 10)
 	h.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var dia := label("◆", 10, Color(GOLD.r, GOLD.g, GOLD.b, 0.8))
+	dia.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	h.add_child(dia)
 	var k := kicker(text, color, 13)
 	_text_style(k, outline)
 	h.add_child(k)
@@ -243,10 +269,28 @@ const BLUR_SHADER := """shader_type canvas_item;
 uniform sampler2D screen_tex : hint_screen_texture, filter_linear_mipmap;
 uniform float lod = 3.2;
 uniform vec4 tint : source_color = vec4(0.02, 0.03, 0.05, 0.62);
+// 水墨远山：三层山脊线，越近越浓；山之间一层淡淡的雾
+float ridge(float x, float s, float h) {
+	return h + 0.045 * sin(x * 5.0 + s) + 0.028 * sin(x * 11.0 + s * 2.1) + 0.012 * sin(x * 27.0 + s * 3.7) + 0.006 * sin(x * 61.0 + s);
+}
 void fragment() {
 	vec3 c = textureLod(screen_tex, SCREEN_UV, lod).rgb;
 	float v = smoothstep(0.2, 0.95, length(UV - 0.5) * 1.35);
-	COLOR = vec4(mix(c, tint.rgb, clamp(tint.a + v * 0.25, 0.0, 1.0)), 1.0);
+	vec3 col = mix(c, tint.rgb, clamp(tint.a + v * 0.25, 0.0, 1.0));
+	float y = 1.0 - UV.y;
+	float x = UV.x * (SCREEN_PIXEL_SIZE.y / SCREEN_PIXEL_SIZE.x);
+	vec3 ink = vec3(0.012, 0.011, 0.01);
+	float far = smoothstep(0.006, 0.0, y - ridge(x, 1.3, 0.2));
+	float mid = smoothstep(0.004, 0.0, y - ridge(x + 3.0, 4.1, 0.13));
+	float near = smoothstep(0.003, 0.0, y - ridge(x + 7.0, 2.7, 0.06));
+	col = mix(col, ink, far * 0.14 * (0.6 + 0.4 * smoothstep(0.0, 0.2, y)));
+	col = mix(col, vec3(0.5, 0.48, 0.44), mid * 0.0 + far * (1.0 - mid) * 0.02);
+	col = mix(col, ink, mid * 0.2);
+	col = mix(col, ink, near * 0.3);
+	// 右上角一轮很淡的朱红日
+	float sun = smoothstep(0.075, 0.07, length((UV - vec2(0.84, 0.2)) * vec2(1.0, SCREEN_PIXEL_SIZE.x / SCREEN_PIXEL_SIZE.y)));
+	col = mix(col, vec3(0.6, 0.12, 0.08), sun * 0.1);
+	COLOR = vec4(col, 1.0);
 }"""
 static var _blur: Shader
 
@@ -257,7 +301,7 @@ static func blur_material(alpha := 0.62) -> ShaderMaterial:
 		_blur.code = BLUR_SHADER
 	var m := ShaderMaterial.new()
 	m.shader = _blur
-	m.set_shader_parameter("tint", Color(0.02, 0.03, 0.05, alpha))
+	m.set_shader_parameter("tint", Color(0.035, 0.03, 0.026, alpha))
 	return m
 
 
@@ -272,6 +316,9 @@ static func backdrop(alpha := 0.62) -> ColorRect:
 static func panel_head(kick: String, text: String, close_text: String, on_close: Callable) -> HBoxContainer:
 	var head := HBoxContainer.new()
 	head.add_theme_constant_override("separation", 16)
+	var sk := kick if kick != "" else text
+	if sk != "":
+		head.add_child(seal(sk.substr(0, 1), 26))
 	var t := header(kick, text)
 	t.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	head.add_child(t)

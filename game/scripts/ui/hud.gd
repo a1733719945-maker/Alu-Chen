@@ -2181,6 +2181,9 @@ func _panel_head(v: VBoxContainer, kick: String, title: String, close_key: Strin
 	var head := HBoxContainer.new()
 	head.add_theme_constant_override("separation", 16)
 	v.add_child(head)
+	var sk := kick if kick != "" else title
+	if sk != "":
+		head.add_child(UiKit.seal(sk.substr(0, 1), 26))
 	var t := UiKit.header(kick, title)
 	t.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	head.add_child(t)

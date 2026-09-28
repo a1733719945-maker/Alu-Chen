@@ -2,7 +2,8 @@ class_name MapView
 extends Control
 ## 地图：右上角的小地图（跟着自己走），按 M 打开的大地图（整张图）。
 ## 标出：自己（箭头）、队友、暗器铺、收购箱、祭坛、渡船、Boss、精英灵兽、灵环、任务目标；大地图还写栖息地名字。
-## 地形图用 Island.heights 画一张图：水按深浅、陆地按高低上色。北（-Z）朝上。
+## 地形图用 Island.heights 画一张图，画成水墨舆图（国风）：宣纸底，陆地越高墨越浓、每 3 米一道等高线，
+## 海岸一道浓墨，水面一层淡青的晕染加细细的波纹；小路是朱砂虚线；地点是朱红圆印。北（-Z）朝上。
 
 var world: Node
 var big := false
@@ -15,44 +16,64 @@ func _ready() -> void:
 	_build_texture()
 
 
+const PAPER := Color(0.9, 0.86, 0.76)
+const INK := Color(0.1, 0.09, 0.08)
+const WASH := Color(0.55, 0.64, 0.66)
+const CINNABAR := Color(0.72, 0.14, 0.09)
+
+
 func _build_texture() -> void:
 	var isl: Island = world.island
 	var n: int = isl.size
 	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
-	var biome := str(isl.map_id)
-	var low := Color(0.36, 0.5, 0.28)
-	var high := Color(0.62, 0.62, 0.5)
-	match biome:
+	# 每张图纸色略有不同（雪原更白、归墟偏青、林子偏黄绿）
+	var paper := PAPER
+	match str(isl.map_id):
 		"forest":
-			low = Color(0.3, 0.38, 0.2)
-			high = Color(0.5, 0.42, 0.3)
+			paper = Color(0.9, 0.84, 0.7)
 		"deepforest":
-			low = Color(0.14, 0.26, 0.22)
-			high = Color(0.3, 0.34, 0.36)
+			paper = Color(0.84, 0.84, 0.72)
 		"snow":
-			low = Color(0.78, 0.82, 0.86)
-			high = Color(0.95, 0.96, 0.98)
+			paper = Color(0.94, 0.93, 0.9)
 		"sea":
-			low = Color(0.82, 0.74, 0.5)
-			high = Color(0.45, 0.58, 0.35)
+			paper = Color(0.86, 0.87, 0.8)
+	var w := Island.WATER_Y + 0.25
+	var hs: PackedFloat32Array = isl.heights
 	for j in n:
 		for i in n:
-			var h: float = isl.heights[i + j * n]
+			var h: float = hs[i + j * n]
+			var hr: float = hs[mini(i + 1, n - 1) + j * n]
+			var hd: float = hs[i + mini(j + 1, n - 1) * n]
 			var c: Color
-			if h < Island.WATER_Y + 0.25:
-				var depth := clampf((Island.WATER_Y - h) / 10.0, 0.0, 1.0)
-				c = Color(0.35, 0.62, 0.78).lerp(Color(0.06, 0.18, 0.34), depth)
+			# 纸上一点点纤维的深浅
+			var grain := (sin(i * 12.9898 + j * 78.233) * 43758.5453)
+			grain = (grain - floor(grain)) * 0.035
+			if h < w:
+				var depth := clampf((w - h) / 10.0, 0.0, 1.0)
+				c = paper.lerp(WASH, 0.35 + depth * 0.45)
+				# 细细的波纹（斜的淡线）
+				if fmod(float(i + j * 2) + sin(j * 0.21) * 3.0, 9.0) < 1.0:
+					c = c.darkened(0.08)
 			else:
-				c = low.lerp(high, clampf((h - 1.0) / 16.0, 0.0, 1.0))
-			img.set_pixel(i, j, c)
-	# 小路画浅一点
+				var k := clampf((h - 1.0) / 22.0, 0.0, 1.0)
+				c = paper.lerp(INK, k * 0.55)
+				# 等高线：每 3 米一道
+				if floori(h / 3.0) != floori(hr / 3.0) or floori(h / 3.0) != floori(hd / 3.0):
+					c = c.lerp(INK, 0.3)
+			# 海岸：一道浓墨
+			if (h < w) != (hr < w) or (h < w) != (hd < w):
+				c = INK.lerp(paper, 0.15)
+			img.set_pixel(i, j, c.darkened(grain))
+	# 小路：朱砂虚线
 	for p in isl.paths:
 		for k in p.size():
+			if k % 4 >= 2:
+				continue
 			var q: Vector2 = p[k]
 			var x := int(q.x) + isl.half
 			var y := int(q.y) + isl.half
 			if x >= 0 and y >= 0 and x < n and y < n:
-				img.set_pixel(x, y, img.get_pixel(x, y).lightened(0.3))
+				img.set_pixel(x, y, CINNABAR.lerp(img.get_pixel(x, y), 0.35))
 	_tex = ImageTexture.create_from_image(img)
 
 
@@ -76,7 +97,7 @@ func _draw() -> void:
 	if big:
 		scale = minf(size.x, size.y) / float(world.island.size)
 		center = Vector2.ZERO
-		draw_rect(Rect2(Vector2.ZERO, size), Color(0.02, 0.05, 0.09, 0.92))
+		draw_rect(Rect2(Vector2.ZERO, size), Color(0.06, 0.055, 0.05, 0.94))
 	else:
 		scale = _zoom
 		center = mp
@@ -85,7 +106,7 @@ func _draw() -> void:
 	var tl := size * 0.5 + (Vector2(-hf, -hf) - center) * scale
 	var rect := Rect2(tl, Vector2(world.island.size, world.island.size) * scale)
 	if not big:
-		draw_rect(Rect2(Vector2.ZERO, size), Color(0.05, 0.15, 0.28))
+		draw_rect(Rect2(Vector2.ZERO, size), PAPER.lerp(WASH, 0.75))
 	draw_texture_rect(_tex, rect, false)
 	var font: Font = Data.font_bold
 	# 大地图：栖息地名字
@@ -96,8 +117,8 @@ func _draw() -> void:
 				var c: Vector2 = h["center"]
 				var at := _to_px(Vector3(c.x, 0, c.y), center, scale)
 				var nm := str(h.get("label", Data.HABITATS[type]["name"]))
-				draw_string_outline(font, at + Vector2(-60, 0), nm, HORIZONTAL_ALIGNMENT_CENTER, 120, 14, 4, Color(0, 0, 0, 0.45))
-				draw_string(font, at + Vector2(-60, 0), nm, HORIZONTAL_ALIGNMENT_CENTER, 120, 14, Color(1, 1, 1, 0.8))
+				draw_string_outline(Data.font_serif, at + Vector2(-60, 0), nm, HORIZONTAL_ALIGNMENT_CENTER, 120, 15, 4, Color(PAPER.r, PAPER.g, PAPER.b, 0.7))
+				draw_string(Data.font_serif, at + Vector2(-60, 0), nm, HORIZONTAL_ALIGNMENT_CENTER, 120, 15, Color(INK.r, INK.g, INK.b, 0.85))
 	# 地点
 	if world.island.hunting:
 		# 猎场：营地、找到过的宝藏（没找到的不标）
@@ -154,15 +175,17 @@ func _draw() -> void:
 	var pp := _to_px(me.global_position, center, scale)
 	var fwd := Vector2(-sin(me.yaw), -cos(me.yaw))
 	var side := Vector2(-fwd.y, fwd.x)
-	draw_colored_polygon(PackedVector2Array([pp + fwd * 10.0, pp - fwd * 6.0 + side * 6.0, pp - fwd * 3.0, pp - fwd * 6.0 - side * 6.0]), Color(1, 1, 1))
-	# 边框：细线 + 四个角加粗
-	draw_rect(Rect2(Vector2.ZERO, size), Color(1, 1, 1, 0.18), false, 1.0)
+	var arrow := PackedVector2Array([pp + fwd * 11.0, pp - fwd * 6.0 + side * 7.0, pp - fwd * 3.0, pp - fwd * 6.0 - side * 7.0])
+	draw_colored_polygon(PackedVector2Array([pp + fwd * 14.0, pp - fwd * 8.0 + side * 9.0, pp - fwd * 4.0, pp - fwd * 8.0 - side * 9.0]), Color(PAPER.r, PAPER.g, PAPER.b, 0.9))
+	draw_colored_polygon(arrow, CINNABAR)
+	# 边框：描金细线 + 四个角加粗（像画轴的包边）
+	draw_rect(Rect2(Vector2.ZERO, size), Color(UiKit.GOLD.r, UiKit.GOLD.g, UiKit.GOLD.b, 0.35), false, 1.0)
 	var cl := 14.0
 	for c in [Vector2.ZERO, Vector2(size.x, 0), Vector2(0, size.y), size]:
 		var sx := 1.0 if c.x == 0.0 else -1.0
 		var sy := 1.0 if c.y == 0.0 else -1.0
-		draw_line(c, c + Vector2(cl * sx, 0), Color(1, 1, 1, 0.7), 2.0)
-		draw_line(c, c + Vector2(0, cl * sy), Color(1, 1, 1, 0.7), 2.0)
+		draw_line(c, c + Vector2(cl * sx, 0), UiKit.GOLD, 2.0)
+		draw_line(c, c + Vector2(0, cl * sy), UiKit.GOLD, 2.0)
 	if big:
 		# 左上：章节；右上：关闭；底下一排图例
 		draw_rect(Rect2(Vector2.ZERO, Vector2(size.x, 44)), Color(0.02, 0.03, 0.05, 0.75))
@@ -183,8 +206,8 @@ func _draw() -> void:
 		draw_colored_polygon(PackedVector2Array([dq + Vector2(0, -7), dq + Vector2(6, 0), dq + Vector2(0, 7), dq + Vector2(-6, 0)]), UiKit.GOLD)
 		draw_string(font, dq + Vector2(12, 5), "任务目标", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, UiKit.MOON)
 	else:
-		draw_string(font, Vector2(size.x * 0.5 - 7, 16), "北", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, Color(1, 1, 1, 0.8))
-		draw_string(font, Vector2(8, size.y - 8), "M", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(1, 1, 1, 0.55))
+		draw_string(Data.font_serif, Vector2(size.x * 0.5 - 7, 16), "北", HORIZONTAL_ALIGNMENT_LEFT, -1, 13, INK)
+		draw_string(font, Vector2(8, size.y - 8), "M", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(INK.r, INK.g, INK.b, 0.6))
 
 
 ## 小地图上超出范围的点贴在边上
@@ -203,10 +226,12 @@ func _dot(p: Vector3, col: Color, r: float, center: Vector2, scale: float) -> vo
 func _poi(p: Vector3, ch: String, col: Color, center: Vector2, scale: float, font: Font, label: String) -> void:
 	var q := _clamp_edge(_to_px(p, center, scale))
 	var r := 10.0 if big else 8.0
-	draw_circle(q, r + 2.0, Color(0, 0, 0, 0.55))
-	draw_circle(q, r, col.darkened(0.35))
-	draw_arc(q, r, 0.0, TAU, 24, Color(1, 1, 1, 0.55), 1.0, true)
-	draw_string(font, q + Vector2(-r, r * 0.45), ch, HORIZONTAL_ALIGNMENT_CENTER, r * 2.0, int(r * 1.2), Color(1, 1, 1))
+	# 方形的印：底色按种类（暗一点，像盖在纸上的印泥），宋体字
+	var rc := Rect2(q - Vector2(r, r), Vector2(r, r) * 2.0)
+	draw_rect(rc.grow(1.5), Color(PAPER.r, PAPER.g, PAPER.b, 0.85))
+	draw_rect(rc, col.darkened(0.45))
+	draw_rect(rc.grow(-2.0), Color(1.0, 0.95, 0.85, 0.35), false, 1.0)
+	draw_string(Data.font_serif, q + Vector2(-r, r * 0.45), ch, HORIZONTAL_ALIGNMENT_CENTER, r * 2.0, int(r * 1.25), Color(1.0, 0.96, 0.88))
 	if big and label != "":
-		draw_string_outline(font, q + Vector2(-70, r + 17), label, HORIZONTAL_ALIGNMENT_CENTER, 140, 14, 4, Color(0, 0, 0, 0.55))
-		draw_string(font, q + Vector2(-70, r + 17), label, HORIZONTAL_ALIGNMENT_CENTER, 140, 14, col)
+		draw_string_outline(Data.font_serif, q + Vector2(-70, r + 17), label, HORIZONTAL_ALIGNMENT_CENTER, 140, 14, 4, Color(PAPER.r, PAPER.g, PAPER.b, 0.8))
+		draw_string(Data.font_serif, q + Vector2(-70, r + 17), label, HORIZONTAL_ALIGNMENT_CENTER, 140, 14, col.darkened(0.5))

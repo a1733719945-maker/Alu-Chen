@@ -4336,6 +4336,11 @@ func _run_decor() -> void:
 			sp._tab = "decor"
 			sp.refresh()
 			_note("装饰：%d 样都摆上了（%d 个零件），收起 / 摆上都行" % [Data.DECOR.size(), int(_mem["n"])])
+			var pag := w.decor.find_children("Pagoda", "", false, false).size()
+			var pav := w.decor.find_children("Pavilion", "", false, false).size()
+			_note("国风地标：宝塔 %d、亭子 %d、全部 %d 个" % [pag, pav, w.decor.get_child_count()])
+			if not _check(pag == 1 and pav >= 1, "岛上没摆宝塔 / 亭子"):
+				return
 			_next(2)
 		2:
 			if _step_t < 0.3:
