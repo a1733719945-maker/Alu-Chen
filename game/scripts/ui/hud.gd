@@ -59,6 +59,13 @@ var _food: ProgressBar
 var _food_row: HBoxContainer
 # 下中
 var _interact: CenterContainer
+# 剧情：人物说话的字幕（一句一句排队）、天枢记忆
+var _say_box: PanelContainer
+var _say_who: Label
+var _say_text: Label
+var _say_queue: Array = []
+var _say_t := 0.0
+var _say_dur := 0.0
 var _interact_sig := ""
 var _prompt: Label
 var _bar_box: VBoxContainer
@@ -1390,6 +1397,7 @@ func _build_center() -> void:
 	_banner.add_theme_constant_override("separation", 6)
 	UiKit.place(_banner, Vector4(0.5, 0, 0.5, 0), Vector4(-400, 200, 400, 400))
 	_root.add_child(_banner)
+	_build_say()
 	_absorb = UiKit.title("", 34, Color.WHITE)
 	_absorb.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	UiKit._text_style(_absorb, 4)
@@ -1488,6 +1496,98 @@ func _show_banner(title: String, sub: String, color: Color, time := 4.0) -> void
 		_banner.add_child(s)
 	_banner_t = time
 	_banner.modulate.a = 0.0
+
+
+# ------------------------------------------------------------------ 剧情：人物说话、天枢记忆
+
+## 人物说话的字幕：底部那一列（神通、交互提示）正上方，毛玻璃底；一句说完再出下一句
+func _build_say() -> void:
+	var cc := CenterContainer.new()
+	cc.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	UiKit.place(cc, Vector4(0.5, 1, 0.5, 1), Vector4(-700, -420, 700, -338))
+	_root.add_child(cc)
+	_say_box = PanelContainer.new()
+	_say_box.add_theme_stylebox_override("panel", UiKit.glass_style(0.5, 22, 10))
+	_say_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_say_box.modulate.a = 0.0
+	cc.add_child(_say_box)
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 2)
+	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_say_box.add_child(v)
+	_say_who = UiKit.kicker("", UiKit.GOLD, 14)
+	_say_who.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	v.add_child(_say_who)
+	_say_text = UiKit.label("", 24, Color(0.97, 0.95, 0.9), 3)
+	_say_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_say_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	v.add_child(_say_text)
+
+
+## who 说 text（灵主、青崖子、灵环记忆、秘境刻字……）。dur = 0：按字数算停多久
+func say(who: String, text: String, color := UiKit.GOLD, dur := 0.0) -> void:
+	if text == "":
+		return
+	if dur <= 0.0:
+		dur = clampf(2.4 + text.length() * 0.13, 3.2, 7.5)
+	_say_queue.append([who, text, color, dur])
+
+
+func _update_say(dt: float) -> void:
+	if _say_t > 0.0:
+		_say_t -= dt
+		_say_box.modulate.a = minf(clampf(_say_t / 0.5, 0.0, 1.0), clampf((_say_dur - _say_t) / 0.3, 0.0, 1.0))
+		return
+	_say_box.modulate.a = 0.0
+	if _say_queue.is_empty():
+		return
+	var e: Array = _say_queue.pop_front()
+	_say_who.text = str(e[0])
+	_say_who.add_theme_color_override("font_color", e[2])
+	_say_text.text = str(e[1])
+	_say_text.custom_minimum_size.x = minf(Data.font_ui.get_string_size(_say_text.text, HORIZONTAL_ALIGNMENT_LEFT, -1, 24).x + 6.0, 1100.0)
+	_say_dur = float(e[3])
+	_say_t = _say_dur
+
+
+## 天枢记忆（灵主碎片里封着的三万年前那一夜）：压暗画面，三句一句一句浮出来；不挡操作，十几秒自己散掉。
+## 以后有了 AI 画的图，换成过场视频
+func memory(title: String, lines: Array) -> void:
+	var layer := Control.new()
+	layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_root.add_child(layer)
+	UiKit.fill(layer)
+	var bg := ColorRect.new()
+	bg.color = Color(0.015, 0.02, 0.035, 0.74)
+	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layer.add_child(bg)
+	UiKit.fill(bg)
+	var v := VBoxContainer.new()
+	v.alignment = BoxContainer.ALIGNMENT_CENTER
+	v.add_theme_constant_override("separation", 22)
+	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	UiKit.place(v, Vector4(0.5, 0.5, 0.5, 0.5), Vector4(-640, -200, 640, 200))
+	layer.add_child(v)
+	var k := UiKit.kicker(title, UiKit.GOLD, 16)
+	k.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	v.add_child(k)
+	var ls: Array = []
+	for line in lines:
+		var l := UiKit.label(str(line), 26, Color(0.96, 0.94, 0.88), 3)
+		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		l.modulate.a = 0.0
+		v.add_child(l)
+		ls.append(l)
+	layer.modulate.a = 0.0
+	var tw := layer.create_tween()
+	tw.tween_property(layer, "modulate:a", 1.0, 0.8)
+	for l in ls:
+		tw.tween_property(l, "modulate:a", 1.0, 0.9)
+		tw.tween_interval(3.0)
+	tw.tween_interval(1.2)
+	tw.tween_property(layer, "modulate:a", 0.0, 1.2)
+	tw.tween_callback(layer.queue_free)
 
 
 func chapter_banner(name: String, intro: String) -> void:
@@ -2414,6 +2514,7 @@ func _process(dt: float) -> void:
 	_banner.modulate.a = minf(clampf(_banner_t / 0.6, 0.0, 1.0), minf(_banner.modulate.a + dt * 2.5, 1.0))
 	_callout_t -= dt
 	_callout.modulate.a = clampf(_callout_t / 0.4, 0.0, 1.0)
+	_update_say(dt)
 	_absorb_t -= dt
 	if _absorb_t <= 0.0 and _absorb.text != "" and not (_choice and is_instance_valid(_choice)):
 		_absorb.text = ""

@@ -1166,6 +1166,11 @@ func _run_boss() -> void:
 				_note("Boss 死了，拿到灵骨 %s，任务：%s" % [Profile.bones, w._cur_quest().get("text", "")])
 				if not _check(w._cur_quest().get("type", "") in ["boat", "end", "god"], "打完 Boss 任务没推进"):
 					return
+				# 剧情：灵主临死说一句、第一次打倒记下（接着播天枢记忆、青崖子说话）
+				var lk := str(Data.CHAPTERS[w.chapter]["boss"])
+				if not _check(int(Profile.stats.get("story_" + lk, 0)) == 1 and (w.hud._say_t > 0.0 or not w.hud._say_queue.is_empty()), "打倒灵主没有触发剧情（临死台词 / 天枢记忆）"):
+					return
+				_note("灵主临死：「%s」" % Story.lord(lk, "death"))
 				_next(6)
 			elif _step_t > 4.0:
 				_fail("Boss 血打光了却没死")

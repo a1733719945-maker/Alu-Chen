@@ -1269,9 +1269,9 @@ func bone_desc(entry: String) -> String:
 # ================================================================ Boss
 const BOSSES := {
 	# ai：water 水里钻来钻去 / land 地上 / air 天上飞
-	"mandala": {"name": "镜湖之主 · 千年碧鳞蛟", "lore": "吞下第一块天枢碎片的蛟，三千年未曾离湖", "shard": 1, "hp": 12000.0, "reward": 720, "xp": 450, "bones": ["mandala_skull", "mandala_spine"], "age": 2, "ai": "water",
+	"mandala": {"name": "镜湖之主 · 千年碧鳞蛟", "lore": "吞下第一块天枢碎片的蛟，三万年未曾离湖——它在等人", "shard": 1, "hp": 12000.0, "reward": 720, "xp": 450, "bones": ["mandala_skull", "mandala_spine"], "age": 2, "ai": "water",
 		"model": "snake_angry", "fit": "h", "size": 12.0, "tint": Color(1.0, 0.5, 1.2), "summon": "snake", "ring_beast": "snake", "weak": Vector3(0, 0.34, -0.3), "holy": Color(0.85, 0.55, 1.0)},
-	"spider": {"name": "落霞林之主 · 千目蛛母", "lore": "千只眼睛，一张网——林子里的每一根丝，都连着它", "shard": 2, "hp": 35000.0, "reward": 2700, "xp": 1300, "bones": ["spider_leg", "spider_eye"], "age": 2, "ai": "land",
+	"spider": {"name": "落霞林之主 · 千目蛛母", "lore": "千只眼睛，一张网——网里的每一根丝，都是一个名字", "shard": 2, "hp": 35000.0, "reward": 2700, "xp": 1300, "bones": ["spider_leg", "spider_eye"], "age": 2, "ai": "land",
 		"model": "spider", "fit": "w", "size": 13.0, "tint": Color(0.6, 0.45, 0.7), "summon": "spiderling", "ring_beast": "wolf", "weak": Vector3(0, 0.2, -0.4), "holy": Color(1.0, 0.45, 0.6)},
 	"titan": {"name": "苍梧之王 · 万年朱厌", "lore": "《山海经》：见则大兵", "shard": 3, "hp": 85000.0, "reward": 7200, "xp": 3400, "bones": ["titan_arm", "titan_heart"], "age": 3, "ai": "land",
 		"model": "yeti", "fit": "h", "size": 24.0, "tint": Color(0.42, 0.36, 0.34), "summon": "raptor", "ring_beast": "stag", "throws": true, "weak": Vector3(0, 0.36, -0.15), "holy": Color(1.0, 0.8, 0.4)},
@@ -1289,8 +1289,8 @@ const BOSSES := {
 const CHAPTERS := {
 	1: {
 		"name": "第一章 · 镜湖", "map": "island", "boss": "mandala", "next": 2, "levels": [1, 20], "boss_level": 15,
-		"intro": "碧鳞蛟盘踞镜湖三千年，湖底压着第一块天枢碎片。先按 L 在猎灵榜上挑一只灵兽去猎——它的灵环决定你悟出什么神通；地图上的「秘」是洞天秘境，刷修为和灵骨。",
-		"story": "栖霞村外，镜湖。碧鳞蛟吞下第一块天枢碎片，三千年未曾离湖。",
+		"intro": "碧鳞蛟盘踞镜湖三万年，湖底压着第一块天枢碎片。先按 L 在猎灵榜上挑一只灵兽去猎——它的灵环决定你悟出什么神通；地图上的「秘」是洞天秘境，刷修为和灵骨。",
+		"story": "栖霞村外，镜湖。碧鳞蛟吞下第一块天枢碎片，三万年未曾离湖。",
 		"quests": [
 			{"type": "dungeon", "n": 1, "text": "闯一次这座岛的洞天秘境（地图上的「秘」，走过去按 F）", "reward": 0, "target": "dungeon"},
 			{"type": "level", "n": 15, "text": "修炼到 15 级（秘境刷修为；卡在瓶颈就按 L 挑灵兽去猎，炼化灵环破境）", "reward": 0},

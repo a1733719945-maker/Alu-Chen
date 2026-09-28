@@ -192,6 +192,15 @@ func _ready() -> void:
 	var ch_trait := str(Data.CH_TRAIT.get(chapter, ""))
 	if not island.hunting:
 		hud.chapter_banner(str(ch["name"]), str(ch["intro"]) + (("\n" + str(Data.TRAIT_TEXT[ch_trait])) if ch_trait != "" else ""))
+		# 第一次到这座岛：青崖子说一句（他跟着你坐船过来）
+		var arrive := "sage_arrive_%d" % chapter
+		if int(Profile.stats.get(arrive, 0)) == 0 and not Data.autotest:
+			Profile.stats[arrive] = 1
+			Profile.mark_dirty()
+			var line := Story.lord(str(ch["boss"]), "arrive")
+			get_tree().create_timer(6.5).timeout.connect(func():
+				if is_instance_valid(hud):
+					hud.say(Story.SAGE, line))
 	# 第十一版：没有悬赏了
 	Profile.bounties = []
 	# 第一次玩第十一版：章节横幅之后讲一句新玩法
@@ -2245,6 +2254,9 @@ func finish_absorb(age: int, species: String, sid: String) -> void:
 	player.trauma = 0.7
 	player.hud_flash(Data.age_color(age))
 	hud.toast("吸收了%s灵环！获得神通【%s】" % [Data.age_name(age), Data.SKILLS[sid]["name"]], Data.AGES[age]["glow"], 6.0)
+	# 灵环带着这只灵兽的记忆
+	if Story.RING_MEMORY.has(species):
+		hud.say("%s灵环 · %s" % [Data.age_name(age), Data.BEASTS[species]["name"]], str(Story.RING_MEMORY[species]), Data.AGES[age]["glow"])
 	Sfx.play("level_up", -2.0)
 	_broadcast_prog()
 	_check_god()
@@ -2526,9 +2538,15 @@ func _on_boss_spawn(msg: Array) -> void:
 	boss_tier = int(msg[3]) if msg.size() > 3 else 0
 	_boss_k = (1.0 + 0.25 * boss_tier) * Profile.rebirth_hard()
 	# 再叩天召出来的：它吞下的是更高一重天的碎片（第二重、第三重……）
-	var bname := str(Data.BOSSES[msg[0]]["name"]) + ((" · 第%s重天" % ["一", "二", "三", "四", "五", "六", "七", "八", "九", "十"][mini(boss_tier, 9)]) if boss_tier > 0 else "")
+	var bname := str(Data.BOSSES[msg[0]]["name"]) + ((" · " + Story.heaven_name(boss_tier)) if boss_tier > 0 else "")
 	hud.boss_bar(bname)
 	hud.boss_intro(bname, str(Data.BOSSES[msg[0]].get("lore", "")))
+	# 灵主开口（再叩天出来的认得你："又是你。"）
+	var kind := str(msg[0])
+	var tier := boss_tier
+	get_tree().create_timer(3.8).timeout.connect(func():
+		if is_instance_valid(hud):
+			hud.say(Story.lord(kind, "who"), Story.lord_intro(kind, tier), LORD_SAY))
 	boss_nohit = true
 	Sfx.play("boss_roar", 2.0)
 	if str(Data.BOSSES[msg[0]].get("ai", "")) == "water":
@@ -2543,6 +2561,8 @@ func boss_phase2() -> void:
 
 func _on_boss_phase2() -> void:
 	hud.toast("Boss 暴怒了！攻击更快", Color(1, 0.4, 0.3), 4.0)
+	if boss:
+		hud.say(Story.lord(boss.kind, "who"), Story.lord(boss.kind, "half"), LORD_SAY)
 	Sfx.play("boss_roar", 3.0, 0.0, 0.85)
 
 
@@ -2633,6 +2653,27 @@ func _on_boss_dead(msg: Array) -> void:
 	hud.boss_defeated(str(d["name"]), int(mine[0]), got, int(d["age"]), int(d.get("shard", 0)), shards_recovered())
 	Sfx.play("quest_done", 0.0)
 	player.rebuild_guns()
+	_lord_story(kind)
+
+
+## 灵主的临死一句；第一次打倒它：播天枢记忆（碎片里封着的三万年前那一夜），青崖子再说一句
+const LORD_SAY := Color(0.75, 0.9, 1.0)
+
+
+func _lord_story(kind: String) -> void:
+	hud.say(Story.lord(kind, "who"), Story.lord(kind, "death"), LORD_SAY)
+	var flag := "story_" + kind
+	if int(Profile.stats.get(flag, 0)) > 0:
+		return
+	Profile.stats[flag] = 1
+	Profile.mark_dirty()
+	var n := int(Data.BOSSES[kind].get("shard", 1))
+	var mem: Array = Story.LORDS.get(kind, {}).get("memory", [])
+	var tw := create_tween()
+	tw.tween_interval(8.5)
+	tw.tween_callback(func(): hud.memory("天枢记忆 · 其%s" % Story.NUM[clampi(n - 1, 0, 8)], mem))
+	tw.tween_interval(15.5)
+	tw.tween_callback(func(): hud.say(Story.SAGE, Story.lord(kind, "after")))
 
 
 # ------------------------------------------------------------------ 危险物：毒液、蛛网、石头、红圈

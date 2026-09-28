@@ -69,6 +69,9 @@
 | 过场动画敷衍；进秘境 / 猎场没动画；开场要有动画教怎么玩 | 全部用 Remotion 重画（`tools/boat_anim`）：序章、渡海、进秘境、进猎场、飞升；**别再用简单的 2D 图形凑** |
 | 拿别人用 Claude 做的"名画 + 纪录片字幕"短片对比，说游戏里的串场"太丑"（代码画的 SVG 色块） | 第十四版：画面全换成**公有领域的西洋名画**（用户选的：西洋名画，不要中国古画、不要实机画面），慢推镜头 + 调色 + 光尘粒子 + 衬线双语字幕 + 左上角细线标签 / 大数字 + 米白纸片卡片（版本历史 21）。用户问过"名画有没有 IP 问题"：没有（画家都死了一百多年，博物馆开放图库是 CC0，出处写在 `assets/cutscene/CREDITS.txt`） |
 | 不要找用户要模型 / 贴图 | 自己画（Remotion / 程序生成）或者网上找 CC0 |
+| 看了 AI 做的国风仙侠 CG（云海天宫、白龙、仙人背影），"我喜欢这种感觉"，要国风过场 | **例外**：这种画面只有 AI 生图做得出，用户同意自己用 Dola / 即梦生成、我写提示词（见版本历史 22）。图放 `tools/boat_anim/ai/NN`，`prep_ai.py` 裁水印 |
+| Boss 要"超级大，跳起来踩我一脚掉很多血" | 朱厌 24 米高 + 跃击（版本历史 22）；其他 Boss 放大 1.3~1.5 倍 |
+| 剧情"只撑起了背景，没有边玩边了解，也不够深入" | 重写成叩天之战（`docs/世界观.md`），按"边玩边讲"放进游戏：灵主台词、天枢记忆、青崖子、灵环记忆、秘境刻字（版本历史 23），后面还有青崖子 NPC、残碑、结局二选一 |
 | 队友模型敷衍 | 程序模型重做（`RemotePlayer`），用户也可以放 `assets/models/player/player.glb`（提示词见版本历史 20） |
 
 ## 仓库和发布
@@ -332,6 +335,19 @@
    - 渲染：`./render_all.sh`（Linux：`apt-get install ffmpeg` 带 libtheora；Remotion 用 Playwright 预装的 `/opt/pw-browsers/chromium_headless_shell-*/…/headless_shell`；4 核约 15 分钟）。1920x1080 渲染 → 1600x900 + 轻微降噪 → Theora **按码率**编码（按质量编码铜版画 4 秒就 20 MB）：序章 2.6 Mbps、渡海 / 猎场 3.5、飞升 3、秘境 7（线条最密）
    - 游戏里：`Main._travel` 播 `voyage_<章>.ogv`（没有就退回旧的叠字方式）；`voyage.gd` 叠一层胶片颗粒着色器（颗粒画进视频体积翻几倍）；旧的 `voyage.ogv`、`ending.ogv` 删了
    - 调镜头：改 `Films.tsx` 里的机位 / 时间，`npx remotion still out/bundle Prologue out/x.jpg --frame=N --browser-executable=…` 单帧看（先 `npx remotion bundle src/index.ts --out-dir out/bundle`），比整段渲染快得多
+
+22. Boss 放大 + 朱厌跃击（2026-09-28）：
+   - `Data.BOSSES` 的 size：碧鳞蛟 12、蛛母 13、朱厌 24（高）、冰螭 22、玄鲲 30；受击盒按模型包围盒自动跟着变，弱点球上限 6 米；陆地 Boss 从 14 + 身高的高空砸下来出场
+   - `Boss._gk`：招式范围按体型放大（朱厌的拳圈、冲锋宽度）；巨兽走路每一步震地（`_update_visual` 里按走的距离，`fx._shake` + thud）
+   - 朱厌跃击 `Boss._leap / _leap_tick`（act type "leap"）：蹲 0.8 秒 → 跳上高空跟着人 → 1.9 秒锁定落点出红圈 → 3.2 秒砸下（`LEAP_DMG` 95 × 章节系数，第三章 55 级约掉一半血）+ 外圈冲击波（跳起来躲）→ 破绽 3 秒；二阶段 stomp2 连跳两次。第一次跳会提示怎么躲
+   - 自动测试 bossarts：站位绕 Boss 一圈找陆地；**被打倒后要走 `w._respawn_at_dock()`**（只 `p.revive()` 的话倒地计时 `_carry_t` 还在走，几秒后会被自动送回码头，下一个 Boss 的测试就找不到人）
+   - 国风过场：用户用 Dola AI 生成了 13 张图（提示词在会话里：九重天、天门、天倾、浮岛、苍墟、五灵主、青崖子、修行之道、天宫全景）。**聊天里干活途中发来的图不会存成文件**，要等我空闲时发、或者传到 GitHub `tools/boat_anim/ai/`。目前只收到第 1 张（`ai/01.webp`），`FilmsCN.tsx` 里有 8 秒试片 CNTest；`cine.tsx` 加了流云（`fx: 'clouds'`，`public/fx/clouds.png` 由 prep_ai.py 生成）、天光（`rays`）、竖排题字 `VTitle`、朱红印章 `Seal`
+23. 剧情第一阶段（2026-09-28）：
+   - 剧本 `docs/世界观.md` 重写：三万年前太初宗在天坛前**叩天**（天上收灵税、人间大旱），守门的天枢星君**云岫**把自己碎成五块关死天门；五灵主是替她守碎片、快撑不住的守门者（每个一种情绪：等 / 记 / 战 / 忘 / 归）；**青崖子就是当年的主将沈青崖**；结局二选一（重铸天枢 / 让她安息，都是好结局）；轮回 = 北斗九重（天枢篇、天璇篇……）
+   - 文字都在 `scripts/world/story.gd`（`Story`）：`LORDS`（出场 / 半血 / 临死 / 天枢记忆三句 / 青崖子到岸和打完）、`lord_intro`（再叩天："又是你。"）、`heaven_name`（"第二重天 · 天璇"）、`RING_MEMORY`（23 种灵兽各一句）、`INSCRIPTIONS`（每章秘境三层刻字）、`STELES`（残碑，第三阶段用）
+   - 游戏里：`Hud.say(who, text)`（底部那一列正上方的字幕，一句一句排队）、`Hud.memory(title, lines)`（天枢记忆文字版：压暗画面，三句浮出来，十几秒自己散）；`World._on_boss_spawn / _on_boss_phase2 / _lord_story`（第一次打倒：临死一句 → 8.5 秒后天枢记忆 → 青崖子一句，`Profile.stats["story_<kind>"]`）；第一次到岛青崖子说一句（`stats["sage_arrive_<章>"]`）；`finish_absorb` 灵环记忆；秘境结算面板残壁刻字
+   - 新字要进字体：`岫玑璇阙髻` 是这次补的。**做法（Linux）**：从 google/fonts 下 NotoSansSC 可变字体，`fontTools.varLib.instancer` 按 500 / 700 / 900 实例化，`fontTools.subset` 收"原来的字 + 所有脚本里的汉字"，覆盖 `assets/fonts/NotoSansSC-*.otf`（里面是 glyf，名字还叫 otf），再 `--import`
+   - 自动测试 boss 阶段：打倒灵主必须触发剧情（`story_<kind>` + 字幕队列）
 
 ## 还没做 / 可以继续
 

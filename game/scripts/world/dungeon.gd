@@ -888,6 +888,12 @@ func _show_result(tier: int, t: int, money: int, xp: int, record: bool, old: int
 	v.add_child(UiKit.title("秘境通关", 48, UiKit.GOLD))
 	if _boss_name != "":
 		v.add_child(UiKit.label("打倒了秘境之主 · %s" % _boss_name, 19, UiKit.MOON))
+	# 秘境是天宫坠下的碎片：墙上刻着天上那边的记录
+	var ins := Story.inscription(world.chapter, tier)
+	if ins != "":
+		var il := UiKit.label("残壁上刻着：「%s」" % ins, 17, Color(0.95, 0.85, 0.6))
+		il.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		v.add_child(il)
 	var g := GridContainer.new()
 	g.columns = 2
 	g.add_theme_constant_override("h_separation", 28)
