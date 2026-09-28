@@ -156,6 +156,7 @@ func on_message(data: Array) -> void:
 
 
 func _on(type: String, a: Array) -> void:
+	_warn(type, a)
 	match type:
 		"lane":
 			_on_lane(a)
@@ -171,6 +172,61 @@ func _on(type: String, a: Array) -> void:
 			_on_wall(a)
 		"vortex":
 			_on_vortex(a)
+
+
+## 用户："要砸哪里我也没看到什么提示"：
+##   Boss 起手（身子往后仰、抬起来，Boss.windup）；这一招会打到自己站的地方 → 屏幕四边红光 + 「！」（Hud.danger，越快砸下来跳得越快）
+func _warn(type: String, a: Array) -> void:
+	var me := _me()
+	var b := world.boss
+	var t := -1.0
+	var pose := 0.0
+	match type:
+		"lane":
+			var o: Vector3 = a[0]
+			var d: Vector3 = a[1]
+			var rel := Vector3(me.x - o.x, 0, me.z - o.z)
+			var along := rel.dot(d)
+			var side := absf(rel.dot(d.cross(Vector3.UP)))
+			if along > -2.0 and along < float(a[2]) + 2.0 and side < float(a[3]) * 0.5 + 1.5:
+				t = float(a[4]) + (maxf(along, 0.0) / float(a[7]) if float(a[7]) > 0.0 else 0.0)
+			pose = float(a[4])
+		"sweep":
+			var o2: Vector3 = a[0]
+			var rel2 := Vector3(me.x - o2.x, 0, me.z - o2.z)
+			var span := float(a[2]) - float(a[1])
+			if rel2.length() < float(a[3]) + 1.0 and absf(span) > 0.01:
+				var k := wrapf(atan2(rel2.x, rel2.z) - float(a[1]), -PI, PI) / span
+				if k > -0.1 and k < 1.1:
+					t = float(a[5]) + float(a[6]) * clampf(k, 0.0, 1.0)
+			pose = float(a[5])
+		"circle":
+			var c: Vector3 = a[0]
+			if Vector2(me.x - c.x, me.z - c.z).length() < float(a[1]) + 1.0 and absf(me.y - c.y) < 5.0:
+				t = float(a[2])
+			pose = float(a[2])
+		"rain":
+			for e in a[0]:
+				var c2: Vector3 = e[0]
+				if Vector2(me.x - c2.x, me.z - c2.z).length() < float(a[1]) + 1.0:
+					t = float(e[1]) if t < 0.0 else minf(t, float(e[1]))
+			pose = float((a[0] as Array)[0][1]) if not (a[0] as Array).is_empty() else 0.0
+		"wall":
+			var st: Vector3 = a[0]
+			var dw: Vector3 = a[1]
+			var rel3 := Vector3(me.x - st.x, 0, me.z - st.z)
+			var al := rel3.dot(dw)
+			if al > 0.0 and al < float(a[4]) and absf(rel3.dot(dw.cross(Vector3.UP))) < float(a[2]):
+				t = float(a[9]) + al / maxf(float(a[3]), 0.1)
+			pose = float(a[9])
+		"vortex":
+			var vc: Vector3 = a[0]
+			if Vector2(me.x - vc.x, me.z - vc.z).length() < float(a[1]):
+				t = 1.2
+	if t > 0.0 and not world.player.dead:
+		world.hud.danger(t)
+	if b and not b.dead and pose > 0.0:
+		b.windup(pose)
 
 
 ## 打到自己：翻滚的无敌时间里不算（Player.take_damage 里记"极限闪避"）
@@ -526,7 +582,10 @@ func _impact(style: String, pos: Vector3, r: float, delay: float) -> void:
 		_:
 			fx.explosion(pos + Vector3.UP * 0.5, r, c)
 	if near:
-		fx._shake(pos, 0.35, 35.0)
+		# 大圈震得更狠（朱厌的拳、蛛母砸下来）
+		fx._shake(pos, 0.35 + clampf(r / 16.0, 0.0, 0.45), 50.0)
+		if r >= 6.0:
+			Sfx.play_at("boom", pos, 2.0, 0.1, 0.8)
 
 
 ## 冰锥从地里冒出来，停一下再碎掉

@@ -220,6 +220,7 @@ func _on_done(r: Dictionary) -> void:
 	phase = "done"
 	result = r
 	back_t = RETURN_AFTER
+	world.lock_music("victory", 40.0)
 	world.earn(int(r["money"]))
 	world._gain(0, int(r["xp"]))
 	Profile.count("hunts")

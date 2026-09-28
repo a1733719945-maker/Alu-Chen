@@ -869,6 +869,7 @@ func _fireworks(col: Color) -> void:
 
 ## 通关结算：打倒了谁、用时（纪录）、报酬、宝箱里有什么
 func _show_result(tier: int, t: int, money: int, xp: int, record: bool, old: int) -> void:
+	world.lock_music("victory", 30.0)
 	if not _result:
 		var layer := CanvasLayer.new()
 		layer.layer = 5

@@ -76,6 +76,10 @@ var _stun_after := 0.0           # 潜水扑出来落地以后露破绽几秒
 var _gk := 1.0                   # 大个子：招式范围跟着体型放大（朱厌约 2）
 var _step_d := 0.0               # 巨兽走路：攒够一步的距离就震一下地
 var _leap_hint := false          # 跃击的提示只弹一次
+var _pose_t := 0.0               # 起手：还有几秒砸下来（身子往后仰、抬起来）
+var _pose_dur := 0.0
+var _slam_t := 0.0               # 砸下去那一下往前一顿
+var _model_y0 := 0.0
 
 const HOLY_SHADER := """shader_type spatial;
 render_mode unshaded, blend_add, depth_draw_never, cull_back, shadows_disabled;
@@ -98,6 +102,49 @@ void fragment() {
 	ALBEDO = rim_color.rgb * fres * strength * pulse + vein_color.rgb * veins * 0.6;
 }
 """
+## 自己放的模型里没有贴图（只有形状，用户的 spider.glb / whale.glb 就是这样）：以前显示成一整块白。
+## 这里用 3D 噪声在模型本地坐标上画一层皮：底色 → 斑块 → 发光的纹路（蛛母的红斑、玄鲲的荧光点），法线没有就按面算
+const SKIN_SHADER := """shader_type spatial;
+uniform vec4 base : source_color = vec4(0.08, 0.06, 0.09, 1.0);
+uniform vec4 mid : source_color = vec4(0.25, 0.14, 0.2, 1.0);
+uniform vec4 mark : source_color = vec4(0.9, 0.12, 0.18, 1.0);
+uniform float scale = 6.0;
+uniform float glow = 1.5;
+uniform bool flat_normals = false;
+varying vec3 lp;
+void vertex() { lp = VERTEX * scale; }
+float hash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+float noise(vec3 x) {
+	vec3 i = floor(x); vec3 f = fract(x); f = f * f * (3.0 - 2.0 * f);
+	return mix(mix(mix(hash(i), hash(i + vec3(1, 0, 0)), f.x), mix(hash(i + vec3(0, 1, 0)), hash(i + vec3(1, 1, 0)), f.x), f.y),
+		mix(mix(hash(i + vec3(0, 0, 1)), hash(i + vec3(1, 0, 1)), f.x), mix(hash(i + vec3(0, 1, 1)), hash(i + vec3(1, 1, 1)), f.x), f.y), f.z);
+}
+float fbm(vec3 p) { float a = 0.5; float s = 0.0; for (int i = 0; i < 5; i++) { s += a * noise(p); p *= 2.03; a *= 0.5; } return s; }
+void fragment() {
+	if (flat_normals) { NORMAL = normalize(cross(dFdy(VERTEX), dFdx(VERTEX))); }
+	float n = fbm(lp);
+	float fine = noise(lp * 9.0);
+	vec3 col = mix(base.rgb, mid.rgb, smoothstep(0.3, 0.72, n));
+	col *= 0.75 + 0.35 * fine;
+	// 发光纹路：大尺度噪声的等高线 + 零星的斑点
+	float m1 = 1.0 - smoothstep(0.0, 0.035, abs(fbm(lp * 0.45 + 11.0) - 0.5));
+	float m2 = smoothstep(0.78, 0.84, noise(lp * 1.7 + 3.0));
+	float m = max(m1 * 0.9, m2);
+	col = mix(col, mark.rgb * 0.6, m);
+	ALBEDO = col;
+	ROUGHNESS = mix(0.32, 0.8, n) - m * 0.2;
+	METALLIC = 0.08;
+	SPECULAR = 0.55;
+	EMISSION = mark.rgb * m * glow * (0.75 + 0.25 * sin(TIME * 2.0 + lp.x * 0.3));
+}
+"""
+const SKIN_OF := {
+	"spider": [Color(0.05, 0.035, 0.06), Color(0.22, 0.1, 0.18), Color(1.0, 0.12, 0.2), 1.8],
+	"whale": [Color(0.025, 0.05, 0.09), Color(0.1, 0.2, 0.3), Color(0.3, 0.85, 1.0), 1.6],
+	"mandala": [Color(0.03, 0.08, 0.05), Color(0.12, 0.3, 0.16), Color(0.5, 1.0, 0.35), 1.2],
+	"titan": [Color(0.09, 0.06, 0.05), Color(0.3, 0.2, 0.14), Color(1.0, 0.45, 0.15), 1.4],
+	"icedragon": [Color(0.08, 0.14, 0.22), Color(0.4, 0.6, 0.8), Color(0.55, 0.95, 1.0), 1.2],
+}
 const PILLAR_SHADER := """shader_type spatial;
 render_mode unshaded, blend_add, depth_draw_never, cull_disabled, shadows_disabled;
 uniform vec4 color : source_color = vec4(1.0, 0.85, 0.5, 1.0);
@@ -172,6 +219,7 @@ func _build() -> void:
 	_custom = custom != ""
 	model = BeastModels.instance_custom(custom, cfg) if _custom else BeastModels.instance_model(cfg)
 	head.add_child(model)
+	_model_y0 = model.position.y
 	FxLib.no_decals(model)
 	var d := BeastModels._dims(str(cfg["model"]))
 	var k := BeastModels._model_scale(cfg)
@@ -215,6 +263,16 @@ func _build() -> void:
 			head.global_position = _anchor + Vector3(0, 40, 0)
 
 
+static var _skin: Shader
+
+
+static func _skin_shader() -> Shader:
+	if _skin == null:
+		_skin = Shader.new()
+		_skin.code = SKIN_SHADER
+	return _skin
+
+
 ## 让 Boss 看起来威猛、有神圣感：
 ##   材质变暗、更有光泽，外面再叠一层流动的金色能量 + 边缘光（HOLY_SHADER）；
 ##   一个加粗发亮的年份灵环（灵兽只有一个灵环）；头后面一圈圣光光轮；天上照下来一道光柱；金色光点往上飘；眼睛发光
@@ -226,15 +284,28 @@ func _decorate() -> void:
 	holy.set_shader_parameter("rim_color", theme)
 	var vein: Color = cfg.get("glow", Color(0.2, 0.1, 0.35))
 	holy.set_shader_parameter("vein_color", Color(vein.r * 3.0 + 0.3, vein.g * 3.0 + 0.2, vein.b * 3.0 + 0.5))
-	if _custom:
-		# 自己的模型有真贴图：流光和边缘光淡一点，不要把贴图盖住
-		holy.set_shader_parameter("strength", 0.6)
-		holy.set_shader_parameter("vein_color", Color(vein.r * 0.8, vein.g * 0.8, vein.b * 0.8))
 	for mi: MeshInstance3D in model.find_children("*", "MeshInstance3D", true, false):
 		if mi.mesh == null:
 			continue
 		for i in mi.mesh.get_surface_count():
 			var base := mi.get_active_material(i)
+			if _custom and (base == null or (base is BaseMaterial3D and (base as BaseMaterial3D).albedo_texture == null)):
+				# 没有贴图的模型：画一层程序生成的皮（不是一整块白）
+				var sk := ShaderMaterial.new()
+				sk.shader = _skin_shader()
+				var so: Array = SKIN_OF.get(kind, SKIN_OF["titan"])
+				sk.set_shader_parameter("base", so[0])
+				sk.set_shader_parameter("mid", so[1])
+				sk.set_shader_parameter("mark", so[2])
+				sk.set_shader_parameter("glow", so[3])
+				var ab := mi.mesh.get_aabb()
+				sk.set_shader_parameter("scale", 7.0 / maxf(maxf(ab.size.x, ab.size.y), maxf(ab.size.z, 0.001)))
+				var fmt := 0
+				if mi.mesh is ArrayMesh:
+					fmt = (mi.mesh as ArrayMesh).surface_get_format(i)
+				sk.set_shader_parameter("flat_normals", (fmt & Mesh.ARRAY_FORMAT_NORMAL) == 0)
+				mi.set_surface_override_material(i, sk)
+				continue
 			if not base is BaseMaterial3D:
 				continue
 			var m := (base as BaseMaterial3D).duplicate() as BaseMaterial3D
@@ -247,7 +318,9 @@ func _decorate() -> void:
 				m.rim_enabled = true
 				m.rim = 0.7
 				m.rim_tint = 0.4
-			m.next_pass = holy
+			# 自己的模型保持原样（用户："我辛辛苦苦生成的 Boss，你全部涂成白色"）：不叠流光和边缘光
+			if not _custom:
+				m.next_pass = holy
 			mi.set_surface_override_material(i, m)
 	var c := _box.get_center()
 	var big := maxf(size.x, size.z)
@@ -557,6 +630,11 @@ func _moves(dt: float) -> void:
 	var t: Vector3 = tp["pos"]
 	var peer := int(tp["peer"])
 	BeastModels.play_role(model, "attack")
+	var near := _nearest_dist(o)
+	if near < _body_r() + 6.0 and randf() < 0.5 and force_art == "":
+		_swat(o)
+		_sp_cd = randf_range(0.3, 0.7)
+		return
 	match kind:
 		"spider":
 			_art_spider(o, t, peer)
@@ -568,11 +646,39 @@ func _moves(dt: float) -> void:
 			_art_whale(o, t, peer)
 		_:
 			_art_mandala(o, t, peer)
-	# 两招之间喘口气（二阶段短一点）
-	_sp_cd = randf_range(1.0, 2.0) * (1.0 if phase == 1 else 0.6)
+	# 两招之间喘口气（二阶段短一点）。用户："攻击频率太低、打完了都只砸了一下"：以前 1~2 秒，现在 0.4~0.9 秒
+	_sp_cd = randf_range(0.4, 0.9) * (1.0 if phase == 1 else 0.65)
 
 
 var force_art := ""              # 自动测试：指定下一招
+
+
+## 身子多宽（水平半径）
+func _body_r() -> float:
+	return maxf(size.x, size.z) * 0.5
+
+
+func _nearest_dist(o: Vector3) -> float:
+	var best := INF
+	for p in _targets():
+		best = minf(best, Vector2(p["pos"].x - o.x, p["pos"].z - o.z).length())
+	return best
+
+
+## 拍地：贴在身边的人挨一下（0.9 秒起手，身子一仰——看到就往外翻滚）
+func _swat(o: Vector3) -> void:
+	var c := Vector3(head.global_position.x, o.y, head.global_position.z)
+	world.arts.circle(c, _body_r() + 5.5, 0.9, 30.0, _style())
+	Sfx.play_at("boss_roar", c, 2.0, 0.05, 0.9)
+	_busy = 1.3
+
+
+## 起手动作（每台电脑自己演：BossArts 收到招式的时候调）：身子往后仰、抬起来，到点砸下去往前一顿
+func windup(sec: float) -> void:
+	if dead or sec < 0.35 or _pose_t > 0.0:
+		return
+	_pose_t = sec
+	_pose_dur = sec
 
 
 ## 按权重挑一招：opts = [[名字, 权重], ...]
@@ -1262,14 +1368,29 @@ func _update_visual(dt: float) -> void:
 	_last_pos = p
 	var airborne := ai == "air" or state == "leap" or str(_act.get("type", "")) == "leap"
 	BeastModels._animate_model(model, airborne, _speed, "fly" if ai == "air" else "run")
-	# 巨兽（朱厌）走路：每一步地面一震，近处镜头跟着晃
-	if ai == "land" and size.y > 16.0 and not airborne and _speed > 1.0 and _speed < 20.0:
+	# 起手：往后仰、抬起来（前 60% 的时间抬到顶、停住），到点往前一顿
+	var lift := 0.0
+	if _pose_t > 0.0:
+		_pose_t -= dt
+		lift = sin(clampf((1.0 - _pose_t / maxf(_pose_dur, 0.01)) * 1.6, 0.0, 1.0) * PI * 0.5)
+		if _pose_t <= 0.0:
+			_slam_t = 0.3
+	elif _slam_t > 0.0:
+		_slam_t -= dt
+	var fwd := maxf(_slam_t, 0.0) / 0.3
+	model.rotation.x = 0.2 * lift - 0.12 * fwd
+	model.position.y = _model_y0 + size.y * 0.05 * lift
+	# 巨兽（朱厌）走路、冲锋：每一步地面一震，近处镜头跟着晃
+	if ai == "land" and size.y > 12.0 and not airborne and _speed > 1.0:
 		_step_d += _speed * dt
 		if _step_d > size.y * 0.3:
 			_step_d = 0.0
 			var gp := Vector3(p.x, world.island.height_at(p.x, p.z), p.z)
-			world.fx._shake(gp, 0.14, 50.0)
-			Sfx.play_at("thud", gp, 4.0, 0.1, 0.45)
+			var run := _speed > 12.0
+			world.fx._shake(gp, 0.3 if run else 0.16, 60.0 if run else 50.0)
+			Sfx.play_at("thud", gp, 6.0 if run else 4.0, 0.1, 0.45)
+			if run:
+				world.fx.slam(gp, 4.0)
 	for b in parts:
 		b.global_transform = head.global_transform * Transform3D(Basis(), b.get_meta("offset") as Vector3)
 	# 灵环、光轮、光柱

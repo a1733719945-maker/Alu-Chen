@@ -1664,6 +1664,66 @@ func blind(dur: float, c: Color) -> void:
 
 
 ## 全屏闪一下（灵环突破）
+## 危险预警（用户："要砸哪里我也没看到什么提示"）：灵主的招会打到你站的地方时，屏幕四边红光一跳一跳 + 准星上方一个「！」，
+## 越到砸下来那一刻跳得越快；翻滚 / 跑出去就行。BossArts 收到招式时判断会不会打到自己再调
+var _danger: ColorRect
+var _danger_mark: Label
+var _danger_t := 0.0
+var _danger_dur := 0.0
+
+
+func danger(sec: float) -> void:
+	if sec <= 0.05:
+		return
+	if _danger == null:
+		_danger = ColorRect.new()
+		_danger.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var m := ShaderMaterial.new()
+		m.shader = Shader.new()
+		m.shader.code = """shader_type canvas_item;
+uniform float amount = 0.0;
+uniform float rate = 3.0;
+void fragment() {
+	vec2 d = abs(UV - 0.5) * 2.0;
+	float e = pow(max(d.x, d.y * 0.9), 3.5);
+	float beat = 0.55 + 0.45 * sin(TIME * rate * 6.2832);
+	COLOR = vec4(1.0, 0.08, 0.04, e * amount * beat * 0.75);
+}"""
+		_danger.material = m
+		_root.add_child(_danger)
+		UiKit.fill(_danger)
+		_root.move_child(_danger, 1)
+		_danger_mark = UiKit.label("！", 46, Color(1.0, 0.25, 0.15))
+		_danger_mark.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
+		_danger_mark.add_theme_constant_override("outline_size", 8)
+		_danger_mark.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		UiKit.place(_danger_mark, Vector4(0.5, 0.5, 0.5, 0.5), Vector4(-40, -118, 40, -56))
+		_root.add_child(_danger_mark)
+	# 同时好几招：按最先砸下来的那一下算
+	if _danger_t <= 0.0 or sec < _danger_t:
+		_danger_t = sec
+		_danger_dur = sec
+		Sfx.play("low_ammo", -2.0, 0.0, 0.55)
+
+
+func _update_danger(dt: float) -> void:
+	if _danger == null:
+		return
+	_danger_t -= dt
+	var on := _danger_t > -0.15
+	_danger.visible = on
+	_danger_mark.visible = on
+	if not on:
+		return
+	var k := clampf(1.0 - _danger_t / maxf(_danger_dur, 0.01), 0.0, 1.0)
+	var m := _danger.material as ShaderMaterial
+	m.set_shader_parameter("amount", 0.5 + 0.5 * k)
+	m.set_shader_parameter("rate", 1.5 + 4.5 * k)
+	_danger_mark.modulate.a = 0.6 + 0.4 * sin(Time.get_ticks_msec() / 1000.0 * (8.0 + 16.0 * k))
+	_danger_mark.scale = Vector2.ONE * (1.0 + 0.25 * k)
+	_danger_mark.pivot_offset = _danger_mark.size * 0.5
+
+
 func flash(c: Color) -> void:
 	var r := ColorRect.new()
 	r.color = Color(c.r, c.g, c.b, 0.55)
@@ -2521,6 +2581,7 @@ func _process(dt: float) -> void:
 	_callout_t -= dt
 	_callout.modulate.a = clampf(_callout_t / 0.4, 0.0, 1.0)
 	_update_say(dt)
+	_update_danger(dt)
 	_absorb_t -= dt
 	if _absorb_t <= 0.0 and _absorb.text != "" and not (_choice and is_instance_valid(_choice)):
 		_absorb.text = ""

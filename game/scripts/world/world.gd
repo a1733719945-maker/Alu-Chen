@@ -303,6 +303,7 @@ func _notification(what: int) -> void:
 
 func _process(dt: float) -> void:
 	_t += dt
+	Profile.add_play_time(dt)
 	builder.animate(_t)
 	_player_snap_t += dt
 	if _player_snap_t >= 1.0 / PLAYER_SNAP_RATE:
@@ -941,6 +942,13 @@ func _host_kill(b: Beast) -> void:
 func beast_escaped(b: Beast, reason: String) -> void:
 	if not Net.is_host() or not b.alive():
 		return
+	if b.temper == "elite" and reason != "despawn":
+		# 灵兽王（猎物、守宝王、秘境之主）不会自己跑没了：拉回老家（秘境里是场地中间）
+		var home := b.spawn_pos
+		if island.is_land(home.x, home.z):
+			b.global_position = island.ground_point(home.x, home.z) + Vector3(0, 1.5, 0)
+			b.linear_velocity = Vector3.ZERO
+		return
 	var msg := [b.id, reason, b.global_position]
 	if Data.autotest:
 		print("[autotest] 灵兽逃走：%s %s %s state=%d life=%.1f 地面 %.2f" % [b.species, reason, b.global_position, b.state, b.life, island.height_at(b.global_position.x, b.global_position.z)])
@@ -1062,10 +1070,11 @@ func _check_god() -> void:
 	var v := Voyage.new()
 	v.video = "res://assets/cutscene/ascend.ogv"
 	v.length = 26.0
-	v.music = "boss"
+	v.music = "ascend"
 	get_tree().root.add_child(v)
 	v.finished.connect(func():
-		Sfx.play_music("explore")
+		# 飞升专属曲（For Her）接着放完
+		lock_music("ascend", 135.0)
 		hud._show_banner("飞升 · %s" % Settings.display_name(), "天门重开，兽潮平息。可门后不是天——是九重天的第一重。\n主菜单「轮回」：转世重修，再闯一遍五大灵主（第二重天）。也可以坐船回任何一个岛，接着猎灵。", UiKit.GOLD, 12.0))
 
 
@@ -1393,10 +1402,24 @@ var _music_t := 0.0
 var _battle_hold := 0.0
 
 
+## 庆祝 / 飞升的曲子：放这么久，不被战斗 / 探索的音乐换掉
+var _music_lock := ""
+var _music_lock_until := 0.0
+
+
+func lock_music(name: String, sec: float) -> void:
+	_music_lock = name
+	_music_lock_until = Time.get_ticks_msec() / 1000.0 + sec
+	if not Data.autotest:
+		Sfx.play_music(name)
+
+
 func _update_music(dt: float) -> void:
 	_music_t -= dt
 	_battle_hold -= dt
 	if _music_t > 0.0 or Data.autotest:
+		return
+	if Time.get_ticks_msec() / 1000.0 < _music_lock_until:
 		return
 	_music_t = 1.0
 	var me := player.global_position
@@ -2528,6 +2551,8 @@ func _host_spawn_boss() -> void:
 	# 打赢过的 Boss 再召唤：二重、三重……血更厚、招更狠、奖励更高
 	var tier := int(Profile.boss_tier.get(kind, 0))
 	var hp: float = float(Data.BOSSES[kind]["hp"]) * (1.0 + 0.6 * (n - 1)) * (1.0 + 0.7 * tier) * Profile.rebirth_hard()
+	if not Data.autotest:
+		hp = maxf(hp, team_output().y * Data.BOSS_TTK * (1.0 + 0.6 * (n - 1)) * (1.0 + 0.7 * tier))
 	var anchor := island.boss_pos
 	var msg := [kind, hp, anchor, tier]
 	Net.send(0, "bossspawn", msg)
@@ -2565,10 +2590,17 @@ func boss_phase2() -> void:
 
 
 func _on_boss_phase2() -> void:
-	hud.toast("Boss 暴怒了！攻击更快", Color(1, 0.4, 0.3), 4.0)
+	hud.toast("灵主暴怒了！出招更快", Color(1, 0.4, 0.3), 4.0)
 	if boss:
 		hud.say(Story.lord(boss.kind, "who"), Story.lord(boss.kind, "half"), LORD_SAY)
+		# 暴怒：一声长啸，全场一震，身上炸开一圈红光
+		var bp: Vector3 = boss.center()
+		fx.ring_breakthrough(bp, Color(1.0, 0.25, 0.15), 0)
+		fx._shake(bp, 0.9, 120.0)
+		hud.flash(Color(0.9, 0.1, 0.05))
+		boss.windup(1.2)
 	Sfx.play("boss_roar", 3.0, 0.0, 0.85)
+	Sfx.play("boom", 0.0, 0.0, 0.6)
 
 
 func boss_summon(b: Boss, species: String, n: int) -> void:
@@ -2621,6 +2653,8 @@ func _on_boss_dead(msg: Array) -> void:
 		player.trauma = minf(player.trauma + 0.6, 1.0)
 		boss.die_visual()     # 播死亡动画、摔下来，自己炸掉
 		boss = null
+	# 凯旋曲（打倒灵主）
+	lock_music("victory", 50.0)
 	hud.boss_bar("")
 	arts.clear_all()
 	# 重数越高奖励越多（每重 +60%），下次召唤再加一重
@@ -2733,6 +2767,11 @@ func boss_telegraph(center: Vector3, radius: float, delay: float, dmg: float, ki
 
 func _on_telegraph(msg: Array) -> void:
 	var late := msg.size() > 5 and bool(msg[5]) and float(msg[2]) > 0.45
+	# 会砸到自己：屏幕四边红光 + 「！」
+	var me := player.global_position
+	var tc: Vector3 = msg[0]
+	if float(msg[3]) > 0.0 and Vector2(me.x - tc.x, me.z - tc.z).length() < float(msg[1]) + 1.0 and absf(me.y - tc.y) < 5.0:
+		hud.danger(float(msg[2]))
 	var e := {"center": msg[0], "radius": float(msg[1]), "t": float(msg[2]), "dmg": float(msg[3]), "kind": str(msg[4]), "node": null}
 	if late:
 		Sfx.play_at("boss_roar", msg[0], -6.0, 0.05, 1.5)

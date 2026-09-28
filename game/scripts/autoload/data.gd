@@ -1474,6 +1474,8 @@ const REF_KIT := {1: ["xiujian", 10, 2], 2: ["zhuge", 30, 3], 3: ["kongque", 50,
 const HP_SHOTS := [3.0, 4.0, 5.0, 7.0, 10.0]
 const HP_TTK := [0.5, 0.8, 1.2, 1.7, 2.4]
 const HP_FOLLOW := 0.75
+## 灵主血量下限：全队最强暗器持续开火至少这么多秒（再乘人数、重数）。用户："打完了都只砸了一下"——强暗器几秒就打死，招都出不来
+const BOSS_TTK := 55.0
 const ELITE_FLOOR := 12.0              # 灵兽王 / 秘境之主的下限倍数
 
 

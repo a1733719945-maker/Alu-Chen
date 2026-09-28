@@ -218,7 +218,28 @@ func slot_summary(n: int) -> String:
 		return "空存档"
 	var ch := int(d.get("chapter", 1))
 	var nm: String = str(Data.CHAPTERS[ch]["name"]).split(" · ")[-1] if Data.CHAPTERS.has(ch) else ""
-	return "%d 级 · %s · %d 环" % [int(d.get("level", 1)), nm, (d.get("rings", []) as Array).size()]
+	var st: Dictionary = d.get("stats", {}) if typeof(d.get("stats", {})) == TYPE_DICTIONARY else {}
+	return "%d 级 · %s · %d 环 · 玩了 %s" % [int(d.get("level", 1)), nm, (d.get("rings", []) as Array).size(), play_time_text(float(st.get("play_s", 0.0)))]
+
+
+## 这个存档玩了多久（"3 小时 12 分" / "25 分钟"）
+static func play_time_text(sec: float) -> String:
+	var m := int(sec / 60.0)
+	if m < 60:
+		return "%d 分钟" % m
+	return "%d 小时 %d 分" % [m / 60, m % 60]
+
+
+## 在游戏里（不算菜单）每 10 秒记一次时长
+var _play_acc := 0.0
+
+
+func add_play_time(dt: float) -> void:
+	_play_acc += dt
+	if _play_acc >= 10.0:
+		stats["play_s"] = float(stats.get("play_s", 0.0)) + _play_acc
+		_play_acc = 0.0
+		mark_dirty()
 
 
 func reset() -> void:

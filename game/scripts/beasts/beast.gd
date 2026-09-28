@@ -1109,10 +1109,19 @@ func _swim(delta: float) -> void:
 	_water_t += delta
 	_atk_cd -= delta
 	var native: bool = world.island.is_water_habitat(str(Data.BEASTS[species]["habitat"]))
-	if not native and _water_t > 20.0 and temper != "elite":
+	var king := temper == "elite"
+	if king:
+		# 灵兽王（猎物、守宝王、秘境之主）掉进水里不会跑掉（以前活过 90 秒一碰水就算逃走，直接没了）：
+		# 往老家游；泡了 8 秒还没上岸，直接回到老家的地上
+		if _water_t > 8.0 and world.island.is_land(spawn_pos.x, spawn_pos.z):
+			global_position = world.island.ground_point(spawn_pos.x, spawn_pos.z) + Vector3(0, 1.5, 0)
+			linear_velocity = Vector3.ZERO
+			_water_t = 0.0
+			return
+	elif not native and _water_t > 20.0:
 		world.beast_escaped(self, "splash")
 		return
-	if life > FIERCE_GIVE_UP:
+	elif life > FIERCE_GIVE_UP:
 		world.beast_escaped(self, "timeout")
 		return
 	if _swoop_t > 0.0:
@@ -1136,6 +1145,15 @@ func _swim(delta: float) -> void:
 		angular_velocity = Vector3.ZERO
 		return
 	if tp.is_empty():
+		if king:
+			# 没人可追的王：往老家游
+			var hk := spawn_pos - global_position
+			hk.y = 0.0
+			var vk := hk.normalized() * 4.0
+			vk.y = (Island.WATER_Y + 0.02 - global_position.y) * 3.0
+			linear_velocity = linear_velocity.lerp(vk, 1.0 - exp(-3.0 * delta))
+			angular_velocity = Vector3.ZERO
+			return
 		_no_target_t += delta
 		if _no_target_t > 10.0:
 			world.beast_escaped(self, "splash")

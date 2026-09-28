@@ -309,7 +309,9 @@ func _refresh_save() -> void:
 	for i in _slot_btns.size():
 		var b: Button = _slot_btns[i]
 		var on := Profile.slot == i + 1
-		b.text = "存档 %d\n%s" % [i + 1, Profile.slot_summary(i + 1)]
+		# 第一行：存档几 · 玩了多久；第二行：等级 · 章节 · 灵环
+		var sm := Profile.slot_summary(i + 1).split(" · 玩了 ")
+		b.text = ("存档 %d  ·  %s\n%s" % [i + 1, sm[1], sm[0]]) if sm.size() > 1 else ("存档 %d\n%s" % [i + 1, sm[0]])
 		var n := StyleBoxFlat.new()
 		n.bg_color = Color(1, 1, 1, 0.08) if on else Color(1, 1, 1, 0.035)
 		n.border_color = UiKit.GOLD if on else Color(1, 1, 1, 0.1)
