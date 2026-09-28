@@ -11,11 +11,16 @@ extends CanvasLayer
 
 const GRAIN_CODE := """
 shader_type canvas_item;
-uniform float amount = 0.09;
-float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+uniform float amount = 0.06;
+// 不用 sin 的随机数（sin 版在有的显卡上精度不够，会出一道道横纹）
+float hash(vec2 p) {
+	vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+	p3 += dot(p3, p3.yzx + 33.33);
+	return fract((p3.x + p3.y) * p3.z);
+}
 void fragment() {
 	vec2 cell = floor(FRAGCOORD.xy / 1.6);
-	float n = hash(cell + floor(TIME * 24.0) * vec2(17.13, 31.71)) - 0.5;
+	float n = hash(cell + mod(floor(TIME * 24.0), 97.0) * vec2(17.0, 31.0)) - 0.5;
 	COLOR = vec4(vec3(step(0.0, n)), abs(n) * 2.0 * amount);
 }
 """
