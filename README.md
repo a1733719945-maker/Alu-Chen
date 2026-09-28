@@ -18,7 +18,7 @@
 - 同一套代码：`Settings.touch_active()`（手机上自动开，电脑上加 `-- --touch` 参数可以测试）时，`ui/touch_controls.gd` 显示触屏按钮，按钮直接改输入动作的状态（`Input.action_press`），游戏逻辑不用区分键盘还是触屏；HUD 用 `Hud.touch_layout()` 换成触屏布局。
 - 手机上默认低画质、3D 渲染分辨率 75%、草更少、阴影更近，用 Godot 的 Mobile 渲染器；界面按屏幕实际尺寸放大（打开面板时恢复原大小）。
 - 安卓导出预设在 `game/export_presets.cfg`（只打 arm64），签名用 `tools/android/release.keystore`（固定密钥，更新时能覆盖安装）。
-- 苹果版：代码通用，但要苹果开发者账号 + Mac 打包，还没做。
+- 苹果版：代码通用，但要苹果开发者账号（99 美元/年，通过 TestFlight 发给朋友）；打包可以用 GitHub Actions 的 macOS 机器。还没做。
 
 ## 第三版有什么
 
