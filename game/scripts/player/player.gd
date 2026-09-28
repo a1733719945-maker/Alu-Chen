@@ -50,6 +50,7 @@ var gun_idx := 0
 var fire_buffer := 0.0
 var switch_t := 0.0
 var ads := 0.0
+var _ads_out_played := true
 var scoped := false
 var sprint_k := 0.0
 var crouch_k := 0.0
@@ -964,9 +965,20 @@ func _update_weapons(dt: float) -> void:
 	switch_t -= dt
 	var active := input_enabled and not dead and busy_t <= 0.0
 	var want_ads: bool = active and Input.is_action_pressed("aim") and switch_t <= 0.0 and not gun.reloading and slot < 2 and gun.d["mode"] != "melee"
+	var ads0 := ads
 	if want_ads and ads <= 0.0:
-		Sfx.play("ads_in", -6.0, 0.05)
+		Sfx.play("ads_in", -3.0, 0.05)
+	elif not want_ads and ads >= 0.5 and not _ads_out_played:
+		# 关镜：往下一放，轻轻一声
+		_ads_out_played = true
+		Sfx.play("ads_out", -6.0, 0.05)
+		viewmodel.ads_settle(false)
 	ads = move_toward(ads, 1.0 if want_ads else 0.0, dt / float(gun.d["ads_time"]))
+	if want_ads:
+		_ads_out_played = false
+	# 开镜到位：贴脸那一顶
+	if ads0 < 0.95 and ads >= 0.95:
+		viewmodel.ads_settle(true)
 	scoped = bool(gun.d.get("scope", false)) and ads > 0.6
 
 	if not active:
@@ -1089,7 +1101,6 @@ func switch_weapon(i: int) -> void:
 	ads = 0.0
 	# 收枪 + 掏枪的时间由手里的动作定（副手快、重的慢，第一次掏带机括的还要拉栓）
 	switch_t = viewmodel.set_weapon(gun.id)
-	Sfx.play("switch", -8.0)
 	weapon_changed.emit(gun)
 	ammo_changed.emit(gun)
 

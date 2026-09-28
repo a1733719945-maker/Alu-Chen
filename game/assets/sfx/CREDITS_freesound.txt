@@ -25,3 +25,10 @@ skill_heal.wav  <-  "Heal - Rpg" by colorsCrimsonTears  https://freesound.org/s/
 level_up.wav  <-  "Level Up / Mission Complete" by Beetlemuse  https://freesound.org/s/528958/  (CC0)
 kill_burst.wav  <-  "Sparkling Star 05.wav" by LilMati  https://freesound.org/s/462096/  (CC0)
 punch.wav  <-  "body_hit.wav" by insanity54  https://freesound.org/s/276600/  (CC0)
+draw_light.wav  <-  Freesound - Unholster Gun by qubodup  https://freesound.org/s/688765/  (CC0)
+draw_heavy.wav  <-  Freesound - Rifle_Equip1 by BaggoNotes  https://freesound.org/s/784753/  (CC0)
+holster.wav  <-  Freesound - Holster Pistol by nioczkus  https://freesound.org/s/388819/  (CC0)
+rack.wav  <-  Freesound - Generic Rifle Cock by GameWithBepis  https://freesound.org/s/561471/  (CC0)
+settle.wav  <-  Freesound - Pistol Cock.wav by nebulasnails  https://freesound.org/s/405538/  (CC0)
+ads_in.wav  <-  Freesound - 22lr revolver handling clicking foley by serøutōnin--deprivəd  https://freesound.org/s/677159/  (CC0) + 合成的风声
+ads_out.wav  <-  合成

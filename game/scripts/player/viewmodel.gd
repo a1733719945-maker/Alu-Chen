@@ -64,7 +64,7 @@ var _punch_side := 1.0
 #   收枪：手上这把往右下沉、枪口朝下、侧翻着收走（HOLSTER 秒）
 #   掏枪：新的从右下斜着翻上来，稍微冲过头再落稳（按轻重 0.3~0.5 秒），落稳时一震 + 咔哒一声；
 #   这局第一次掏出带机括的（连机神弩、穿云弩、千丝雨针、子母雷珠）还会拉一下栓 / 泵
-const HOLSTER := 0.14
+const HOLSTER := 0.2
 const HOL_POS := Vector3(0.07, -0.3, 0.07)
 const HOL_ROT := Vector3(-0.75, 0.3, -0.85)
 const RAISE_POS := Vector3(0.1, -0.3, 0.1)
@@ -171,6 +171,8 @@ func set_weapon(id: String, instant := false) -> float:
 	if not had_item and models.has(cur) and (models[cur] as Node3D).visible and cur != id:
 		_pending = id
 		_hol_t = 0.0
+		# 收枪：往右下一沉，皮套 / 布料一声
+		Sfx.play("holster", -7.0, 0.06)
 		return HOLSTER + raise_time(id) * 0.8
 	_begin_raise(id)
 	return _raise_len * 0.8
@@ -178,7 +180,7 @@ func set_weapon(id: String, instant := false) -> float:
 
 ## 掏这把要多久：副手快、重的慢；第一次掏带机括的多一截（拉栓）
 func raise_time(id: String) -> float:
-	var t := 0.3 if (id in Data.SIDEARMS or id == "fist") else (0.5 if id in HEAVY else 0.4)
+	var t := 0.34 if (id in Data.SIDEARMS or id == "fist") else (0.6 if id in HEAVY else 0.48)
 	if not _drawn.has(id) and id in ["zhuge", "zhuihun", "baoyu", "zimu"]:
 		t += 0.22
 	return t
@@ -190,6 +192,9 @@ func _begin_raise(id: String) -> void:
 	_drawn[id] = true
 	_raise_t = 0.0
 	_show_only(id)
+	# 掏枪：拔出来的摩擦声（轻的是皮套，重的是背带 + 金属）
+	if id != "fist":
+		Sfx.play("draw_heavy" if id in HEAVY or not id in Data.SIDEARMS else "draw_light", -5.0, 0.05)
 
 
 func _show_only(id: String) -> void:
@@ -228,15 +233,20 @@ func _switch_anim(dt: float) -> Vector2:
 			_rack = false
 			_lever_t = 0.3
 			_lever_len = 0.3
-			var snd := "bolt_cycle" if cur == "zhuihun" else ("pump" if cur in ["baoyu", "zimu"] else "reload_end")
-			Sfx.play(snd, -8.0, 0.05, 1.1)
+			var snd := "bolt_cycle" if cur == "zhuihun" else ("pump" if cur in ["baoyu", "zimu"] else "rack")
+			Sfx.play(snd, -3.0, 0.04, 1.05)
+			# 拉栓那一下手上一顿
+			_kpv += Vector3(0.05, -0.1, 0.4)
+			_krv += Vector3(-0.5, 0.3, 0.9)
 		if t >= 1.0:
 			_raise_t = -1.0
 			rk = 0.0
-			# 落稳：往上一震、咔哒一声
-			_krv += Vector3(0.9, randf_range(-0.2, 0.2), 0.6 * (1.0 if randf() < 0.5 else -1.0))
-			_kpv += Vector3(0, 0.15, -0.35)
-			Sfx.play("reload_end", -13.0, 0.05, 1.35)
+			# 落稳：往上一震、咔哒一声（重的震得更沉）
+			var hv := 1.4 if cur in HEAVY else 1.0
+			_krv += Vector3(1.2, randf_range(-0.3, 0.3), 0.8 * (1.0 if randf() < 0.5 else -1.0)) * hv
+			_kpv += Vector3(0, 0.2, -0.45) * hv
+			if cur != "fist":
+				Sfx.play("settle", -6.0, 0.06, 1.0 if cur in HEAVY else 1.15)
 	return Vector2(hk, rk)
 
 
@@ -283,6 +293,16 @@ func kick(back: float, up: float, lever_time := 0.0) -> void:
 	if lever_time > 0.0:
 		_lever_t = lever_time
 		_lever_len = lever_time
+
+
+## 开镜到位：贴脸那一下往前一顶、微微一沉；关镜：往下一放
+func ads_settle(on: bool) -> void:
+	if on:
+		_kpv += Vector3(0, -0.06, 0.3)
+		_krv += Vector3(-0.35, 0.0, randf_range(-0.2, 0.2))
+	else:
+		_kpv += Vector3(0.05, -0.12, -0.15)
+		_krv += Vector3(0.3, 0.1, 0.25)
 
 
 func land(amount: float) -> void:
