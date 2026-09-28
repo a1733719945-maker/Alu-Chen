@@ -2,11 +2,23 @@
 
 第一人称联机猎灵游戏。玩法参考 How to Fish：用**引魂索**把灵兽拽上天，趁它在空中用**千机阁暗器**击杀。最多 8 人联机。
 
-用 [Godot 4.7.2](https://godotengine.org) 做，打包成 Windows 程序；联机走一台很小的中继服务器（`server/`，部署在 Render 免费版的法兰克福机房）。
+用 [Godot 4.7.2](https://godotengine.org) 做，打包成 Windows 程序和安卓 APK（手机和电脑能一起联机）；联机走一台很小的中继服务器（`server/`，部署在 Render 免费版的法兰克福机房）。
 
 ## 下载试玩
 
-每次推送代码，GitHub Actions 会自动跑测试并打包 Windows 版，发布在本仓库的 **Releases** 页面（`latest-<分支名>`）。下载 `DouluoHunter-Windows.zip`，解压后双击 `DouluoHunter.exe`。详细说明见 [docs/玩家说明.txt](docs/玩家说明.txt)。
+每次推送代码，GitHub Actions 会自动跑测试并打包 Windows 版和安卓版，发布在本仓库的 **Releases** 页面（`latest-<分支名>`）。
+
+- 电脑：下载 `DouluoHunter-Windows.zip`，解压后双击 `DouluoHunter.exe`。
+- 安卓手机：用手机浏览器下载 `CangxuHunter.apk` 安装（要允许"安装未知应用"）。触屏操作：左手浮动摇杆，右手滑屏转视角，右下一圈按钮。
+
+详细说明见 [docs/玩家说明.txt](docs/玩家说明.txt)。
+
+### 手机版是怎么做的
+
+- 同一套代码：`Settings.touch_active()`（手机上自动开，电脑上加 `-- --touch` 参数可以测试）时，`ui/touch_controls.gd` 显示触屏按钮，按钮直接改输入动作的状态（`Input.action_press`），游戏逻辑不用区分键盘还是触屏；HUD 用 `Hud.touch_layout()` 换成触屏布局。
+- 手机上默认低画质、3D 渲染分辨率 75%、草更少、阴影更近，用 Godot 的 Mobile 渲染器；界面按屏幕实际尺寸放大（打开面板时恢复原大小）。
+- 安卓导出预设在 `game/export_presets.cfg`（只打 arm64），签名用 `tools/android/release.keystore`（固定密钥，更新时能覆盖安装）。
+- 苹果版：代码通用，但要苹果开发者账号 + Mac 打包，还没做。
 
 ## 第三版有什么
 

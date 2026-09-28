@@ -24,14 +24,46 @@ var show_fps := false
 var quality := 2                   # 画质：0 低 / 1 中 / 2 高（草和植被密度下次进地图生效）
 var save_slot := 1                # 用哪个存档位（1~3）
 var scope_zoom := 6.0              # 狙击镜倍率（开镜时滚轮调，4~12 倍，记住上次的）
+# 手机 / 触屏
+var touch := -1                    # 触屏操作：-1 自动（手机上开）/ 0 关 / 1 开
+var touch_sens := 1.0              # 触屏滑动转视角的灵敏度
+var touch_size := 1.0              # 触屏按钮大小
+var aim_assist := true             # 触屏辅助瞄准（准星附近有灵兽时轻轻吸过去）
+var ui_scale := 1.0                # 界面大小（手机上在按屏幕尺寸自动放大的基础上再乘）
+var render_scale := 1.0            # 3D 画面渲染分辨率（手机默认 0.75：省电、不烫、不卡）
+var _force_touch := false          # 命令行 --touch：电脑上也用触屏操作（测试用）
 
 
 func _ready() -> void:
 	# 不把一帧里的鼠标移动合成一个事件，每个原始移动都能收到
 	Input.use_accumulated_input = false
+	_force_touch = "--touch" in OS.get_cmdline_user_args()
+	if is_mobile():
+		# 手机默认：低画质、渲染分辨率 75%、60 帧
+		quality = 0
+		render_scale = 0.75
+		max_fps = 60
 	_register_inputs()
 	load_settings()
 	apply()
+
+
+## 是不是手机 / 平板（导出的安卓、苹果版）
+func is_mobile() -> bool:
+	return OS.has_feature("mobile") or OS.has_feature("android") or OS.has_feature("ios")
+
+
+## 现在用不用触屏操作
+func touch_active() -> bool:
+	return touch == 1 or (touch == -1 and (is_mobile() or _force_touch))
+
+
+## 触屏模式：鼠标按键不再触发开枪 / 开镜 / 切枪（手机上第一根手指会被当成鼠标左键）
+func _strip_mouse_bindings() -> void:
+	for action in ["fire", "aim", "weapon_next", "weapon_prev", "lure", "skill_1"]:
+		for ev in InputMap.action_get_events(action):
+			if ev is InputEventMouseButton:
+				InputMap.action_erase_event(action, ev)
 
 
 func _register_inputs() -> void:
@@ -119,6 +151,12 @@ func load_settings() -> void:
 	sfx_volume = float(cfg.get_value("audio", "sfx", sfx_volume))
 	music_volume = float(cfg.get_value("audio", "music", music_volume))
 	server_url = str(cfg.get_value("net", "server", server_url))
+	touch = clampi(int(cfg.get_value("touch", "mode", touch)), -1, 1)
+	touch_sens = clampf(float(cfg.get_value("touch", "sens", touch_sens)), 0.2, 4.0)
+	touch_size = clampf(float(cfg.get_value("touch", "size", touch_size)), 0.6, 1.6)
+	aim_assist = bool(cfg.get_value("touch", "aim_assist", aim_assist))
+	ui_scale = clampf(float(cfg.get_value("video", "ui_scale", ui_scale)), 0.7, 1.6)
+	render_scale = clampf(float(cfg.get_value("video", "render_scale", render_scale)), 0.5, 1.0)
 
 
 func save_settings() -> void:
@@ -140,6 +178,12 @@ func save_settings() -> void:
 	cfg.set_value("audio", "sfx", sfx_volume)
 	cfg.set_value("audio", "music", music_volume)
 	cfg.set_value("net", "server", server_url)
+	cfg.set_value("touch", "mode", touch)
+	cfg.set_value("touch", "sens", touch_sens)
+	cfg.set_value("touch", "size", touch_size)
+	cfg.set_value("touch", "aim_assist", aim_assist)
+	cfg.set_value("video", "ui_scale", ui_scale)
+	cfg.set_value("video", "render_scale", render_scale)
 	cfg.save(PATH)
 
 
@@ -155,9 +199,40 @@ func apply() -> void:
 		vp.msaa_3d = [Viewport.MSAA_DISABLED, Viewport.MSAA_2X, Viewport.MSAA_4X][quality]
 		vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA if quality == 0 else Viewport.SCREEN_SPACE_AA_DISABLED
 		RenderingServer.directional_shadow_atlas_set_size([2048, 4096, 4096][quality], true)
+		# 3D 画面按比例渲染再放大（手机上省很多），界面还是原分辨率
+		vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
+		vp.scaling_3d_scale = render_scale
+		if is_mobile():
+			vp.msaa_3d = Viewport.MSAA_DISABLED
+			RenderingServer.directional_shadow_atlas_set_size(2048 if quality > 0 else 1024, true)
+			RenderingServer.directional_soft_shadow_filter_set_quality(RenderingServer.SHADOW_QUALITY_SOFT_VERY_LOW)
+	# 触屏：去掉鼠标按键绑定；关掉触屏时重新注册（action_add_event 不会重复加）
+	if touch_active():
+		_strip_mouse_bindings()
+	else:
+		_register_inputs()
 	var master := AudioServer.get_bus_index("Master")
 	AudioServer.set_bus_volume_db(master, linear_to_db(maxf(master_volume, 0.0001)))
 	changed.emit()
+
+
+## 游戏画面（HUD）的界面缩放。只在玩的时候放大（TouchControls 里设）；
+## 打开面板、暂停、主菜单时是 1（面板按 900 高设计，放大了会超出屏幕）
+func hud_ui_scale() -> float:
+	return auto_ui_scale() * ui_scale
+
+
+## 手机上界面要放大多少：按屏幕的实际高度（英寸）算。电脑上是 1
+func auto_ui_scale() -> float:
+	if not is_mobile() and not _force_touch:
+		return 1.0
+	if _force_touch and not is_mobile():
+		return 1.5                 # 电脑上模拟手机：按 6 寸手机横屏算
+	var dpi := maxf(float(DisplayServer.screen_get_dpi()), 100.0)
+	var sz := DisplayServer.screen_get_size()
+	var h_in := minf(sz.x, sz.y) / dpi
+	# 手机横屏高度大约 2.7 英寸 → 放大约 1.6 倍；7 寸以上的平板基本不用放大
+	return clampf(4.4 / maxf(h_in, 1.0), 1.0, 1.7)
 
 
 func toggle_fullscreen() -> void:

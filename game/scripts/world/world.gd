@@ -28,6 +28,7 @@ var island: Island
 var builder: WorldBuilder
 var fx: Fx
 var hud: Hud
+var touch: TouchControls         # 手机触屏按钮（不是触屏模式时自己隐藏）
 var skills: SkillSystem
 var combo: Combo                  # 猎灵连击 + 灵相真身（world/combo.gd）
 var hunt: Hunt                    # 猎灵榜的猎物、踪迹、吸收灵环时的护法（world/hunt.gd）
@@ -146,6 +147,9 @@ func _ready() -> void:
 	hud = Hud.new()
 	hud.world = self
 	add_child(hud)
+	touch = TouchControls.new()
+	touch.world = self
+	add_child(touch)
 	player.lure.hint.connect(hud.toast)
 	player.ammo_changed.connect(hud.on_ammo)
 	player.weapon_changed.connect(hud.on_weapon)
@@ -238,7 +242,7 @@ func _ring_summary() -> Array:
 
 
 func capture_mouse(on: bool) -> void:
-	if DisplayServer.get_name() == "headless":
+	if DisplayServer.get_name() == "headless" or Settings.touch_active():
 		return
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED if on else Input.MOUSE_MODE_VISIBLE
 

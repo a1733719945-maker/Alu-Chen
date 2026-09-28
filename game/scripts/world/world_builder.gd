@@ -216,15 +216,18 @@ func _box(size: Vector3) -> BoxShape3D:
 ## 画质设置改了以后调用：只改光影效果（植被密度要重新进地图）
 func apply_quality() -> void:
 	var q := Settings.quality
-	env.ssao_enabled = q >= 1
-	env.ssil_enabled = q >= 2
-	env.volumetric_fog_enabled = (ENV[biome] as Dictionary).has("vol") and q >= 2
-	sun.directional_shadow_max_distance = [70.0, 120.0, 170.0][q]
+	# 手机渲染器没有 SSAO / SSIL / 体积雾（开了只会刷警告）
+	var full := RenderingServer.get_current_rendering_method() == "forward_plus"
+	env.ssao_enabled = q >= 1 and full
+	env.ssil_enabled = q >= 2 and full
+	env.volumetric_fog_enabled = (ENV[biome] as Dictionary).has("vol") and q >= 2 and full
+	sun.directional_shadow_max_distance = [70.0, 120.0, 170.0][q] * (0.7 if Settings.is_mobile() else 1.0)
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS if q == 0 else DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
 
 
 func _density() -> float:
-	return [0.35, 0.65, 1.0][quality]
+	# 手机上草和小植物再少一点（手机显卡画大片半透明的草最吃力）
+	return [0.35, 0.65, 1.0][quality] * (0.6 if Settings.is_mobile() else 1.0)
 
 
 # ------------------------------------------------------------------ 天空与光照

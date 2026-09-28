@@ -42,7 +42,7 @@ jobs:
           path: |
             ~/godot
             ~/.local/share/godot/export_templates
-          key: godot-${{ env.GODOT_VERSION }}-win-linux
+          key: godot-${{ env.GODOT_VERSION }}-win-linux-android
 
       - name: 下载 Godot
         if: steps.cache-godot.outputs.cache-hit != 'true'
@@ -56,7 +56,8 @@ jobs:
           mkdir -p "$T"
           unzip -q -j t.tpz templates/version.txt \
             templates/windows_release_x86_64.exe templates/windows_debug_x86_64.exe \
-            templates/linux_release.x86_64 templates/linux_debug.x86_64 -d "$T"
+            templates/linux_release.x86_64 templates/linux_debug.x86_64 \
+            templates/android_release.apk templates/android_debug.apk -d "$T"
           rm t.tpz
 
       - name: 导入资源
@@ -84,10 +85,38 @@ jobs:
           cp docs/玩家说明.txt build/windows/
           cd build && zip -r -q DouluoHunter-Windows.zip windows
 
+      - name: 打包安卓版（APK）
+        env:
+          # 签名用仓库里固定的密钥：每次打出来的签名一样，手机上才能直接覆盖安装（不用卸载、存档不丢）
+          GODOT_ANDROID_KEYSTORE_RELEASE_PATH: ${{ github.workspace }}/tools/android/release.keystore
+          GODOT_ANDROID_KEYSTORE_RELEASE_USER: cangxu
+          GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD: cangxu-friends
+        run: |
+          # 编辑器设置里写上安卓 SDK 和 JDK 17 的路径（GitHub 的机器自带）
+          S=~/.config/godot/editor_settings-4.7.tres
+          test -f "$S"
+          for kv in "export/android/android_sdk_path|$ANDROID_HOME" "export/android/java_sdk_path|$JAVA_HOME_17_X64"; do
+            k="${kv%%|*}"; v="${kv#*|}"
+            if grep -q "^$k = " "$S"; then sed -i "s#^$k = .*#$k = \"$v\"#" "$S"; else echo "$k = \"$v\"" >> "$S"; fi
+          done
+          grep "export/android" "$S"
+          # 版本号每次打包加一，手机上显示成"更新"
+          sed -i "s/^version\/code=.*/version\/code=${GITHUB_RUN_NUMBER}/" game/export_presets.cfg
+          mkdir -p build/android
+          ~/godot/godot --headless --path game --export-release "Android" ../build/android/CangxuHunter.apk
+          test -s build/android/CangxuHunter.apk
+          ls -la build/android
+
       - uses: actions/upload-artifact@v4
         with:
           name: DouluoHunter-Windows
           path: build/DouluoHunter-Windows.zip
+          retention-days: 14
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CangxuHunter-Android
+          path: build/android/CangxuHunter.apk
           retention-days: 14
 
       - name: 发布到 Releases（每个分支一个最新测试版）
@@ -96,12 +125,15 @@ jobs:
         run: |
           tag="latest-${GITHUB_REF_NAME//\//-}"
           gh release delete "$tag" --cleanup-tag -y || true
-          gh release create "$tag" build/DouluoHunter-Windows.zip \
+          gh release create "$tag" build/DouluoHunter-Windows.zip build/android/CangxuHunter.apk \
             --prerelease --target "$GITHUB_SHA" \
             --title "斗罗大陆·猎魂 测试版（${GITHUB_SHA::7}）" \
-            --notes "下载下面的 DouluoHunter-Windows.zip，解压后双击 DouluoHunter.exe。
-
+            --notes "电脑：下载下面的 DouluoHunter-Windows.zip，解压后双击 DouluoHunter.exe。
           第一次运行时 Windows 可能提示“已保护你的电脑”：点“更多信息”→“仍要运行”。
+
+          安卓手机：用手机浏览器打开这个页面，下载 CangxuHunter.apk，点开安装。
+          第一次会提示“不允许安装未知来源的应用”：按提示允许浏览器（或文件管理器）安装应用，再点安装。
+          以后更新直接下载新的 APK 覆盖安装，存档不会丢。手机和电脑可以一起联机。
           联机：一个人点“创建联机房间”，按 Esc 看房间码，发给朋友；朋友在主菜单输入房间码加入。
 
           分支：${GITHUB_REF_NAME}，提交：${GITHUB_SHA}"

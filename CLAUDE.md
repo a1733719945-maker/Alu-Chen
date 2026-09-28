@@ -30,6 +30,7 @@
 | 枪没配件、没手感 | 全息 / 光学瞄具、夜光照门、激光、制退器、抛壳、新枪声、更狠的后坐；**用户还想要更好的枪感，下一轮继续** |
 | 在水上飘很怪 | 深水会沉，要游、要憋气，憋不住掉血；灵环落水沉底或冲上岸 |
 | Boss 太卡通 | 着色器流光 + 灵环 + 光轮 + 光柱 + 出场字幕 |
+| 要手机版（朋友安卓、苹果都有） | 先做安卓：同一套代码加触屏操作 + 手机画质，CI 自动打 APK 一起发到 Releases；苹果版要苹果开发者账号（99 美元/年）+ Mac 打包，**还没做**，等用户有账号再说 |
 | 验证很费 token | 改完先打包、告诉用户怎么更新，**等用户说要验证再跑全流程**；只做语法检查和一两段短测 |
 | Boss 太卡通、要更好的素材 | 还没解决：需要写实的怪物模型，免费 CC0 里没有合适的，要用户提供 Sketchfab 账号 / 付费素材，或者接受现在的着色器方案 |
 | 狙击镜画中画看着头晕；红点镜一圈蓝光 | 全屏瞄准镜；镜片几乎透明 |
@@ -71,7 +72,7 @@
 
 - 仓库：`a1733719945-maker/Alu-Chen`，开发分支 `claude/douluo-multiplayer-game-lza8mi`（也是默认分支），**不要**建 PR，除非用户要求。
 - 每次推送，GitHub Actions（`.github/workflows/build.yml`）会：中继服务器测试 → 导入 → 单人全流程自动测试 → 联机测试 → 打包 Windows → 发到 Releases 的 `latest-claude-douluo-multiplayer-game-lza8mi`。
-- 下载页：https://github.com/a1733719945-maker/Alu-Chen/releases/tag/latest-claude-douluo-multiplayer-game-lza8mi （`DouluoHunter-Windows.zip`）
+- 下载页：https://github.com/a1733719945-maker/Alu-Chen/releases/tag/latest-claude-douluo-multiplayer-game-lza8mi （`DouluoHunter-Windows.zip` + 安卓 `CangxuHunter.apk`）
 - 联机服务器：Render 免费版 `https://douluo-relay.onrender.com`（2026-09-25 用户已部署，法兰克福，已验证 WebSocket 能连）。游戏默认连 `wss://douluo-relay.onrender.com`（`settings.gd` 的 `DEFAULT_SERVER`）。15 分钟没人会休眠，第一次连要等约 1 分钟。浏览器打开网址能看到房间数和在线人数。
 
 ## 版本历史
@@ -325,6 +326,23 @@
 - 数值是按公式估的（见 data.gd 注释），没有真人从 1 级玩到 100 级；等用户反馈再调 `CH_HP / CH_MONEY / KILLS_PER_LEVEL`
 - 第十三版的灵主招式只由自动测试放过一遍，没有真人打过：等用户说哪招太难躲 / 太简单再调（`Boss._art_*` 里的前摇秒数、半径、伤害）
 - 本机全流程超过 10 分钟，工具会在 10 分钟时把后台进程一起杀掉：分两段跑（`--plan` 前半段 + `--chapter=5 --plan=huntrun,huntfail,done`）
+## 手机版（安卓，2026-09-28）
+
+- **同一套代码**，不是分支：`Settings.touch_active()`（`touch` = -1 自动 / 0 关 / 1 开；手机上自动开；电脑上加 `-- --touch` 参数测试）。
+- 触屏层 `ui/touch_controls.gd`（`TouchControls`，world 里创建，layer 50）：左半屏浮动摇杆（推出圈外往前 = 冲刺），右半屏滑动转视角（`Player.touch_look`），右下一圈按钮、左上暂停 + 菜单、物品栏 / 小地图 / 大地图直接点 HUD 上的格子（`Hud.hotbar_rect / minimap_rect / bigmap_rect`）。
+  - 按钮用 `Input.action_press/release` 直接改动作状态（在 `_input` 里、手指按下那一刻），同一帧物理和逻辑都能看到 `is_action_just_pressed`。**别改成在 `_process` 里 `parse_input_event`**：玩家脚本先跑就错过"刚按下"，半自动枪、跳都会失灵（踩过这个坑）。
+  - `pause / wuhun_panel / achievements / hunt_board` 是 `_unhandled_input` 里看事件的，用 `Input.parse_input_event.call_deferred(InputEventAction)`。
+  - 触屏时去掉鼠标按键绑定（`Settings._strip_mouse_bindings`），因为第一根手指会被模拟成鼠标左键。
+  - 辅助瞄准 `Player._aim_assist`（开火 / 开镜 / 转视角时，准星 7° 内看得见的灵兽或 Boss 弱点轻轻吸过去，设置可关）。
+- HUD 触屏布局 `Hud.touch_layout(on)`：弹药画在开火键里、物品栏挪到下中（神通格子隐藏，神通在按钮上）、左上让出暂停键、小地图缩小、金币挪到小地图左边、击杀消息挪左边、成就卡改到上方正中、大地图按屏幕高度缩放。提示文字里的键名用 `UiKit.keys()` 换成触屏说法。
+- 界面缩放：玩的时候 `root.content_scale_factor = Settings.hud_ui_scale()`（按屏幕英寸算，手机约 1.4~1.6），**打开面板 / 暂停 / 主菜单时恢复 1**（面板按 900 高设计，放大会超出屏幕）。刘海屏用 `DisplayServer.get_display_safe_area()` 左右让位（`Hud.set_safe_insets`）。
+- 手机画质：默认低画质、`render_scale` 0.75（3D 分辨率）、草 ×0.6、阴影距离 ×0.7、关 MSAA、阴影图 1024；Mobile 渲染器没有 SSAO / SSIL / 体积雾，`world_builder` 里只在 Forward+ 开。
+- 项目设置：横屏（sensor landscape）、`quit_on_go_back=false`（返回键 = Esc，`main._notification`）、`import_etc2_astc=true`（纹理多导一份手机格式）。
+- 导出：`export_presets.cfg` 的 "Android"（只打 arm64，包名 `com.aluchen.cangxu`，minSdk 24，联网权限），签名密钥 `tools/android/release.keystore`（别名 cangxu，密码 cangxu-friends，写在 CI 里）。**密钥别换**：换了以后手机上不能覆盖安装，要卸载重装、存档会丢。CI 用 GitHub 机器自带的 Android SDK + JDK 17，`version/code` 用运行编号。APK 约 230 MB（5 张 HDR 天空各 8 MB 是大头，以后可以压）。
+- 本机导出安卓：SDK 在 `~/android-sdk`（cmdline-tools + build-tools 35 + platform-tools），导出模板要有 `android_release.apk`；编辑器设置 `export/android/android_sdk_path`；环境变量 `GODOT_ANDROID_KEYSTORE_RELEASE_PATH/USER/PASSWORD`。
+- 自动测试 `touch` 阶段：模拟手指（`InputEventScreenTouch/Drag`）测摇杆 + 冲刺、滑屏、开火、引魂索蓄力甩出、菜单 → 灵相 → 返回。截图：`xvfb-run ... --rendering-method mobile --resolution 1280x576 -- --autotest=shots --plan=touch,done --out=...`（20:9 手机比例 + 手机渲染器）。
+- 没有真机测过：性能、手感、按钮位置都要等用户和朋友试了反馈再调（`TouchControls._define_buttons` 里的位置和半径、`touch_look` 的 0.11°/像素、辅助瞄准强度）。
+
 ## 技术概要
 
 - Godot **4.7.2**，GDScript，Forward+，Jolt 物理。项目在 `game/`。

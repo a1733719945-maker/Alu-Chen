@@ -4,8 +4,9 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://cqvpeqyox1f3"
 path.s3tc="res://.godot/imported/bunny_Atlas_Monsters.png-c1bc3c27778fb0716b9aa06a5dc2b6fb.s3tc.ctex"
+path.etc2="res://.godot/imported/bunny_Atlas_Monsters.png-c1bc3c27778fb0716b9aa06a5dc2b6fb.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 generator_parameters={
@@ -15,7 +16,7 @@ generator_parameters={
 [deps]
 
 source_file="res://assets/models/creatures/bunny_Atlas_Monsters.png"
-dest_files=["res://.godot/imported/bunny_Atlas_Monsters.png-c1bc3c27778fb0716b9aa06a5dc2b6fb.s3tc.ctex"]
+dest_files=["res://.godot/imported/bunny_Atlas_Monsters.png-c1bc3c27778fb0716b9aa06a5dc2b6fb.s3tc.ctex", "res://.godot/imported/bunny_Atlas_Monsters.png-c1bc3c27778fb0716b9aa06a5dc2b6fb.etc2.ctex"]
 
 [params]
 

@@ -4,15 +4,16 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://ckw03cwlgft2u"
 path.s3tc="res://.godot/imported/dandelion_01_diff_1k.jpg-2df76f1b4fe9768854d1efce78afc057.s3tc.ctex"
+path.etc2="res://.godot/imported/dandelion_01_diff_1k.jpg-2df76f1b4fe9768854d1efce78afc057.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 
 [deps]
 
 source_file="res://assets/models/env/dandelion_01/textures/dandelion_01_diff_1k.jpg"
-dest_files=["res://.godot/imported/dandelion_01_diff_1k.jpg-2df76f1b4fe9768854d1efce78afc057.s3tc.ctex"]
+dest_files=["res://.godot/imported/dandelion_01_diff_1k.jpg-2df76f1b4fe9768854d1efce78afc057.s3tc.ctex", "res://.godot/imported/dandelion_01_diff_1k.jpg-2df76f1b4fe9768854d1efce78afc057.etc2.ctex"]
 
 [params]
 

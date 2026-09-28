@@ -4,15 +4,16 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://balo8bv0evjik"
 path.s3tc="res://.godot/imported/shrub_sorrel_01_arm_1k.jpg-8bf9c0390482be90b1d014bae87b5f3c.s3tc.ctex"
+path.etc2="res://.godot/imported/shrub_sorrel_01_arm_1k.jpg-8bf9c0390482be90b1d014bae87b5f3c.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 
 [deps]
 
 source_file="res://assets/models/env/shrub_sorrel_01/textures/shrub_sorrel_01_arm_1k.jpg"
-dest_files=["res://.godot/imported/shrub_sorrel_01_arm_1k.jpg-8bf9c0390482be90b1d014bae87b5f3c.s3tc.ctex"]
+dest_files=["res://.godot/imported/shrub_sorrel_01_arm_1k.jpg-8bf9c0390482be90b1d014bae87b5f3c.s3tc.ctex", "res://.godot/imported/shrub_sorrel_01_arm_1k.jpg-8bf9c0390482be90b1d014bae87b5f3c.etc2.ctex"]
 
 [params]
 

@@ -57,7 +57,7 @@ func _ready() -> void:
 			_plan = ["phys", "hunt:burrow,meadow,flowers,water,reel", "shop", "recoil", "sniper", "ring", "boss", "boat", "hunt:den,swamp,mud", "boss", "boat",
 				"hunt:glade,roost,thicket,nest,bog", "boss", "boat",
 				"hunt:snowden,frostgrove,icefield,icecave,icelake", "boss", "boat",
-				"hunt:beach,cliff,reef,deep,abyss", "boss", "dungeon", "huntrun", "huntfail", "done"]
+				"hunt:beach,cliff,reef,deep,abyss", "boss", "dungeon", "huntrun", "huntfail", "touch", "done"]
 			# 新暗器测试放在第一章买完暗器后面（要第一章的草地摆靶子；第五章归墟没有草地）
 			_plan.insert(_plan.find("shop") + 1, "guns2")
 			_plan.insert(_plan.find("guns2") + 1, "pills")
@@ -217,6 +217,13 @@ func _process(dt: float) -> void:
 			_run_hunt()
 		"phys":
 			_run_phys()
+		"touch":
+			_run_touch()
+		"view":
+			if _step == 0 and _step_t > 4.0 and _ready_world():
+				_next(1)
+				await _shot("view")
+				_next_phase()
 		"hudshot":
 			_run_hudshot()
 		"shop":
@@ -317,6 +324,154 @@ func _switch_to(p: Player, id: String) -> void:
 
 
 # ------------------------------------------------------------------ 界面截图：神通栏和神通轮盘
+
+# ------------------------------------------------------------------ 手机触屏：模拟手指
+
+func _tp(logical: Vector2) -> Vector2:
+	return get_viewport().get_final_transform() * logical
+
+
+func _finger(idx: int, logical: Vector2, pressed: bool) -> void:
+	var ev := InputEventScreenTouch.new()
+	ev.index = idx
+	ev.pressed = pressed
+	ev.position = _tp(logical)
+	Input.parse_input_event(ev)
+
+
+func _slide(idx: int, logical: Vector2, rel: Vector2) -> void:
+	var ev := InputEventScreenDrag.new()
+	ev.index = idx
+	ev.position = _tp(logical)
+	ev.relative = get_viewport().get_final_transform().basis_xform(rel)
+	ev.screen_relative = ev.relative
+	Input.parse_input_event(ev)
+
+
+## 触屏操作：摇杆走路 + 冲刺、滑屏转视角、开火键、引魂索键（按住蓄力松开甩）、菜单 → 灵相面板 → 返回
+func _run_touch() -> void:
+	var w := _ready_world()
+	if not w:
+		return
+	var p := w.player
+	var tc: TouchControls = w.touch
+	var sz: Vector2 = tc._canvas.size
+	match _step:
+		0:
+			if _step_t < 2.0:
+				return
+			Settings._force_touch = true
+			Settings.apply()
+			p.select_slot(1)
+			# 给三个神通，看神通键
+			if Profile.rings.is_empty():
+				var tree: Array = Data.SKILL_TREE[Data.wuhun_id(Settings.wuhun)]
+				for i in 3:
+					Profile.add_ring(mini(i, 2), str(tree[i][0]), "wolf")
+				w.skills.cooldowns[1] = 5.0
+			_next(1)
+		1:
+			if _step_t < 1.0:
+				return
+			if not _check(tc._canvas.visible, "触屏：按钮没显示出来"):
+				return
+			await _shot("touch_hud")
+			_mem["t_pos"] = p.global_position
+			_finger(0, Vector2(200, sz.y - 170), true)
+			_next(2)
+		2:
+			if _step_t < 0.1:
+				return
+			# 往前推出圈外：走 + 冲刺
+			_slide(0, Vector2(200, sz.y - 300), Vector2(0, -130))
+			_next(3)
+		3:
+			if _step_t < 1.2:
+				return
+			var moved: float = (p.global_position - (_mem["t_pos"] as Vector3)).length()
+			_note("触屏：摇杆推 1.2 秒走了 %.1f 米，冲刺 %s" % [moved, tc._sprinting])
+			if not _check(moved > 3.0 and tc._sprinting, "触屏：摇杆推了走不动或没冲刺"):
+				return
+			await _shot("touch_move")
+			_finger(0, Vector2(200, sz.y - 300), false)
+			_mem["t_yaw"] = p.yaw
+			_finger(1, Vector2(sz.x * 0.6, sz.y * 0.3), true)
+			_next(4)
+		4:
+			if _step_t < 0.1:
+				return
+			_slide(1, Vector2(sz.x * 0.6 + 150, sz.y * 0.3), Vector2(150, 0))
+			_next(5)
+		5:
+			if _step_t < 0.2:
+				return
+			var dy := rad_to_deg(angle_difference(float(_mem["t_yaw"]), p.yaw))
+			_note("触屏：往右滑 150 像素，视角转了 %.1f°" % dy)
+			if not _check(dy < -8.0 and dy > -30.0, "触屏：滑屏转视角不对（%.1f°）" % dy):
+				return
+			_finger(1, Vector2(sz.x * 0.6 + 150, sz.y * 0.3), false)
+			_mem["t_ammo"] = p.gun.ammo
+			_finger(2, tc._center(tc._find("fire")), true)
+			_next(6)
+		6:
+			if _step_t < 0.2 and not _mem.has("t_dbg"):
+				_mem["t_dbg"] = true
+				var fb := tc._find("fire")
+				_note("调试：开火键中心 %s 按下=%s 动作=%s slot=%d gun=%s switch=%.2f cd=%.2f 忙=%.2f 冲刺=%s 手指=%s" % [tc._center(fb), fb["down"], Input.is_action_pressed("fire"), p.slot, p.gun.id, p.switch_t, p.gun.fire_cd, p.busy_t, Input.is_action_pressed("sprint"), tc._fingers])
+			if _step_t < 0.5:
+				return
+			_finger(2, tc._center(tc._find("fire")), false)
+			_note("触屏：按开火键，弹药 %d → %d" % [_mem["t_ammo"], p.gun.ammo])
+			if not _check(p.gun.ammo < int(_mem["t_ammo"]), "触屏：按开火键没开枪"):
+				return
+			_finger(3, tc._center(tc._find("lure")), true)
+			_next(7)
+		7:
+			if _step_t < 0.6:
+				return
+			if not _check(p.lure.state == Lure.S.CHARGING, "触屏：按住引魂索键没在蓄力（%d）" % p.lure.state):
+				return
+			_finger(3, tc._center(tc._find("lure")), false)
+			_next(8)
+		8:
+			if _step_t < 0.3:
+				return
+			_note("触屏：引魂索松手后状态 %d（不是 0 就是甩出去了）" % p.lure.state)
+			if not _check(p.lure.state != Lure.S.IDLE and p.lure.state != Lure.S.CHARGING, "触屏：松开引魂索键没甩出去"):
+				return
+			_finger(4, tc._center(tc._find("menu")), true)
+			_next(9)
+		9:
+			if _step_t < 0.15:
+				return
+			_finger(4, tc._center(tc._find("menu")), false)
+			if not _check(tc._menu_open, "触屏：菜单没展开"):
+				return
+			_finger(4, tc._center(tc._find("wuhun")), true)
+			_next(10)
+		10:
+			if _step_t < 0.15:
+				return
+			_finger(4, tc._center(tc._find("wuhun")), false)
+			_next(11)
+		11:
+			if _step_t < 0.6:
+				return
+			if not _check(w.ui_open and tc._close.visible, "触屏：点菜单里的灵相没打开面板 / 没有返回键"):
+				return
+			await _shot("touch_panel")
+			tc._close.pressed.emit()
+			_next(12)
+		12:
+			if _step_t < 0.5:
+				return
+			if not _check(not w.ui_open and tc._canvas.visible, "触屏：点返回没关掉面板"):
+				return
+			_note("触屏：菜单 → 灵相面板 → 返回 正常")
+			Settings._force_touch = false
+			Settings.apply()
+			_next_phase()
+
 
 func _run_hudshot() -> void:
 	var w := _ready_world()

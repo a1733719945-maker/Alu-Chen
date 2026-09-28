@@ -76,6 +76,13 @@ var _ammo: Label
 var _ammo_max: Label
 var _reload: Label
 var _hotbar: HBoxContainer
+# 触屏布局要挪动的几块
+var _tl_box: Control
+var _bc_box: Control
+var _br_box: Control
+var _sk_row: Control
+var _money_row: Control
+var _touch_on := false
 var _hot_sig := ""
 # 画面中间
 var _plates: Control
@@ -195,6 +202,82 @@ void fragment() {
 	_money_shown = Profile.money
 	update_quest()
 	_refresh_skills()
+	touch_layout(Settings.touch_active())
+	Settings.changed.connect(_on_settings_changed)
+
+
+func _on_settings_changed() -> void:
+	touch_layout(Settings.touch_active())
+
+
+# ------------------------------------------------------------------ 手机触屏布局
+
+## 触屏时右下角是一圈按钮：弹药改由触屏层画在开火键上面，物品栏挪到下中（替掉神通格子，神通在按钮上），
+## 左上让出暂停键的位置，金币挪到小地图左边，击杀消息挪到左边，大地图按屏幕高度缩小
+func touch_layout(on: bool) -> void:
+	_touch_on = on
+	if not _tl_box:
+		return
+	UiKit.place(_tl_box, Vector4(0, 0, 0, 0), Vector4(96 if on else 26, 22, 466 if on else 396, 640))
+	_sk_row.visible = not on
+	_br_box.visible = not on
+	var want: Node = _bc_box if on else _br_box
+	if _hotbar.get_parent() != want:
+		_hotbar.reparent(want, false)
+	_hotbar.alignment = BoxContainer.ALIGNMENT_CENTER if on else BoxContainer.ALIGNMENT_END
+	if on:
+		# 小地图缩小一点，下面要放神通键
+		UiKit.place(_minimap, Vector4(1, 0, 1, 0), Vector4(-190, 14, -22, 182))
+		UiKit.place(_money_row, Vector4(1, 0, 1, 0), Vector4(-520, 14, -206, 48))
+		UiKit.place(_fps, Vector4(1, 0, 1, 0), Vector4(-520, 48, -206, 66))
+		UiKit.place(_feed, Vector4(0, 0, 0, 0), Vector4(96, 190, 560, 420))
+	else:
+		UiKit.place(_minimap, Vector4(1, 0, 1, 0), Vector4(-236, 18, -22, 232))
+		UiKit.place(_money_row, Vector4(1, 0, 1, 0), Vector4(-300, 238, -22, 272))
+		UiKit.place(_fps, Vector4(1, 0, 1, 0), Vector4(-300, 272, -22, 290))
+		UiKit.place(_feed, Vector4(1, 0, 1, 0), Vector4(-560, 378, -22, 620))
+	_fit_bigmap()
+
+
+## 刘海屏：整个 HUD 左右往里收（TouchControls 算好传进来）
+func set_safe_insets(l: float, r: float) -> void:
+	_root.offset_left = l
+	_root.offset_right = -r
+
+
+## 大地图：按屏幕高度缩放（手机屏幕矮，固定 820 高会超出去）
+func _fit_bigmap() -> void:
+	if not _bigmap:
+		return
+	var h := 410.0
+	if _touch_on:
+		h = minf(410.0, get_viewport().get_visible_rect().size.y * 0.45)
+	UiKit.place(_bigmap, Vector4(0.5, 0.5, 0.5, 0.5), Vector4(-h * 400.0 / 410.0, -h, h * 400.0 / 410.0, h))
+
+
+## 触屏层用：物品栏第 i 格、小地图、大地图在屏幕上的位置
+func hotbar_rect(i: int) -> Rect2:
+	if not _hotbar or i >= _hotbar.get_child_count():
+		return Rect2()
+	var c := _hotbar.get_child(i) as Control
+	return c.get_global_rect() if c and not c.is_queued_for_deletion() else Rect2()
+
+
+func minimap_rect() -> Rect2:
+	return _minimap.get_global_rect() if _minimap and _minimap.visible else Rect2()
+
+
+func bigmap_open() -> bool:
+	return _bigmap != null and _bigmap.visible
+
+
+func bigmap_rect() -> Rect2:
+	return _bigmap.get_global_rect() if bigmap_open() else Rect2()
+
+
+## 触屏层画在开火键上面的：暗器名、弹药、换弹提示
+func ammo_info() -> Array:
+	return [_weapon.text if _weapon else "", _ammo.text if _ammo else "", _ammo_max.text if _ammo_max else "", _reload.text if _reload else ""]
 
 
 func _layer(fn: Callable) -> Control:
@@ -259,6 +342,7 @@ func _bar(color: Color, w := 420.0, h := 14.0, slant := false) -> ProgressBar:
 
 func _build_top_left() -> void:
 	var tl := VBoxContainer.new()
+	_tl_box = tl
 	UiKit.place(tl, Vector4(0, 0, 0, 0), Vector4(26, 22, 396, 640))
 	tl.add_theme_constant_override("separation", 16)
 	tl.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -710,6 +794,7 @@ func _build_top_right() -> void:
 	mr.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	UiKit.place(mr, Vector4(1, 0, 1, 0), Vector4(-300, 238, -22, 272))
 	_root.add_child(mr)
+	_money_row = mr
 	_room = UiKit.label("", 13, UiKit.MIST, 3)
 	_room.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	mr.add_child(_room)
@@ -769,7 +854,11 @@ func achievement(title: String, desc: String, reward: int) -> void:
 		if c.has_meta("ach"):
 			n += 1
 	p.set_meta("ach", true)
-	UiKit.place(p, Vector4(1, 0, 1, 0), Vector4(-420, 296 + n * 80, -22, 366 + n * 80))
+	if _touch_on:
+		# 触屏：右边是一圈按钮，改在上面正中弹出
+		UiKit.place(p, Vector4(0.5, 0, 0.5, 0), Vector4(-210, 72 + n * 76, 210, 142 + n * 76))
+	else:
+		UiKit.place(p, Vector4(1, 0, 1, 0), Vector4(-420, 296 + n * 80, -22, 366 + n * 80))
 	_root.add_child(p)
 	p.modulate.a = 0.0
 	var x0 := p.position.x
@@ -910,6 +999,7 @@ func _update_status(p: Player) -> void:
 
 func _build_bottom_center() -> void:
 	var bc := VBoxContainer.new()
+	_bc_box = bc
 	UiKit.place(bc, Vector4(0.5, 1, 0.5, 1), Vector4(-420, -330, 420, -22))
 	bc.alignment = BoxContainer.ALIGNMENT_END
 	bc.add_theme_constant_override("separation", 8)
@@ -941,6 +1031,7 @@ func _build_bottom_center() -> void:
 	row.add_theme_constant_override("separation", 14)
 	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bc.add_child(row)
+	_sk_row = row
 	for k in 3:
 		var v := VBoxContainer.new()
 		v.add_theme_constant_override("separation", 4)
@@ -1073,6 +1164,7 @@ func _update_skill_slot(p: Player, dt: float) -> void:
 
 
 func _set_interact(text: String) -> void:
+	text = UiKit.keys(text)
 	if text == _interact_sig:
 		return
 	_interact_sig = text
@@ -1142,11 +1234,15 @@ func _update_lure_ui(p: Player) -> void:
 			var fill: StyleBoxFlat = _bar_b.get_theme_stylebox("fill")
 			fill.bg_color = Color(0.5, 0.9, 0.5).lerp(Color(1.0, 0.25, 0.2), smoothstep(0.4, 0.9, lure.reel_tension))
 
+	if _touch_on:
+		_prompt.text = UiKit.keys(_prompt.text)
+
 
 # ------------------------------------------------------------------ 右下：暗器、弹药、物品栏
 
 func _build_bottom_right() -> void:
 	var br := VBoxContainer.new()
+	_br_box = br
 	UiKit.place(br, Vector4(1, 1, 1, 1), Vector4(-520, -230, -26, -22))
 	br.alignment = BoxContainer.ALIGNMENT_END
 	br.add_theme_constant_override("separation", 2)
@@ -1432,6 +1528,7 @@ func absorb_start(age: int, _species: String) -> void:
 
 
 func toast(text: String, color := Color.WHITE, time := 2.8) -> void:
+	text = UiKit.keys(text)
 	_toast.text = text
 	_toast.add_theme_color_override("font_color", color)
 	_toast.custom_minimum_size.x = minf(Data.font_ui.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, 18).x + 4.0, 900.0)

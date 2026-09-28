@@ -4,15 +4,16 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://b14iq8o344tfb"
 path.s3tc="res://.godot/imported/ice_albedo.jpg-96b787e4b3062ceef0a66ce125d98fba.s3tc.ctex"
+path.etc2="res://.godot/imported/ice_albedo.jpg-96b787e4b3062ceef0a66ce125d98fba.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 
 [deps]
 
 source_file="res://assets/textures/ground/ice_albedo.jpg"
-dest_files=["res://.godot/imported/ice_albedo.jpg-96b787e4b3062ceef0a66ce125d98fba.s3tc.ctex"]
+dest_files=["res://.godot/imported/ice_albedo.jpg-96b787e4b3062ceef0a66ce125d98fba.s3tc.ctex", "res://.godot/imported/ice_albedo.jpg-96b787e4b3062ceef0a66ce125d98fba.etc2.ctex"]
 
 [params]
 

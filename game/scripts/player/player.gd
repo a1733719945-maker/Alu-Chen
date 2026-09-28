@@ -88,6 +88,7 @@ var _punch := Vector3.ZERO       # 镜头冲击（度）：x 抬头，y 左右�
 var _punch_v := Vector3.ZERO
 var _fov_punch := 0.0
 var _sway_t := 0.0
+var _touch_look_t := 0.0         # 最近在用手指转视角（辅助瞄准只在瞄的时候帮忙）
 var _breath := 4.0               # 狙击屏息剩余秒数
 var _breath_tired := 0.0
 var _strafe := 0.0
@@ -461,6 +462,64 @@ func _unhandled_input(event: InputEvent) -> void:
 		viewmodel.add_sway(d)
 
 
+## 触屏：手指在屏幕上滑动转视角。d 是界面坐标里滑过的距离
+func touch_look(d: Vector2) -> void:
+	if not input_enabled or dead:
+		return
+	if world.hud.wheel_open():
+		world.hud.wheel_mouse(d)
+		return
+	# 默认滑过半个屏幕大约转 110°；开镜后按视野自动变慢
+	var sens := 0.11 * Settings.touch_sens * _ads_sens_factor()
+	yaw -= deg_to_rad(d.x * sens)
+	pitch -= deg_to_rad(d.y * sens) * (-1.0 if Settings.invert_y else 1.0)
+	pitch = clampf(pitch, deg_to_rad(-89), deg_to_rad(89))
+	viewmodel.add_sway(d * 0.6)
+	_touch_look_t = 0.3
+
+
+## 触屏辅助瞄准：在开火 / 开镜 / 转视角的时候，准星附近 7° 以内看得见的灵兽（或 Boss 弱点）会被轻轻吸过去。
+## 只帮忙不代劳：离得越近吸得越轻，转不过去的角度不管
+func _aim_assist(dt: float) -> void:
+	_touch_look_t = maxf(_touch_look_t - dt, 0.0)
+	if not Settings.touch_active() or not Settings.aim_assist or not input_enabled or dead or slot >= 2:
+		return
+	var firing := Input.is_action_pressed("fire")
+	if not firing and ads < 0.5 and _touch_look_t <= 0.0:
+		return
+	var eye := cam.global_position
+	var fwd := aim_dir()
+	var best_ang := deg_to_rad(7.0)
+	var best := Vector3.INF
+	var targets: Array = []
+	for b in world.beasts.values():
+		if is_instance_valid(b) and b.alive():
+			targets.append((b as Node3D).global_position + Vector3(0, 0.35, 0))
+	if world.boss and is_instance_valid(world.boss) and not world.boss.dead:
+		targets.append(world.boss.weak_point())
+	for t: Vector3 in targets:
+		var to := t - eye
+		var dist := to.length()
+		if dist < 1.0 or dist > 110.0:
+			continue
+		var ang := fwd.angle_to(to)
+		if ang < best_ang:
+			best_ang = ang
+			best = t
+	if best == Vector3.INF:
+		return
+	var hit: Dictionary = world.raycast(eye, best, U.LAYER_WORLD, [get_rid()])
+	if not hit.is_empty():
+		return
+	var to := best - eye
+	var want_yaw := atan2(-to.x, -to.z)
+	var want_pitch := atan2(to.y, Vector2(to.x, to.z).length())
+	# 开火时吸得多一点，只是在转视角时轻一点
+	var k := clampf(dt * (6.0 if firing else 3.0), 0.0, 1.0)
+	yaw = lerp_angle(yaw, want_yaw, k)
+	pitch = lerpf(pitch, want_pitch, k)
+
+
 ## 开镜时视野缩成多少：全屏瞄准镜按倍率，其他按瞄具
 func ads_zoom_mult() -> float:
 	if bool(gun.d.get("scope", false)):
@@ -491,6 +550,8 @@ func _scope_sway() -> Vector2:
 	var hold := input_enabled and Input.is_action_pressed("sprint") and _breath > 0.0 and _breath_tired <= 0.0
 	var hv := Vector3(velocity.x, 0, velocity.z).length()
 	var k := 0.12 if hold else (1.6 if _breath_tired > 0.0 else 1.0)
+	if Settings.touch_active():
+		k *= 0.5
 	return s * k * 0.45 * (1.0 + hv * 0.4)
 
 
@@ -719,6 +780,7 @@ func _physics_process(dt: float) -> void:
 # ------------------------------------------------------------------ 每帧：相机、开枪、引魂索、神通
 
 func _process(dt: float) -> void:
+	_aim_assist(dt)
 	_update_stats(dt)
 	_update_weapons(dt)
 	_update_camera(dt)

@@ -4,15 +4,16 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://bpipgxcbn0rub"
 path.s3tc="res://.godot/imported/snow_albedo.jpg-46fa81c02282d6ae405097522df9164f.s3tc.ctex"
+path.etc2="res://.godot/imported/snow_albedo.jpg-46fa81c02282d6ae405097522df9164f.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 
 [deps]
 
 source_file="res://assets/textures/ground/snow_albedo.jpg"
-dest_files=["res://.godot/imported/snow_albedo.jpg-46fa81c02282d6ae405097522df9164f.s3tc.ctex"]
+dest_files=["res://.godot/imported/snow_albedo.jpg-46fa81c02282d6ae405097522df9164f.s3tc.ctex", "res://.godot/imported/snow_albedo.jpg-46fa81c02282d6ae405097522df9164f.etc2.ctex"]
 
 [params]
 

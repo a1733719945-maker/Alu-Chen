@@ -4,15 +4,16 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://cmdo7kelypikd"
 path.s3tc="res://.godot/imported/leaf_pine_snow.png-21eefb57c0bf5df50785f66ea5db6aeb.s3tc.ctex"
+path.etc2="res://.godot/imported/leaf_pine_snow.png-21eefb57c0bf5df50785f66ea5db6aeb.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 
 [deps]
 
 source_file="res://assets/textures/foliage/leaf_pine_snow.png"
-dest_files=["res://.godot/imported/leaf_pine_snow.png-21eefb57c0bf5df50785f66ea5db6aeb.s3tc.ctex"]
+dest_files=["res://.godot/imported/leaf_pine_snow.png-21eefb57c0bf5df50785f66ea5db6aeb.s3tc.ctex", "res://.godot/imported/leaf_pine_snow.png-21eefb57c0bf5df50785f66ea5db6aeb.etc2.ctex"]
 
 [params]
 

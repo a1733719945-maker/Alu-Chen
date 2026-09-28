@@ -33,6 +33,22 @@ func _ready() -> void:
 	_show_menu()
 
 
+## 手机的返回键：游戏里等于 Esc（暂停 / 关面板），主菜单里退出游戏
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_GO_BACK_REQUEST:
+		if world and is_instance_valid(world) and world.is_inside_tree():
+			var ev := InputEventAction.new()
+			ev.action = "pause"
+			ev.pressed = true
+			Input.parse_input_event(ev)
+			var up := InputEventAction.new()
+			up.action = "pause"
+			up.pressed = false
+			Input.parse_input_event.call_deferred(up)
+		else:
+			get_tree().quit()
+
+
 func _args() -> Dictionary:
 	var out := {}
 	for a in OS.get_cmdline_user_args():

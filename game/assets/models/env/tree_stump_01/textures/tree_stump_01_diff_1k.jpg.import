@@ -4,15 +4,16 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://ckgy7fq6ehltf"
 path.s3tc="res://.godot/imported/tree_stump_01_diff_1k.jpg-f5633eb33e6a160c239ee555ee8b1e9e.s3tc.ctex"
+path.etc2="res://.godot/imported/tree_stump_01_diff_1k.jpg-f5633eb33e6a160c239ee555ee8b1e9e.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 
 [deps]
 
 source_file="res://assets/models/env/tree_stump_01/textures/tree_stump_01_diff_1k.jpg"
-dest_files=["res://.godot/imported/tree_stump_01_diff_1k.jpg-f5633eb33e6a160c239ee555ee8b1e9e.s3tc.ctex"]
+dest_files=["res://.godot/imported/tree_stump_01_diff_1k.jpg-f5633eb33e6a160c239ee555ee8b1e9e.s3tc.ctex", "res://.godot/imported/tree_stump_01_diff_1k.jpg-f5633eb33e6a160c239ee555ee8b1e9e.etc2.ctex"]
 
 [params]
 

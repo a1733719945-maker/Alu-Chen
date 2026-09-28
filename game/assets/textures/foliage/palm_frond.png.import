@@ -4,15 +4,16 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://bddy1u1dayw2x"
 path.s3tc="res://.godot/imported/palm_frond.png-d748d41f6dc164de7937dff221f0e844.s3tc.ctex"
+path.etc2="res://.godot/imported/palm_frond.png-d748d41f6dc164de7937dff221f0e844.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 
 [deps]
 
 source_file="res://assets/textures/foliage/palm_frond.png"
-dest_files=["res://.godot/imported/palm_frond.png-d748d41f6dc164de7937dff221f0e844.s3tc.ctex"]
+dest_files=["res://.godot/imported/palm_frond.png-d748d41f6dc164de7937dff221f0e844.s3tc.ctex", "res://.godot/imported/palm_frond.png-d748d41f6dc164de7937dff221f0e844.etc2.ctex"]
 
 [params]
 

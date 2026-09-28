@@ -286,6 +286,24 @@ static func panel_head(kick: String, text: String, close_text: String, on_close:
 const ICONS := "res://assets/icons/"
 
 
+## 手机触屏时，把提示里的键盘按键换成触屏按钮的说法（先换"按住 X"再换"按 X"）
+const TOUCH_KEYS := [
+	["按住 G", "按住钩子键"], ["松开 G", "松开钩子键"], ["按 G", "点钩子键"], ["· G 收回", "· 点钩子键收回"],
+	["按住 F", "按住交互键"], ["按 F", "点交互键"], ["按住 Shift", "按住屏息键"], ["按住 Tab", "按住菜单里的排名"],
+	["按住 Q", "按住神通键"], ["按 K", "点菜单→灵相"], ["按 L", "点菜单→猎灵榜"], ["按 T", "点「丢」"],
+	["按 H", "点回血键"], ["按 Esc", "点暂停键"], ["按 M", "点小地图"], ["按 B", "点菜单→换鱼饵"], ["按 R", "点换弹键"],
+	["左键", "开火键"], ["右键", "开镜键"], ["空格", "跳跃键"],
+]
+
+
+static func keys(t: String) -> String:
+	if not Settings.touch_active() or t == "":
+		return t
+	for k in TOUCH_KEYS:
+		t = t.replace(k[0], k[1])
+	return t
+
+
 static func icon(name: String, size := 24.0, color := MOON) -> TextureRect:
 	var t := TextureRect.new()
 	if ResourceLoader.exists(ICONS + name + ".svg"):

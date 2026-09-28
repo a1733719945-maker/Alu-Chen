@@ -4,15 +4,16 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://bguhosmypqnen"
 path.s3tc="res://.godot/imported/rock_moss_set_02_nor_gl_1k.jpg-764441a4a7033bd883ea511f9be3da57.s3tc.ctex"
+path.etc2="res://.godot/imported/rock_moss_set_02_nor_gl_1k.jpg-764441a4a7033bd883ea511f9be3da57.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 
 [deps]
 
 source_file="res://assets/models/env/rock_moss_set_02/textures/rock_moss_set_02_nor_gl_1k.jpg"
-dest_files=["res://.godot/imported/rock_moss_set_02_nor_gl_1k.jpg-764441a4a7033bd883ea511f9be3da57.s3tc.ctex"]
+dest_files=["res://.godot/imported/rock_moss_set_02_nor_gl_1k.jpg-764441a4a7033bd883ea511f9be3da57.s3tc.ctex", "res://.godot/imported/rock_moss_set_02_nor_gl_1k.jpg-764441a4a7033bd883ea511f9be3da57.etc2.ctex"]
 
 [params]
 

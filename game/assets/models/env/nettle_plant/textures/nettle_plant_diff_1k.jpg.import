@@ -4,15 +4,16 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://dwhb2sdnlk3yb"
 path.s3tc="res://.godot/imported/nettle_plant_diff_1k.jpg-b3e1062bfd9c498effdd9c1a1e16b5b8.s3tc.ctex"
+path.etc2="res://.godot/imported/nettle_plant_diff_1k.jpg-b3e1062bfd9c498effdd9c1a1e16b5b8.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 
 [deps]
 
 source_file="res://assets/models/env/nettle_plant/textures/nettle_plant_diff_1k.jpg"
-dest_files=["res://.godot/imported/nettle_plant_diff_1k.jpg-b3e1062bfd9c498effdd9c1a1e16b5b8.s3tc.ctex"]
+dest_files=["res://.godot/imported/nettle_plant_diff_1k.jpg-b3e1062bfd9c498effdd9c1a1e16b5b8.s3tc.ctex", "res://.godot/imported/nettle_plant_diff_1k.jpg-b3e1062bfd9c498effdd9c1a1e16b5b8.etc2.ctex"]
 
 [params]
 
