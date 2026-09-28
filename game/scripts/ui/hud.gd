@@ -1533,6 +1533,12 @@ func say(who: String, text: String, color := UiKit.GOLD, dur := 0.0) -> void:
 	_say_queue.append([who, text, color, dur])
 
 
+## 清掉还没说的（和人说话时按 F 换下一句，不排长队）
+func say_clear() -> void:
+	_say_queue.clear()
+	_say_t = minf(_say_t, 0.25)
+
+
 func _update_say(dt: float) -> void:
 	if _say_t > 0.0:
 		_say_t -= dt

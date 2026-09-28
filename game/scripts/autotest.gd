@@ -1171,6 +1171,11 @@ func _run_boss() -> void:
 				if not _check(int(Profile.stats.get("story_" + lk, 0)) == 1 and (w.hud._say_t > 0.0 or not w.hud._say_queue.is_empty()), "打倒灵主没有触发剧情（临死台词 / 天枢记忆）"):
 					return
 				_note("灵主临死：「%s」" % Story.lord(lk, "death"))
+				# 青崖子站在天坛边，按 F 说的是打完以后的话
+				if not _check(w.sage != null and w.sage.lines_now().has(Story.lord(lk, "after")), "天坛边没有青崖子 / 他说的话没跟着主线走"):
+					return
+				w.sage.talk()
+				_note("青崖子：「%s」" % w.hud._say_queue[0][1] if not w.hud._say_queue.is_empty() else "青崖子说话了")
 				_next(6)
 			elif _step_t > 4.0:
 				_fail("Boss 血打光了却没死")

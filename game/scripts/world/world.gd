@@ -192,6 +192,7 @@ func _ready() -> void:
 	var ch_trait := str(Data.CH_TRAIT.get(chapter, ""))
 	if not island.hunting:
 		hud.chapter_banner(str(ch["name"]), str(ch["intro"]) + (("\n" + str(Data.TRAIT_TEXT[ch_trait])) if ch_trait != "" else ""))
+		_place_sage()
 		# 第一次到这座岛：青崖子说一句（他跟着你坐船过来）
 		var arrive := "sage_arrive_%d" % chapter
 		if int(Profile.stats.get(arrive, 0)) == 0 and not Data.autotest:
@@ -2293,6 +2294,8 @@ func interactables() -> Array:
 		out.append_array(trip.interactables())
 	if not island.hunting:
 		out.append({"id": "board", "pos": builder.board_pos + Vector3(0, 1.2, 0), "r": 3.0, "text": "按 F 看猎灵榜（也可以随时按 L）", "act": true})
+	if sage and not dungeon.inside:
+		out.append({"id": "sage", "pos": sage.global_position + Vector3(0, 1.2, 0), "r": 3.4, "text": "按 F 和青崖子说话", "act": true})
 	return out
 
 
@@ -2383,6 +2386,8 @@ func interact() -> void:
 				trip.interact(it)
 		"board":
 			hud.open_board()
+		"sage":
+			sage.talk()
 		"boat":
 			var ds := boat_destinations()
 			if ds.is_empty():
@@ -2654,6 +2659,25 @@ func _on_boss_dead(msg: Array) -> void:
 	Sfx.play("quest_done", 0.0)
 	player.rebuild_guns()
 	_lord_story(kind)
+
+
+## 青崖子：站在天坛边（离天坛 4 米，朝着码头那边），按 F 说话
+var sage: Sage
+
+
+func _place_sage() -> void:
+	if island.altar_pos.x > 9000.0:
+		return
+	var a := island.altar_pos
+	var to_dock := Vector3(builder.boat_pos.x - a.x, 0, builder.boat_pos.z - a.z).normalized()
+	if to_dock.length() < 0.5:
+		to_dock = Vector3.FORWARD
+	var side := to_dock.cross(Vector3.UP)
+	var p := a + side * 4.0 + to_dock * 1.5
+	p.y = island.height_at(p.x, p.z)
+	sage = Sage.new()
+	add_child(sage)
+	sage.setup(self, p, p + to_dock * 5.0)
 
 
 ## 灵主的临死一句；第一次打倒它：播天枢记忆（碎片里封着的三万年前那一夜），青崖子再说一句
