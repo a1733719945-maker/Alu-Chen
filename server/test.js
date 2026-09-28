@@ -37,7 +37,7 @@ function packet(target, text) {
 (async () => {
   await new Promise((r) => server.listening ? r() : server.once('listening', r));
 
-  const host = open('mode=host&v=7&name=%E5%94%90%E4%B8%89&room=TEST');
+  const host = open('mode=host&v=7&name=%E9%9D%92%E5%B4%96&room=TEST');
   const w1 = await next(host);
   assert.strictEqual(w1.t, 'welcome');
   assert.strictEqual(w1.id, 1);
@@ -47,7 +47,7 @@ function packet(target, text) {
   const e = await next(bad);
   assert.strictEqual(e.t, 'error');
 
-  const a = open('mode=join&v=7&name=%E5%B0%8F%E8%88%9E&room=TEST');
+  const a = open('mode=join&v=7&name=%E6%A0%96%E9%9C%9E&room=TEST');
   const w2 = await next(a);
   assert.strictEqual(w2.id, 2);
   assert.deepStrictEqual(w2.peers, [{ id: 1, name: '青崖' }]);
