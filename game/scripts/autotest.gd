@@ -57,7 +57,7 @@ func _ready() -> void:
 			_plan = ["phys", "hunt:burrow,meadow,flowers,water,reel", "shop", "recoil", "sniper", "ring", "boss", "boat", "hunt:den,swamp,mud", "boss", "boat",
 				"hunt:glade,roost,thicket,nest,bog", "boss", "boat",
 				"hunt:snowden,frostgrove,icefield,icecave,icelake", "boss", "boat",
-				"hunt:beach,cliff,reef,deep,abyss", "boss", "dungeon", "huntrun", "huntfail", "touch", "done"]
+				"hunt:beach,cliff,reef,deep,abyss", "boss", "dungeon", "siege", "musou", "huntrun", "huntfail", "touch", "done"]
 			# 新暗器测试放在第一章买完暗器后面（要第一章的草地摆靶子；第五章归墟没有草地）
 			_plan.insert(_plan.find("shop") + 1, "guns2")
 			_plan.insert(_plan.find("guns2") + 1, "pills")
@@ -284,6 +284,10 @@ func _process(dt: float) -> void:
 			_run_dgwatch()
 		"dungeon":
 			_run_dungeon()
+		"siege":
+			_run_siege()
+		"musou":
+			_run_musou()
 		"dgshot":
 			_run_dgshot()
 		"comboshot":
@@ -4016,3 +4020,212 @@ func _run_measure() -> void:
 				await _shot("top_" + str(_m_files[0]).get_basename())
 				_m_files.pop_front()
 				_next(0)
+
+# ------------------------------------------------------------------ 试炼：尸潮守关 / 万兽割草
+
+## 最近的僵尸的胸口（瞄准用）
+func _horde_target(T: Trial, from: Vector3) -> Vector3:
+	var best := Vector3.INF
+	var bd := INF
+	for u in T.horde.units:
+		var q: Vector3 = u["p"]
+		var d := q.distance_to(from)
+		if d < bd:
+			bd = d
+			best = q + Vector3.UP * 1.1 * float(Horde.SCALE[int(u["kind"])])
+	return best
+
+
+## 瞄着最近的僵尸开一枪（走真的开枪流程：World.local_fire → Trial.shot）
+func _horde_shoot(p: Player, T: Trial) -> void:
+	var tg := _horde_target(T, p.global_position)
+	if tg == Vector3.INF:
+		return
+	_aim(p, tg)
+	p.gun.ammo = maxi(p.gun.ammo, 5)
+	p.gun.reloading = false
+	if p.gun.fire_cd <= 0.0 and p.switch_t <= 0.0:
+		p._fire()
+
+
+func _trial_enter(w: World, T: Trial, m: String) -> bool:
+	var p := w.player
+	if p.dead or p.carried:
+		w._respawn_at_dock()
+	match _step:
+		0:
+			if not _check(T.stele != Vector3.INF, "岛上没有试炼碑"):
+				return false
+			p.teleport(T.stele + Vector3(0, 0.6, 2.2))
+			p.invuln_t = 9999.0
+			_next(1)
+		1:
+			if _step_t < 0.5:
+				return false
+			var it := w.nearest_interactable()
+			if not _check(str(it.get("id", "")) == "trstele", "站在试炼碑前没有「按 F 打开试炼」（最近的是 %s）" % str(it.get("id", ""))):
+				return false
+			w.interact()
+			if not _check(w.hud._trial_picker != null and is_instance_valid(w.hud._trial_picker), "按 F 没打开试炼面板"):
+				return false
+			w.hud._close_trial_picker()
+			T.request(m)
+			_next(2)
+		2:
+			if not T.inside:
+				if _step_t > 3.0:
+					_fail("点了%s没进去" % Trial.MODES[m]["name"])
+				return false
+			var c := T.center()
+			if not _check(Vector2(p.global_position.x - c.x, p.global_position.z - c.z).length() < 12.0, "没传送到%s的场地" % Trial.MODES[m]["name"]):
+				return false
+			_note("进了试炼 · %s" % Trial.MODES[m]["name"])
+			return true
+	return false
+
+
+func _run_siege() -> void:
+	var w := _ready_world()
+	if not w:
+		return
+	var T := w.trial
+	var p := w.player
+	if _step < 3:
+		if _trial_enter(w, T, "siege"):
+			_next(3)
+		return
+	p.hp = 99999.0
+	match _step:
+		3:
+			if T.racks.is_empty() or str(T.racks[0]["id"]) == "":
+				if _step_t > 3.0:
+					_fail("兵器架上没有暗器")
+				return
+			var id := str(T.racks[0]["id"])
+			T.pick_rack(0)
+			if not _check(p.trial_gun == id and p.guns.any(func(g): return g.id == id), "捡了兵器架上的 %s，手里没有它" % id):
+				return
+			_note("捡起兵器架上的%s · %s（伤害 ×%.2f）" % [Trial.QUALITY[int(T.racks[0]["q"])][0], Data.WEAPONS[id]["name"], p.trial_k])
+			_next(4)
+		4:
+			if str(T.run.get("phase", "")) != "wave" or T.horde.alive_count() == 0:
+				if _step_t > 20.0:
+					_fail("第一波僵尸没出来（%s）" % str(T.run))
+				return
+			_note("第 1 波：%d 只跳尸从尸门跳出来了" % T.horde.alive_count())
+			_mem["k0"] = T.my_kills
+			_next(5)
+		5:
+			# 站在阵眼旁边开枪：跳尸冲过来，一枪枪打
+			_horde_shoot(p, T)
+			if T.my_kills > int(_mem["k0"]) + 2:
+				_note("开枪打死了 %d 只（第 %d 波，还剩 %d）" % [T.my_kills, int(T.run.get("wave", 0)), int(T.run.get("left", 0))])
+				_next(6)
+			elif _step_t > 25.0:
+				_fail("打了 25 秒只打死 %d 只（场上 %d 只）" % [T.my_kills, T.horde.alive_count()])
+		6:
+			# 剩下的直接清掉，看这一波能不能结算
+			var list: Array = []
+			for u in T.horde.units:
+				list.append([int(u["id"]), 1e9, Net.my_id])
+			T._send_hits(list)
+			T._queue.clear()
+			if str(T.run.get("phase", "")) == "break":
+				_note("第 1 波守住了：阵眼 %d / %d" % [int(T.run["core"]), int(Trial.CORE_HP)])
+				# 站到箭楼上（离阵眼远），看僵尸会不会去砸阵眼
+				var tw := Trial.SIEGE + Vector3(cos(PI / 4.0), 0, sin(PI / 4.0)) * 22.0
+				p.teleport(tw + Vector3(0, 3.2, 0))
+				_next(7)
+			elif _step_t > 5.0:
+				_fail("清完一波没结算（%s）" % str(T.run))
+		7:
+			if float(T.run.get("core", Trial.CORE_HP)) < Trial.CORE_HP - 1.0:
+				_note("僵尸没人拦就去砸阵眼：阵眼 %d / %d" % [int(T.run["core"]), int(Trial.CORE_HP)])
+				_next(8)
+			elif _step_t > 40.0:
+				_fail("40 秒没有僵尸砸阵眼（%s，场上 %d 只）" % [str(T.run), T.horde.alive_count()])
+		8:
+			# 阵眼碎了：结算
+			if not T.run.is_empty():
+				T.run["core"] = 1.0
+				T.host_core_hit(100.0, Trial.SIEGE)
+			if T.run.is_empty():
+				if not _check(T._result != null and T._result.visible and T.best("siege") >= 1, "阵眼碎了没有结算 / 纪录（%d）" % T.best("siege")):
+					return
+				_note("阵眼碎了：撑过 %d 波，结算面板出来了" % T.best("siege"))
+				_next(9)
+			elif _step_t > 3.0:
+				_fail("阵眼 0 血没结束")
+		9:
+			if T.inside:
+				if _step_t > 9.0:
+					_fail("结算完没送回岛上")
+				return
+			if not _check(p.trial_gun == "" and not p.guns.any(func(g): return g.id == str(T.racks[0]["id"]) and not Profile.loadout.has(g.id)), "出了试炼，捡的暗器没还回去"):
+				return
+			_note("送回试炼碑，捡的暗器还回去了")
+			_next_phase()
+
+
+func _run_musou() -> void:
+	var w := _ready_world()
+	if not w:
+		return
+	var T := w.trial
+	var p := w.player
+	if _step < 3:
+		if _trial_enter(w, T, "musou"):
+			_next(3)
+		return
+	p.hp = 99999.0
+	p.invuln_t = 0.0     # 无敌（复活保护）的时候不算"能打的人"，小尸不会在身边冒出来
+	match _step:
+		3:
+			if str(T.run.get("phase", "")) != "run" or T.horde.alive_count() < 100:
+				if _step_t > 20.0:
+					_fail("割草场上的小尸不够（%d 只，%s）" % [T.horde.alive_count(), str(T.run)])
+				return
+			_note("万兽割草：场上 %d 只小尸" % T.horde.alive_count())
+			_next(4)
+		4:
+			_horde_shoot(p, T)
+			if T.my_kills >= 6:
+				_note("开枪斩了 %d 只（子弹能穿好几只）" % T.my_kills)
+				_next(5)
+			elif _step_t > 20.0:
+				_fail("打了 20 秒只斩了 %d 只" % T.my_kills)
+		5:
+			# 灵爆：等小尸围上来（身边至少 5 只），一圈全清
+			var near := T.horde.in_sphere(p.global_position, Trial.BURST_R).size()
+			if near < 5 and _step_t < 15.0:
+				return
+			var before := T.my_kills
+			T.burst = Trial.BURST_NEED
+			T._burst_now()
+			_note("灵爆：身边 %d 只 → 斩数 %d → %d" % [near, before, T.my_kills])
+			if not _check(T.my_kills - before >= near and T.burst < Trial.BURST_NEED, "灵爆没清掉身边的"):
+				return
+			# 神通（房主算）：打一片
+			var c: Vector3 = T.horde.units[0]["p"] if not T.horde.units.is_empty() else p.global_position
+			var n2 := T.horde.in_sphere(c, 6.0).size()
+			var k2 := int(T.run.get("kills", 0))
+			T.host_area(c, 6.0, 1e6, Net.my_id)
+			if not _check(int(T.run.get("kills", 0)) - k2 == n2, "神通打到的小尸没死（%d 只里死了 %d）" % [n2, int(T.run.get("kills", 0)) - k2]):
+				return
+			_next(6)
+		6:
+			if not T.run.is_empty():
+				T.run["t"] = Trial.MUSOU_TIME + 1.0
+			if T.run.is_empty():
+				if not _check(T.best("musou") >= T.my_kills and T._result.visible, "三分钟到了没结算"):
+					return
+				_note("时间到：%d 斩（纪录 %d）" % [T.my_kills, T.best("musou")])
+				_next(7)
+			elif _step_t > 3.0:
+				_fail("时间到了没结束")
+		7:
+			if T.inside:
+				if _step_t > 9.0:
+					_fail("结算完没送回岛上")
+				return
+			_next_phase()

@@ -113,6 +113,9 @@ var _cs: CollisionShape3D
 # 暗器：倒地掉在地上的（lost）、从地上捡来的队友的（borrowed：id -> 主人）
 var lost_guns: Array = []
 var borrowed := {}
+# 试炼（尸潮守关）里从兵器架捡的暗器：出了试炼就还回去；trial_k 是它的品质加成（伤害倍数）
+var trial_gun := ""
+var trial_k := 1.0
 # 物品栏（数字键）：1 主暗器（再按 1 换别的主暗器）/ 2 袖箭 / 3 九转雷莲 / 4 丹药（再按 4 换下一种）/ 5 没装上的灵骨
 const SLOT_NAMES := ["主暗器", "袖箭", "九转雷莲", "丹药", "灵骨"]
 var slot := 1
@@ -189,9 +192,16 @@ func rebuild_guns() -> void:
 	guns.clear()
 	# 暗器都是存档里真有的；没有袖箭就用空手（一把都没有也是空手）
 	var ids: Array = Profile.loadout.duplicate()
+	if trial_gun != "" and not trial_gun in ids:
+		ids.insert(0, trial_gun)
 	ids.append("fist")     # 空手一直都在：按 X 收起暗器，跑得快
 	for id in ids:
 		var stats := Profile.weapon_stats(id)
+		if id == trial_gun and trial_k != 1.0:
+			stats = stats.duplicate()
+			stats["damage"] = float(stats["damage"]) * trial_k
+			if stats.has("splash_dmg"):
+				stats["splash_dmg"] = float(stats["splash_dmg"]) * trial_k
 		if old.has(id):
 			old[id].set_stats(stats)
 			guns.append(old[id])
@@ -731,7 +741,7 @@ func _physics_process(dt: float) -> void:
 		hv *= 1.0 - clampf((Island.WATER_Y - ground) * 0.25, 0.0, 0.5) * dt * 8.0
 	# 地图边界（秘境场地在地图外面 900 米，不算——以前在秘境里往东走会被这里挡住，像卡脚）
 	var out := Vector3(global_position.x, 0, global_position.z)
-	var in_dg: bool = world.dungeon != null and world.dungeon.inside
+	var in_dg: bool = world.away()
 	var edge: float = world.island.rim_r + 30.0 if world.island.hunting else 150.0
 	if out.length() > edge and not in_dg and hv.dot(out.normalized()) > 0.0:
 		hv -= out.normalized() * hv.dot(out.normalized())
@@ -1129,6 +1139,8 @@ func _melee() -> void:
 	Sfx.play("skill_dash", -12.0, 0.1, 1.6)
 	var origin := cam.global_position
 	var dir := aim_dir()
+	if world.trial.inside:
+		world.trial.melee(origin, dir, float(d["range"]) + 1.0, float(d["damage"]) * damage_mult())
 	var hit: Dictionary = world.raycast(origin, origin + dir * float(d["range"]), U.LAYER_WORLD | U.LAYER_BEAST, [get_rid()])
 	if hit.is_empty():
 		# 没正中：看看前面一点有没有灵兽（拳头判定宽一点）

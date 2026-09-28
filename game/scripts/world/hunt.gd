@@ -210,7 +210,7 @@ func host_request(from: int, species: String, age: int) -> void:
 	var why := ""
 	if world.island.hunting:
 		why = "已经在猎场里了：先把这只猎完（猎完按 L 回岛）"
-	elif world.dungeon and world.dungeon.inside:
+	elif world.away():
 		why = "有人在秘境里，等出来再去猎场"
 	elif world.boss:
 		why = "Boss 还在，打完再去猎场"
@@ -617,7 +617,7 @@ func _dir_name(pos: Vector3) -> String:
 func _on_roar(d: Array) -> void:
 	var pos: Vector3 = d[0]
 	var dist := _flat(pos, world.player.global_position)
-	if world.dungeon and world.dungeon.inside:
+	if world.away():
 		return
 	# 离得太远听不到；听到了也只知道大概方向
 	if dist > (240.0 if world.island.hunting else 140.0):
@@ -895,7 +895,7 @@ func _butterflies(from: Vector3, cid: int, dir: Vector2) -> void:
 
 func compass_marks() -> Array:
 	var out: Array = []
-	if world.dungeon and world.dungeon.inside:
+	if world.away():
 		return out
 	var tb: Beast = world.beasts.get(target_id) if target_id != 0 else null
 	if tb and located():
@@ -998,7 +998,7 @@ func _build_ui() -> void:
 
 func _update_ui(tb: Beast) -> void:
 	var me := world.player.global_position
-	var inside: bool = world.dungeon != null and world.dungeon.inside
+	var inside: bool = world.away()
 	_t_card.visible = tb != null and tb.alive() and not inside
 	if _t_card.visible:
 		_t_name.text = tb.display_name()

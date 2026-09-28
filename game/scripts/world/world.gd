@@ -33,6 +33,7 @@ var skills: SkillSystem
 var combo: Combo                  # 猎灵连击 + 灵相真身（world/combo.gd）
 var hunt: Hunt                    # 猎灵榜的猎物、踪迹、吸收灵环时的护法（world/hunt.gd）
 var dungeon: Dungeon              # 秘境（world/dungeon.gd）
+var trial: Trial                  # 试炼：尸潮守关 / 万兽割草（world/trial.gd）
 var hunting := {}                 # 在猎场里：{"species", "age", "seed", "by"}（空 = 在岛上）
 var trip: HuntTrip                # 猎场里的这次猎灵（world/hunt_trip.gd）
 var arts: BossArts                # Boss 的招式零件（world/boss_arts.gd）
@@ -168,6 +169,10 @@ func _ready() -> void:
 	dungeon.name = "Dungeon"
 	dungeon.world = self
 	add_child(dungeon)
+	trial = Trial.new()
+	trial.name = "Trial"
+	trial.world = self
+	add_child(trial)
 	arts = BossArts.new()
 	arts.name = "BossArts"
 	arts.world = self
@@ -348,6 +353,11 @@ func raycast(from: Vector3, to: Vector3, mask: int, exclude: Array = []) -> Dict
 
 
 ## alive：没倒地；target：灵兽和 Boss 能打的（没倒地、没隐身、刚复活的几秒也不打）
+## 自己在不在岛外的场地里（秘境 / 试炼）：地图边界、罗盘、小地图、猎场这些都不算
+func away() -> bool:
+	return (dungeon != null and dungeon.inside) or (trial != null and trial.inside)
+
+
 func all_players() -> Array:
 	var out := [{"peer": Net.my_id, "pos": player.global_position, "alive": not player.dead, "target": not player.dead and not player.untargetable()}]
 	for id in remotes:
@@ -530,6 +540,8 @@ func local_fire(g: Gun, origin: Vector3, dirs: Array[Vector3], muzzle: Vector3, 
 					fx.stick_arrow(end, dir, null)
 				break
 		ends.append(end)
+		if trial.inside:
+			trial.shot(origin, end, w, dmg_mult, pierce)
 	var heavy_shot: bool = g.id in ["zhuihun", "guanyin", "longxu"]
 	for e in ends:
 		if single:
@@ -562,6 +574,7 @@ func local_fire(g: Gun, origin: Vector3, dirs: Array[Vector3], muzzle: Vector3, 
 
 ## 爆炸：r 米内的灵兽都挨（中心全伤害，边上三成），往外掀
 func _blast(at: Vector3, r: float, dmg: float, w: Dictionary, per_beast: Dictionary) -> void:
+	trial.blast(at, r, dmg)
 	for b: Beast in beasts.values():
 		if not b.alive():
 			continue
@@ -1432,7 +1445,9 @@ func _update_music(dt: float) -> void:
 		want = "boss"
 	elif Time.get_ticks_msec() / 1000.0 < _tide_until:
 		want = "event"
-	elif _battle_hold > 0.0 or (dungeon.inside and str(dungeon.run.get("phase", "")) != "clear"):
+	elif trial.inside and not trial.run.is_empty() and trial.mode() == "siege" and int(trial.run.get("wave", 0)) % 5 == 0 and str(trial.run.get("phase", "")) == "wave":
+		want = "boss"
+	elif _battle_hold > 0.0 or (dungeon.inside and str(dungeon.run.get("phase", "")) != "clear") or (trial.inside and not trial.run.is_empty()):
 		want = "battle"
 	Sfx.play_music(want)
 
@@ -2312,12 +2327,13 @@ func interactables() -> Array:
 			t = "按 F 吸收%s灵环 · %s（站着 %d 秒）" % [Data.age_name(int(r["age"])), Data.SKILLS[hunt.skill_preview(str(r["species"]), int(r["age"]))]["name"], int(dur)]
 		out.append({"id": "ring", "rid": rid, "pos": r["pos"], "r": 2.6, "text": t, "ok": why == "", "act": why == "" or ess, "essence": ess})
 	out.append_array(dungeon.interactables())
+	out.append_array(trial.interactables())
 	out.append_array(hunt.interactables())
 	if trip:
 		out.append_array(trip.interactables())
 	if not island.hunting:
 		out.append({"id": "board", "pos": builder.board_pos + Vector3(0, 1.2, 0), "r": 3.0, "text": "按 F 看猎灵榜（也可以随时按 L）", "act": true})
-	if sage and not dungeon.inside:
+	if sage and not away():
 		out.append({"id": "sage", "pos": sage.global_position + Vector3(0, 1.2, 0), "r": 3.4, "text": "按 F 和青崖子说话", "act": true})
 	return out
 
@@ -2402,6 +2418,8 @@ func interact() -> void:
 				hud.toast(_altar_text(), Color(0.9, 0.9, 0.9))
 		"dgportal", "dgexit":
 			dungeon.interact(it)
+		"trstele", "trexit", "trrack":
+			trial.interact(it)
 		"hclue":
 			hunt.read_clue(int(it["cid"]))
 		"htreasure", "htflag", "htchest":
@@ -3248,6 +3266,7 @@ func _respawn_at_dock() -> void:
 	player.teleport(island.spawn + Vector3(0, 0.5, 0))
 	player.invuln_t = 4.0
 	hud.death_countdown(-1.0)
+	trial.on_respawn()
 	# 猎场：倒下回营地算一次（全队 3 次就失败）
 	if trip:
 		trip.on_my_faint()
@@ -3509,6 +3528,8 @@ func on_message(from: int, type: String, data: Variant) -> void:
 			hunt.on_message(from, type, data)
 		"dgst", "dgenter", "dgin", "dgleave", "dggate", "dgboss", "dgmet", "dgclear", "dgend":
 			dungeon.on_message(from, type, data)
+		"trst", "trenter", "trin", "trleave", "trrack", "trcore", "trwave", "trclear", "trslam", "trburst", "trend", "hdsp", "hdhit":
+			trial.on_message(from, type, data)
 		"crank":
 			var r := int(data[1])
 			hud.feed("%s 打出了 %s 级连击！" % [str(data[0]), Combo.RANKS[r][0]], Combo.RANKS[r][3])

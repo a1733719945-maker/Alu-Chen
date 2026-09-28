@@ -682,6 +682,7 @@ func _launch(center: Vector3, radius: float, dmg: float, up: float, caster: int,
 		_boss_hit(dmg, false, caster)
 	if dmg > 0.0:
 		world.nests.host_area_damage(center, radius, dmg, caster)
+		world.trial.host_area(center, radius, dmg * _dk(), caster)
 
 
 func _beam(origin: Vector3, dir: Vector3, length: float, dmg: float, pierce: int, caster: int, width := 1.3) -> void:
@@ -699,6 +700,8 @@ func _beam(origin: Vector3, dir: Vector3, length: float, dmg: float, pierce: int
 	hits.sort_custom(func(a, c): return a[0] < c[0])
 	for i in mini(pierce, hits.size()):
 		_sdmg(hits[i][1], dmg, dir * 3.0 + Vector3.UP * 3.0, caster)
+	if dmg > 0.0:
+		world.trial.host_beam(origin, dir, length, width, dmg * _dk(), caster)
 	var boss: Boss = world.boss
 	if boss and not boss.dead and dmg > 0.0 and boss.segment_hit(origin, dir, length, width):
 		_boss_hit(dmg, true, caster)

@@ -466,7 +466,7 @@ func _king_data() -> Array:
 ## 左上的猎灵目标：一只王一张卡（怪物猎人那样）。活着的：方向箭头、距离、血条、状态；死了的：重生倒计时
 func _update_kings(dt: float) -> void:
 	_kings_t -= dt
-	_kings.visible = not (world.dungeon and world.dungeon.inside)
+	_kings.visible = not (world.away())
 	# 只列活着的（打死了在等重生的不占地方）
 	var data := _king_data().filter(func(e): return e["b"] != null)
 	var sig := ""
@@ -746,7 +746,7 @@ func _draw_compass() -> void:
 func _compass_marks() -> Array:
 	var out: Array = []
 	# 在秘境里：岛上的东西都不标，只标队友
-	if world.dungeon and world.dungeon.inside:
+	if world.away():
 		for id in world.remotes:
 			if world.remotes[id].global_position.distance_to(world.player.global_position) < 120.0:
 				out.append([world.remotes[id].global_position, "·", Color(0.45, 0.8, 1.0)])
@@ -775,7 +775,8 @@ func _compass_marks() -> Array:
 		out.append_array(world.hunt.compass_marks())
 	if world.dungeon:
 		out.append_array(world.dungeon.compass_marks())
-	if world.builder.board_pos != Vector3.ZERO and not (world.dungeon and world.dungeon.inside):
+		out.append_array(world.trial.compass_marks())
+	if world.builder.board_pos != Vector3.ZERO and not (world.away()):
 		out.append([world.builder.board_pos, "榜", Color(1.0, 0.78, 0.5)])
 	if world.boss and not world.boss.dead:
 		out.append([world.boss.center(), "主", Color(1.0, 0.3, 0.35)])
@@ -2276,6 +2277,9 @@ func close_panels() -> void:
 	if _boat_picker and is_instance_valid(_boat_picker):
 		_close_boat_picker()
 		return
+	if _trial_picker and is_instance_valid(_trial_picker):
+		_close_trial_picker()
+		return
 	if _board and is_instance_valid(_board):
 		_close_board()
 		return
@@ -2507,6 +2511,53 @@ func _close_board() -> void:
 	world.set_ui_open(false)
 
 
+## 试炼碑：选尸潮守关还是万兽割草（两张大卡）
+var _trial_picker: Control
+
+
+func open_trial_picker() -> void:
+	if _trial_picker and is_instance_valid(_trial_picker):
+		_trial_picker.queue_free()
+	var fs := _fullscreen(900, 0)
+	_trial_picker = fs[0]
+	var v: VBoxContainer = fs[1]
+	_panel_head(v, "试炼", "选一种玩法", "Esc", _close_trial_picker)
+	v.add_child(UiKit.label("队友可以随时从试炼碑加入；出了试炼，捡的暗器还回去", 16, UiKit.MIST))
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 18)
+	v.add_child(row)
+	for m in ["siege", "musou"]:
+		var md: Dictionary = Trial.MODES[m]
+		var card := UiKit.card_button(md["color"])
+		card.custom_minimum_size = Vector2(440, 250)
+		row.add_child(card)
+		var cv := VBoxContainer.new()
+		cv.add_theme_constant_override("separation", 8)
+		cv.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		card.add_child(cv)
+		UiKit.place(cv, Vector4(0, 0, 1, 1), Vector4(24, 22, -24, -20))
+		cv.add_child(UiKit.kicker(str(md["kick"]), md["color"], 14))
+		cv.add_child(UiKit.title(str(md["name"]), 34, Color.WHITE))
+		var dl := UiKit.label(str(md["desc"]), 16, UiKit.MOON)
+		dl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		cv.add_child(dl)
+		var b: int = world.trial.best(m)
+		var rec := ("最高撑过 %d 波" % b) if m == "siege" else ("最多 %d 斩" % b)
+		cv.add_child(UiKit.label(rec if b > 0 else "还没玩过", 15, UiKit.GOLD if b > 0 else UiKit.MIST))
+		var mm: String = m
+		card.pressed.connect(func():
+			_close_trial_picker()
+			world.trial.request(mm))
+	world.set_ui_open(true)
+
+
+func _close_trial_picker() -> void:
+	if _trial_picker and is_instance_valid(_trial_picker):
+		_trial_picker.queue_free()
+	_trial_picker = null
+	world.set_ui_open(false)
+
+
 func _close_boat_picker() -> void:
 	if _boat_picker and is_instance_valid(_boat_picker):
 		_boat_picker.queue_free()
@@ -2644,7 +2695,7 @@ func _process(dt: float) -> void:
 		_bigmap.visible = not _bigmap.visible
 		Sfx.play("ui_click", -6.0)
 	# 秘境场地在地图外面：小地图、大地图都不显示
-	var in_dg: bool = world.dungeon != null and world.dungeon.inside
+	var in_dg: bool = world.away()
 	if in_dg:
 		_bigmap.visible = false
 	_minimap.visible = not _bigmap.visible and not in_dg
@@ -2677,7 +2728,7 @@ func _quest_target() -> Variant:
 		if hm != null:
 			return hm
 	# 猎场里不标主线任务（只标能吸收的灵环）
-	var inside: bool = (world.dungeon != null and world.dungeon.inside) or world.island.hunting
+	var inside: bool = (world.away()) or world.island.hunting
 	if world.island.hunting:
 		q = {}
 	match "" if inside else str(q.get("target", "")):

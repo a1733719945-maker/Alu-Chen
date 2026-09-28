@@ -128,6 +128,8 @@ func _draw() -> void:
 			_poi(p["pos"], "秘", Data.AGES[world.dungeon.tier_age(t)]["glow"], center, scale, font, world.dungeon.tier_name(t) if big else "")
 	if world.builder.board_pos != Vector3.ZERO and not world.island.hunting:
 		_poi(world.builder.board_pos, "榜", Color(1.0, 0.78, 0.5), center, scale, font, "猎灵榜" if big else "")
+	if world.trial and world.trial.stele != Vector3.INF:
+		_poi(world.trial.stele, "试", Color(0.5, 1.0, 0.6), center, scale, font, "试炼碑" if big else "")
 	if world.nests:
 		for nid in world.nests.nests:
 			var ne: Dictionary = world.nests.nests[nid]
