@@ -73,6 +73,17 @@
 | Boss 要"超级大，跳起来踩我一脚掉很多血" | 朱厌 24 米高 + 跃击（版本历史 22）；其他 Boss 放大 1.3~1.5 倍 |
 | 剧情"只撑起了背景，没有边玩边了解，也不够深入" | 重写成叩天之战（`docs/世界观.md`），按"边玩边讲"放进游戏：灵主台词、天枢记忆、青崖子、灵环记忆、秘境刻字（版本历史 23），后面还有青崖子 NPC、残碑、结局二选一 |
 | 队友模型敷衍 | 程序模型重做（`RemotePlayer`），用户也可以放 `assets/models/player/player.glb`（提示词见版本历史 20） |
+| 秘境里的 Boss 掉进水里就不见了 | 灵兽王（猎物 / 守宝王 / 秘境之主）活过 90 秒一碰水就被当成"逃走"删掉。现在王下水往老家游、泡 8 秒直接回老家；`World.beast_escaped` 对王只拉回不删 |
+| 自己生成的 Boss 模型被涂成白色 | `spider.glb` / `whale.glb` 文件里**没有贴图和材质**（只有形状）→ 用程序皮肤（`Boss.SKIN_SHADER`，3D 噪声 + 发光纹路）；有贴图的自定义模型**不再叠流光层**（`_decorate` 里 `_custom` 不加 next_pass）。想要原样贴图：Tripo 重新导出"带贴图"的 GLB |
+| 巨猿攻击太少、砸哪没提示、没威严；所有 Boss 打着不紧张 | 招间隔 0.4~0.9 秒、破绽缩短、贴身的人会被拍（`Boss._swat`）；出招前身子后仰抬起（`Boss.windup`）；会打到自己的招：屏幕四边红光 + 「！」（`Hud.danger`，`BossArts._warn`）；大圈震屏 + 轰鸣、巨兽走路冲锋震地；暴怒一声长啸全场一震；灵主血量下限按全队输出至少打 55 秒（`Data.BOSS_TTK`） |
+| 成神没有专属 BGM、打完 Boss 没有庆祝曲 | `victory.ogg`（Solis Triumphi）打完灵主 / 秘境 / 猎场 / 试炼放；`ascend.ogg`（For Her）飞升放；`World.lock_music(名字, 秒)` 期间不被战斗曲换掉 |
+| 存档要显示玩了多久 | `Profile.stats["play_s"]`（`add_play_time`，每 10 秒记一次），菜单存档按钮第一行 |
+| 掏枪 / 切枪 / 开镜关镜没有机械感 | 真录音（CC0）：收枪 holster、掏枪 draw_light/heavy、拉栓 rack、落稳 settle、开镜 ads_in、关镜 ads_out；开镜到位 / 关镜手上一顿（`ViewModel.ads_settle`）；切枪慢一点 |
+| 每关都是同一个玩法，要 CF 打僵尸（捡武器、守点）和割草 | 试炼（版本历史 26）：尸潮守关 + 万兽割草，码头边试炼碑 |
+| 武器要像 2KOL2 那样升星突破（gamble） | 暗器升星（版本历史 27） |
+| 船、帐篷、补给站更豪华，花钱加装饰 | 装饰（版本历史 27） |
+| UI 和地图往国风改 | 版本历史 28。**标题用思源宋体（印刷体），不是毛笔字**——用户以前说过不要毛笔字体 |
+| 人物模型"单机看不到" | 队友模型只有联机时看得到（单机是第一人称）。还没做：灵相面板里放自己的 3D 预览 |
 
 ## 仓库和发布
 
@@ -349,7 +360,38 @@
    - 新字要进字体：`岫玑璇阙髻` 是这次补的。**做法（Linux）**：从 google/fonts 下 NotoSansSC 可变字体，`fontTools.varLib.instancer` 按 500 / 700 / 900 实例化，`fontTools.subset` 收"原来的字 + 所有脚本里的汉字"，覆盖 `assets/fonts/NotoSansSC-*.otf`（里面是 glyf，名字还叫 otf），再 `--import`
    - 自动测试 boss 阶段：打倒灵主必须触发剧情（`story_<kind>` + 字幕队列）
 
+24. 剧情二 + 一批试玩反馈（2026-09-28 晚）：
+   - 青崖子 NPC（`world/sage.gd`，`Sage`）：程序拼的独眼老猎人（斗笠、白发白须、眼罩、蓑衣、长弓、猎叉），站在天坛边，走近按 F 说话（`Sage.lines_now`：到岸那句 + 主线提示 `Story.sage_hint` + 闲话 `Story.SAGE_IDLE`，打完灵主换一套；轮回过会多一句）
+   - Boss：见上表（掉水、涂白、压迫感）。`Boss.SKIN_OF` 五个灵主的程序皮肤颜色
+25. 音乐 + 游戏时长 + 枪的机械感：见上表
+26. 试炼（`world/trial.gd`，`Trial`；僵尸群 `world/horde.gd`，`Horde`）：
+   - 码头边试炼碑（地图「试」，`Trial._place_stele` 在猎灵榜旁边找空地）→ `Hud.open_trial_picker` 两张卡
+   - 僵尸不用刚体灵兽，自己算：清朝跳尸（官帽、黄符、补子、双手平伸），一个 MultiMesh 画，程序网格 `Horde._build_mesh`（UV.x 记部件），一蹦一蹦（`HOP / STEP / REST`），2 米一格分桶推开，障碍物是圆（`obstacles`）。kind 0 小尸 / 1 跳尸 / 2 铁尸 / 3 尸王
+   - 命中：开枪 `World.local_fire` → `Trial.shot`（射线和竖胶囊求最近距离，头部 ×爆头）；爆炸 `World._blast` → `Trial.blast`；拳头 `Player._melee` → `Trial.melee`；神通（房主）`SkillSystem._launch / _beam` → `Trial.host_area / host_beam`
+   - 联机：房主出怪 hdsp、谁打中发 hdhit（每台电脑扣一样的血，自己那一下打死的算自己的）、每台电脑自己算咬没咬到自己、阵眼只有房主算；中途加入的人会收到场上已有的僵尸
+   - 尸潮守关：场地 `SIEGE (-900, 420, 0)` 半径 36，四个尸门、阵眼 1000 血、内圈八段矮墙、四座箭楼、六个兵器架（`Player.trial_gun / trial_k`，品质 凡 / 灵 / 玄 / 天 = 伤害 ×1 / 1.35 / 1.8 / 2.5，出了试炼还回去）；每波 8+4n 只、每五波尸王（砸地红圈）；波间回阵眼 15%；记 `stats["siege_best_章"]`
+   - 万兽割草：场地 `MUSOU (0, 420, -900)` 半径 62，场上保持 150 只（每多一人 +45，上限 340），三分钟；子弹多穿两只；斩 60 只攒满灵爆（Z，15 米全清）；百人斩 / 千人斩横幅；记 `stats["musou_best_章"]`
+   - 倒下：还在打就在场地里复活（`Trial.on_respawn`，在 `_respawn_at_dock` 最后调）
+   - 岛外的场地判断统一用 `World.away()`（秘境或试炼）
+   - 自动测试 `siege`、`musou`（在全流程 dungeon 后面）
+27. 暗器升星 + 装饰：
+   - 升星（`Data.STAR_*`、`star_price / star_mult / star_floor / star_color`，`Profile.stars / star_bless / star_try`）：1~10 星，成功率 100% → 26%，每颗 +6% 伤害，3 / 6 / 9 星突破（王魄 1 / 2 / 3，灵光蓝 / 紫电 / 金身，额外伤害），突破过的不掉回去；4 星以上失败一半几率掉一颗（护星符 +60% 灵石就不掉），失败攒祝福 +5%。暗器铺「升星」页：星星闪一阵再揭晓（`ShopPanel._do_star`）；HUD 暗器名后面 ★N；3 星以上手里暗器飘光点（`ViewModel._star_aura`）。轮回保留星数
+   - 装饰（`Data.DECOR / DECOR_ORDER`，`Profile.decor`，`world/decor.gd`，`Decor`）：暗器铺「装饰」页买 / 摆上 / 收起；联机时所有人摆上的都出现（hello 第 10 项、prog 第 7 项、peer_info["decor"]）。基础（人人都有）：船舷朱漆金边、船尾灯、铺子「暗器」幌子、营地兵器架和火把
+   - 自动测试 `stars`、`decor`（第一章 pills 后面），截图 `decorshot`
+28. 国风（用户："游戏整体，要把 UI 啊地图啊往国风去改"）：
+   - 字体：标题 `NotoSerifSC-Black`、眉题 / 地图字 `NotoSerifSC-Bold`（思源宋体，从 google/fonts 可变字体按 900 / 700 实例化，裁成和黑体一样的字；**加新字时宋体也要重新裁**）；`Data.font_serif`
+   - `UiKit`：颜色偏暖（墨、赭金、朱砂、青玉、月白），`seal()` 朱红印章（面板标题左边，取眉题第一个字），小标题前金色 ◆，全屏毛玻璃背后三层水墨远山 + 一轮淡朱日（`BLUR_SHADER`）
+   - 大地图 / 小地图（`map_view.gd`）：宣纸底、按高度上墨、每 3 米等高线、海岸浓墨、水面淡青晕染和波纹、小路朱砂虚线、地点是方印、自己是朱红箭头
+   - 岛上地标（`Decor._landmarks`）：最高的空地一座七层八角宝塔（檐角挂灯、金葫芦顶）、靠海一座六角红柱亭子、小路两边每 26 米一对石灯笼
+   - 还没截图检查的：新字体下的各个面板（`uishots`）、宝塔和亭子在岛上的样子
+
 ## 还没做 / 可以继续
+
+- 国风序章：等用户把 AI 图（12 张）传到 GitHub `tools/boat_anim/ai/`（聊天里干活途中发的图存不下来）；`prep_ai.py` 的 CUT_BOTTOM 要改成 0.11 才能裁干净豆包水印
+- 每个灵主一段 CG + 结局完整讲一遍故事的 CG：要 AI 图（提示词写给用户），Remotion 里用 `FilmsCN.tsx` 的做法
+- 剧情三：残碑 + 《苍墟志》、天坛结局二选一（重铸 / 安息）、北斗九重轮回篇名
+- 灵相面板里放自己的 3D 人物预览（用户问"人模型单机看不到"）
+- 突围模式、近战模式（用户提过，还没做）
 
 - Boss 写实模型：免费 CC0 里没有合适的，要用户提供素材；现在靠着色器 + 光环 + 死亡神光
 - 数值是按公式估的（见 data.gd 注释），没有真人从 1 级玩到 100 级；等用户反馈再调 `CH_HP / CH_MONEY / KILLS_PER_LEVEL`
