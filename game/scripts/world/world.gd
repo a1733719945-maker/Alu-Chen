@@ -2592,10 +2592,21 @@ func _on_boss_spawn(msg: Array) -> void:
 	# 再叩天召出来的：它吞下的是更高一重天的碎片（第二重、第三重……）
 	var bname := str(Data.BOSSES[msg[0]]["name"]) + ((" · " + Story.heaven_name(boss_tier)) if boss_tier > 0 else "")
 	hud.boss_bar(bname)
-	hud.boss_intro(bname, str(Data.BOSSES[msg[0]].get("lore", "")))
-	# 灵主开口（再叩天出来的认得你："又是你。"）
 	var kind := str(msg[0])
 	var tier := boss_tier
+	# 每个灵主（每一重天）第一次出场：实时的出场镜头（BossCine），名号和它说的话都在镜头里
+	var cine_key := "cine_%s_%d" % [kind, tier]
+	if not Data.autotest and int(Profile.stats.get(cine_key, 0)) == 0 and not away():
+		Profile.stats[cine_key] = 1
+		Profile.mark_dirty()
+		if Net.is_host():
+			boss._sp_cd = maxf(boss._sp_cd, BossCine.DUR + 0.5)
+		var kick := str(Data.CHAPTERS[chapter]["name"]) + ((" · " + Story.heaven_name(tier)) if tier > 0 else "")
+		BossCine.play(self, boss, kick, str(Data.BOSSES[kind]["name"]), str(Data.BOSSES[kind].get("lore", "")), Story.lord_intro(kind, tier))
+		boss_nohit = true
+		return
+	hud.boss_intro(bname, str(Data.BOSSES[msg[0]].get("lore", "")))
+	# 灵主开口（再叩天出来的认得你："又是你。"）
 	get_tree().create_timer(3.8).timeout.connect(func():
 		if is_instance_valid(hud):
 			hud.say(Story.lord(kind, "who"), Story.lord_intro(kind, tier), LORD_SAY))

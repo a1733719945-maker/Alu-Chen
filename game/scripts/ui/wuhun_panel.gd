@@ -64,6 +64,12 @@ func _left() -> void:
 	fade.stretch_mode = TextureRect.STRETCH_SCALE
 	pic.add_child(fade)
 	UiKit.fill(fade)
+	# 自己的 3D 人物站在立绘前面（队友看到的就是这个样子；按住拖动能转）
+	var wld0: Node = get_tree().get_first_node_in_group("world")
+	if wld0:
+		var me := SelfPreview.new(wld0)
+		pic.add_child(me)
+		UiKit.fill(me)
 	var nm := UiKit.title(str(w["name"]), 40, wc)
 	nm.position = Vector2(18, 200)
 	pic.add_child(nm)

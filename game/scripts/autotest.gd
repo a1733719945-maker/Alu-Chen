@@ -63,6 +63,7 @@ func _ready() -> void:
 			_plan.insert(_plan.find("guns2") + 1, "pills")
 			_plan.insert(_plan.find("pills") + 1, "stars")
 			_plan.insert(_plan.find("stars") + 1, "decor")
+			_plan.insert(_plan.find("decor") + 1, "selfpreview")
 		"shots":
 			_shots = true
 			_shots_dir = str(args.get("out", "user://shots"))
@@ -288,6 +289,10 @@ func _process(dt: float) -> void:
 			_run_dungeon()
 		"stars":
 			_run_stars()
+		"bosscine":
+			_run_bosscine()
+		"selfpreview":
+			_run_selfpreview()
 		"decor":
 			_run_decor()
 		"decorshot":
@@ -4397,3 +4402,55 @@ func _run_decorshot() -> void:
 				await _shot("decor_shop")
 			elif _step_t > 7.5:
 				_next_phase()
+
+
+# ------------------------------------------------------------------ 灵主出场镜头（BossCine；平时自动测试关着，这里直接放一遍）
+
+func _run_bosscine() -> void:
+	var w := _ready_world()
+	if not w:
+		return
+	var p := w.player
+	match _step:
+		0:
+			if not w.boss:
+				w._host_spawn_boss()
+			_mem["cine"] = BossCine.play(w, w.boss, "测试 · 出场", str(Data.BOSSES[w.boss.kind]["name"]), "来历", "台词")
+			if not _check(not p.cam.current and not p.input_enabled and not w.hud.visible, "出场镜头没接管镜头 / 没关 HUD"):
+				return
+			_next(1)
+		1:
+			var c: BossCine = _mem["cine"]
+			if is_instance_valid(c) and not c._done:
+				if _step_t > BossCine.DUR + 2.0:
+					_fail("出场镜头没结束")
+				return
+			if not _check(p.cam.current and w.hud.visible and p.input_enabled, "出场镜头结束后没还回镜头 / HUD / 操作"):
+				return
+			_note("灵主出场镜头：%.1f 秒，结束后镜头、HUD、操作都还回来了" % _step_t)
+			w.boss.queue_free()
+			w.boss = null
+			w.hud.boss_bar("")
+			_next_phase()
+
+
+# ------------------------------------------------------------------ 灵相面板里自己的 3D 人物
+
+func _run_selfpreview() -> void:
+	var w := _ready_world()
+	if not w:
+		return
+	match _step:
+		0:
+			w.hud._wuhun.open()
+			w.hud._wuhun.visible = true
+			_next(1)
+		1:
+			if _step_t < 1.0:
+				return
+			var sp := w.hud._wuhun.find_children("*", "SelfPreview", true, false)
+			if not _check(sp.size() == 1 and (sp[0] as SelfPreview).mate != null and (sp[0] as SelfPreview).mate.body != null, "灵相面板里没有自己的 3D 人物"):
+				return
+			_note("灵相面板：自己的 3D 人物（队友看到的样子）")
+			w.hud.close_panels()
+			_next_phase()
