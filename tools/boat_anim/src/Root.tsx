@@ -2,6 +2,7 @@ import React from 'react';
 import {Composition, Still} from 'remotion';
 import {FPS, H, W} from './cine';
 import {Ascend, ASCEND_FRAMES, DungeonGate, DUNGEON_FRAMES, HuntGate, HUNT_FRAMES, Prologue, PROLOGUE_FRAMES, Voyage, VOYAGE_FRAMES} from './Films';
+import {CNTest, CNTEST_FRAMES} from './FilmsCN';
 import {Gourd} from './Gourd';
 
 // 苍墟 · 猎灵 的过场动画，1920x1080，30 帧/秒。render_all.sh 渲染成 mp4 → ffmpeg 转 Ogg Theora → game/assets/cutscene/*.ogv
@@ -16,6 +17,7 @@ export const RemotionRoot: React.FC = () => (
 		<Composition id="Ascend" component={Ascend} durationInFrames={ASCEND_FRAMES} fps={FPS} width={W} height={H} />
 		<Composition id="DungeonGate" component={DungeonGate} durationInFrames={DUNGEON_FRAMES} fps={FPS} width={W} height={H} />
 		<Composition id="HuntGate" component={HuntGate} durationInFrames={HUNT_FRAMES} fps={FPS} width={W} height={H} />
+		<Composition id="CNTest" component={CNTest} durationInFrames={CNTEST_FRAMES} fps={FPS} width={W} height={H} />
 		<Still id="Gourd" component={Gourd} width={384} height={384} />
 	</>
 );

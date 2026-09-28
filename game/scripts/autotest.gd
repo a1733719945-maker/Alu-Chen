@@ -3152,7 +3152,7 @@ func _run_mateshot() -> void:
 ## 第十三版 Boss 招式：五个 Boss 轮流出来，每一招都放一遍（不报错、招式真的出来）；
 ## 圈砸到人会掉血、翻滚躲过去算极限闪避；破绽时打头伤害翻倍
 const ARTS := {"mandala": ["sweep", "spit", "coil", "dive", "sweep2", "swamp"], "spider": ["web", "lunge", "drop", "brood", "lunge2", "cage"],
-	"titan": ["rocks", "charge", "quake", "fists", "rockrain", "charge2"], "icedragon": ["breath", "spiral", "swoop", "shards"],
+	"titan": ["rocks", "charge", "quake", "fists", "rockrain", "charge2", "stomp", "stomp2"], "icedragon": ["breath", "spiral", "swoop", "shards"],
 	"whale": ["tsunami", "vortex", "breach", "geyser", "gaze", "storm"]}
 
 
@@ -3184,15 +3184,27 @@ func _run_bossarts() -> void:
 			var b := w.boss
 			if _step_t < 3.5:
 				return
+			# 上一个 Boss 把人打倒了、还被海鸥叼在天上：先回码头复活（不然站位后马上又被叼走）
+			if p.dead or p.carried or w._carry_t >= 0.0:
+				w._respawn_at_dock()
 			# 人站在 Boss 旁边 16 米（水里的 Boss：岸上）
 			var c := b.center()
 			var dir := Vector3(-c.x, 0, -c.z).normalized()
 			# 大个子的 Boss 离远一点（不然人会被放到它身上）
-			var st := Vector3(c.x, 0, c.z) + dir * (16.0 + maxf(b.size.x, b.size.z) * 0.7)
-			for i in 200:
-				if w.island.is_land(st.x, st.z):
+			var want := 16.0 + maxf(b.size.x, b.size.z) * 0.7
+			var st := Vector3(c.x, 0, c.z) + dir * want
+			# 在 Boss 周围一圈圈找最近的陆地（Boss 大了以后，只朝一个方向找会走到 90 米仇恨范围外面去）
+			var found := false
+			for ring in 12:
+				for k in 24:
+					var ang := atan2(dir.z, dir.x) + TAU * k / 24.0
+					var q := Vector3(c.x, 0, c.z) + Vector3(cos(ang), 0, sin(ang)) * (want + ring * 5.0)
+					if w.island.is_land(q.x, q.z):
+						st = q
+						found = true
+						break
+				if found:
 					break
-				st += dir
 			st.y = w.island.height_at(st.x, st.z) + 0.3
 			p.teleport(st)
 			_mem["stand"] = st
@@ -3205,8 +3217,10 @@ func _run_bossarts() -> void:
 			var b := w.boss
 			var list: Array = ARTS[b.kind]
 			var ai := int(_mem["ai"])
-			if p.dead:
-				p.revive()
+			# 被打倒过：走正规的回码头复活（只 revive 的话倒地计时还在走，过几秒会被自动送回码头）
+			if p.dead or p.carried or w._carry_t >= 0.0:
+				w._respawn_at_dock()
+				p.teleport(_mem["stand"])
 				p.invuln_t = 0.0
 			p.hp = Profile.max_hp()
 			if not b._act.is_empty() or b.stun_t > 0.0 or b.state != "idle":
@@ -3247,15 +3261,15 @@ func _run_bossarts() -> void:
 				_next(3)
 				_step_t = 0.0
 			elif _step_t > 1.5:
-				_fail("%s 的招 %s 没放出来" % [b.kind, str(ARTS[b.kind][int(_mem["ai"]) - 1])])
+				_fail("%s 的招 %s 没放出来（人离 Boss %.0f 米，能打的人 %d 个，state=%s）" % [b.kind, str(ARTS[b.kind][int(_mem["ai"]) - 1]), p.global_position.distance_to(b.head.global_position), b._targets().size(), b.state])
 		4:
 			# 砸到人掉血；翻滚躲过算极限闪避；破绽打头 ×2
 			var b := w.boss
 			b._busy = 99.0
 			if not _mem.has("hurt") and not _mem.has("hurt_wait"):
 				w.arts.clear_all()
-				if p.dead:
-					p.revive()
+				if p.dead or p.carried or w._carry_t >= 0.0:
+					w._respawn_at_dock()
 				# 砸人、闪避这两下在出生点测（Boss 冲锋、落石会把人推到奇怪的地方）
 				b.head.global_position = _mem["bpos"]
 				p.teleport(w.island.spawn + Vector3(0, 0.5, 0))
@@ -3293,8 +3307,9 @@ func _run_bossarts() -> void:
 				_mem["pd0"] = int(Profile.stats.get("perfect_dodges", 0))
 				_mem["dc"] = p.global_position
 				_mem["dodge"] = true
-				if p.dead:
-					p.revive()
+				if p.dead or p.carried or w._carry_t >= 0.0:
+					w._respawn_at_dock()
+					p.teleport(_mem["dc"])
 				p.hp = Profile.max_hp()
 				# 翻滚中挨一下（和圈砸到人走的是同一条路）
 				p._roll_t = 0.42

@@ -1270,15 +1270,15 @@ func bone_desc(entry: String) -> String:
 const BOSSES := {
 	# ai：water 水里钻来钻去 / land 地上 / air 天上飞
 	"mandala": {"name": "镜湖之主 · 千年碧鳞蛟", "lore": "吞下第一块天枢碎片的蛟，三千年未曾离湖", "shard": 1, "hp": 12000.0, "reward": 720, "xp": 450, "bones": ["mandala_skull", "mandala_spine"], "age": 2, "ai": "water",
-		"model": "snake_angry", "fit": "h", "size": 9.0, "tint": Color(1.0, 0.5, 1.2), "summon": "snake", "ring_beast": "snake", "weak": Vector3(0, 0.34, -0.3), "holy": Color(0.85, 0.55, 1.0)},
+		"model": "snake_angry", "fit": "h", "size": 12.0, "tint": Color(1.0, 0.5, 1.2), "summon": "snake", "ring_beast": "snake", "weak": Vector3(0, 0.34, -0.3), "holy": Color(0.85, 0.55, 1.0)},
 	"spider": {"name": "落霞林之主 · 千目蛛母", "lore": "千只眼睛，一张网——林子里的每一根丝，都连着它", "shard": 2, "hp": 35000.0, "reward": 2700, "xp": 1300, "bones": ["spider_leg", "spider_eye"], "age": 2, "ai": "land",
-		"model": "spider", "fit": "w", "size": 8.5, "tint": Color(0.6, 0.45, 0.7), "summon": "spiderling", "ring_beast": "wolf", "weak": Vector3(0, 0.2, -0.4), "holy": Color(1.0, 0.45, 0.6)},
+		"model": "spider", "fit": "w", "size": 13.0, "tint": Color(0.6, 0.45, 0.7), "summon": "spiderling", "ring_beast": "wolf", "weak": Vector3(0, 0.2, -0.4), "holy": Color(1.0, 0.45, 0.6)},
 	"titan": {"name": "苍梧之王 · 万年朱厌", "lore": "《山海经》：见则大兵", "shard": 3, "hp": 85000.0, "reward": 7200, "xp": 3400, "bones": ["titan_arm", "titan_heart"], "age": 3, "ai": "land",
-		"model": "yeti", "fit": "h", "size": 9.0, "tint": Color(0.42, 0.36, 0.34), "summon": "raptor", "ring_beast": "stag", "throws": true, "weak": Vector3(0, 0.36, -0.15), "holy": Color(1.0, 0.8, 0.4)},
+		"model": "yeti", "fit": "h", "size": 24.0, "tint": Color(0.42, 0.36, 0.34), "summon": "raptor", "ring_beast": "stag", "throws": true, "weak": Vector3(0, 0.36, -0.15), "holy": Color(1.0, 0.8, 0.4)},
 	"icedragon": {"name": "朔北之主 · 万年冰螭", "lore": "它呼一口气，一整片海就冻成了冰原", "shard": 4, "hp": 130000.0, "reward": 16800, "xp": 10000, "bones": ["dragon_wing", "dragon_scale"], "age": 3, "ai": "air",
-		"model": "dragon", "fit": "w", "size": 16.0, "tint": Color(0.6, 0.85, 1.3), "glow": Color(0.1, 0.3, 0.6), "summon": "husky", "ring_beast": "icehorn", "weak": Vector3(0, 0.25, -0.42), "holy": Color(0.6, 0.9, 1.0)},
+		"model": "dragon", "fit": "w", "size": 22.0, "tint": Color(0.6, 0.85, 1.3), "glow": Color(0.1, 0.3, 0.6), "summon": "husky", "ring_beast": "icehorn", "weak": Vector3(0, 0.25, -0.42), "holy": Color(0.6, 0.9, 1.0)},
 	"whale": {"name": "归墟之主 · 十万年玄鲲", "lore": "北冥有鱼，其名为鲲。鲲之大，不知其几千里也", "shard": 5, "hp": 200000.0, "reward": 36000, "xp": 33000, "bones": ["whale_bone", "whale_heart"], "age": 4, "ai": "water",
-		"model": "whale", "fit": "l", "size": 22.0, "tint": Color(0.55, 0.6, 0.9), "summon": "shark", "ring_beast": "shark", "weak": Vector3(0, 0.15, -0.44), "holy": Color(0.5, 0.8, 1.0)},
+		"model": "whale", "fit": "l", "size": 30.0, "tint": Color(0.55, 0.6, 0.9), "summon": "shark", "ring_beast": "shark", "weak": Vector3(0, 0.15, -0.44), "holy": Color(0.5, 0.8, 1.0)},
 }
 
 # ================================================================ 章节

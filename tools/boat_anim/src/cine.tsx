@@ -69,8 +69,10 @@ export const Film: React.FC<{total: number; fadeIn?: number; fadeOut?: number; c
 // 镜头位置 Cam = [画面中心在原画里的横坐标 0~1, 纵坐标 0~1, 放大倍数（1 = 原画刚好铺满画面）]
 export type Cam = [number, number, number];
 export type Grade = {sat?: number; con?: number; bri?: number; sepia?: number; warm?: number};
-export type Fx = 'dust' | 'embers' | 'snow' | 'mist' | 'none';
+export type Fx = 'dust' | 'embers' | 'snow' | 'mist' | 'clouds' | 'none';
 export type Glow = {x: number; y: number; r: number; color: string; a: number; pulse?: number};
+// 天光：从画上某一点（原画里 0~1）放射出来的光束，慢慢转
+export type Rays = {x: number; y: number; a: number; color?: string; r?: number};
 
 type ShotProps = {
 	art: keyof typeof DIMS;
@@ -84,6 +86,7 @@ type ShotProps = {
 	fx?: Fx;
 	glow?: Glow; // 贴在画上的光（坐标是原画里的 0~1）
 	shake?: [number, number, number]; // [开始帧, 结束帧, 幅度像素]
+	rays?: Rays;
 	children?: React.ReactNode;
 };
 
@@ -130,6 +133,33 @@ export const Shot: React.FC<ShotProps> = (p) => {
 			/>
 		);
 	}
+	let rays = null;
+	if (p.rays) {
+		const ry = p.rays;
+		const c = ry.color ?? 'rgba(255,232,185,1)';
+		const R = ry.r ?? 1700;
+		const cxp = x + ry.x * iw * s;
+		const cyp = y + ry.y * ih * s;
+		const rot = local * 0.04;
+		const cone = (from: number, a: number, b: number, c2: number) => `repeating-conic-gradient(from ${from}deg at 50% 50%, rgba(0,0,0,0) 0deg, ${c} ${a}deg, rgba(0,0,0,0) ${b}deg, rgba(0,0,0,0) ${c2}deg)`;
+		rays = (
+			<div
+				style={{
+					position: 'absolute',
+					left: cxp - R,
+					top: cyp - R,
+					width: R * 2,
+					height: R * 2,
+					background: `${cone(rot, 1.2, 3.5, 13)}, ${cone(-rot * 0.7 + 5, 2.5, 6, 23)}`,
+					WebkitMaskImage: 'radial-gradient(circle, rgba(0,0,0,1) 0%, rgba(0,0,0,0.5) 22%, rgba(0,0,0,0) 62%)',
+					maskImage: 'radial-gradient(circle, rgba(0,0,0,1) 0%, rgba(0,0,0,0.5) 22%, rgba(0,0,0,0) 62%)',
+					filter: 'blur(5px)',
+					mixBlendMode: 'screen',
+					opacity: ry.a * (0.85 + 0.15 * Math.sin(local * 0.05)),
+				}}
+			/>
+		);
+	}
 	return (
 		<AbsoluteFill style={{opacity: op, overflow: 'hidden'}}>
 			<Img
@@ -149,6 +179,7 @@ export const Shot: React.FC<ShotProps> = (p) => {
 			{/* 暖色：高光偏琥珀，暗部压一点青灰 */}
 			<AbsoluteFill style={{background: 'linear-gradient(180deg, rgba(255,190,110,1) 0%, rgba(255,170,90,1) 55%, rgba(40,50,70,1) 100%)', mixBlendMode: 'soft-light', opacity: g.warm}} />
 			{glow}
+			{rays}
 			{p.fx && p.fx !== 'none' ? <Particles kind={p.fx} t={local} /> : null}
 			{/* 字幕和左上角标签底下压暗一点（亮的画上也看得清） */}
 			<AbsoluteFill style={{background: 'linear-gradient(0deg, rgba(0,0,0,0.5) 0%, rgba(0,0,0,0.22) 18%, rgba(0,0,0,0) 34%)'}} />
@@ -160,6 +191,26 @@ export const Shot: React.FC<ShotProps> = (p) => {
 
 // ---------------------------------------------------------------- 粒子：光尘 / 火星 / 雪 / 雾
 export const Particles: React.FC<{kind: Fx; t: number}> = ({kind, t}) => {
+	if (kind === 'clouds') {
+		const layer = (speed: number, top: number, h: number, a: number, off: number) => {
+			const w = h * (2048 / 768);
+			const x = -(((t * speed + off) % w) + w) % w;
+			return (
+				<div key={speed} style={{position: 'absolute', left: 0, top, width: W, height: h, overflow: 'hidden', opacity: a}}>
+					{[0, 1].map((k) => (
+						<Img key={k} src={staticFile('fx/clouds.png')} style={{position: 'absolute', left: x + k * w, top: 0, width: w, height: h, maxWidth: 'none'}} />
+					))}
+				</div>
+			);
+		};
+		return (
+			<AbsoluteFill style={{mixBlendMode: 'screen'}}>
+				{layer(0.9, 560, 620, 0.32, 300)}
+				{layer(1.8, 700, 520, 0.4, 900)}
+				{layer(0.5, 120, 480, 0.12, 0)}
+			</AbsoluteFill>
+		);
+	}
 	if (kind === 'mist') {
 		return (
 			<AbsoluteFill style={{mixBlendMode: 'screen'}}>
@@ -396,4 +447,76 @@ export const Flash: React.FC<{at: number; len?: number; color?: string; max?: nu
 	if (f < at || f > at + len) return null;
 	const a = interpolate(f, [at, at + 3, at + len], [0, max, 0], clamp);
 	return <AbsoluteFill style={{background: color, opacity: a, mixBlendMode: 'screen'}} />;
+};
+
+// ---------------------------------------------------------------- 国风：朱红印章、竖排题字
+// 印章：朱砂底 + 白字（2~4 个字排成两列），"盖"下去：从大缩到原大、一闪
+export const Seal: React.FC<{text: string; x: number; y: number; size?: number; at: number; to: number}> = ({text, x, y, size = 92, at, to}) => {
+	const f = useCurrentFrame();
+	if (f < at || f > to) return null;
+	const k = interpolate(f, [at, at + 8], [1.5, 1], {...clamp, easing: easeOut});
+	const a = Math.min(interpolate(f, [at, at + 4], [0, 1], clamp), interpolate(f, [to - 12, to], [1, 0], clamp));
+	const chars = text.split('');
+	const cols = chars.length > 2 ? [chars.slice(0, Math.ceil(chars.length / 2)), chars.slice(Math.ceil(chars.length / 2))] : [chars];
+	return (
+		<div
+			style={{
+				position: 'absolute',
+				left: x - size / 2,
+				top: y - size / 2,
+				width: size,
+				height: size,
+				transform: `scale(${k}) rotate(-3deg)`,
+				opacity: a * 0.92,
+				background: 'radial-gradient(ellipse at 40% 35%, #c9412f 0%, #a8281c 70%, #8e1f16 100%)',
+				borderRadius: 6,
+				boxShadow: 'inset 0 0 0 3px rgba(255,235,220,0.9), inset 0 0 0 6px #a8281c, 0 4px 14px rgba(0,0,0,0.4)',
+				display: 'flex',
+				flexDirection: 'row-reverse',
+				alignItems: 'center',
+				justifyContent: 'center',
+				gap: size * 0.02,
+			}}
+		>
+			{cols.map((col, i) => (
+				<div key={i} style={{display: 'flex', flexDirection: 'column', alignItems: 'center', fontFamily: SERIF_SC, fontWeight: 900, fontSize: size * (cols.length > 1 ? 0.34 : 0.4), lineHeight: 1.05, color: '#fff3e8'}}>
+					{col.map((c, j) => (
+						<span key={j}>{c}</span>
+					))}
+				</div>
+			))}
+		</div>
+	);
+};
+
+// 竖排大字（像画上的题款）：一个字一个字淡入，旁边一条细竖线 + 小字
+export const VTitle: React.FC<{text: string; sub?: string; x: number; y: number; size?: number; from: number; to: number; seal?: string}> = ({text, sub, x, y, size = 150, from, to, seal}) => {
+	const f = useCurrentFrame();
+	if (f < from || f > to) return null;
+	const out = interpolate(f, [to - 16, to], [1, 0], clamp);
+	const chars = text.split('');
+	return (
+		<>
+			<div style={{position: 'absolute', left: x - size * 1.2, top: y - 60, width: size * 2.4, height: chars.length * size * 1.25 + 160, background: 'radial-gradient(ellipse closest-side, rgba(0,0,0,0.38) 0%, rgba(0,0,0,0) 100%)', opacity: out}} />
+			<div style={{position: 'absolute', left: x - size / 2, top: y, opacity: out}}>
+				{chars.map((c, i) => {
+					const t0 = from + i * 10;
+					const a = interpolate(f, [t0, t0 + 18], [0, 1], clamp);
+					const blur = interpolate(f, [t0, t0 + 18], [8, 0], clamp);
+					return (
+						<div key={i} style={{fontFamily: SERIF_SC, fontWeight: 700, fontSize: size, lineHeight: 1.25, color: '#fbf5ea', opacity: a, filter: `blur(${blur}px)`, textShadow: '0 4px 30px rgba(0,0,0,0.6), 0 0 50px rgba(255,215,150,0.3)'}}>
+							{c}
+						</div>
+					);
+				})}
+			</div>
+			{sub ? (
+				<div style={{position: 'absolute', left: x - size / 2 - 56, top: y + 12, opacity: out * interpolate(f, [from + 20, from + 40], [0, 1], clamp), display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14}}>
+					<div style={{width: 1, height: 80, background: 'rgba(255,240,215,0.7)'}} />
+					<div style={{writingMode: 'vertical-rl', fontFamily: SERIF_SC, fontSize: 22, letterSpacing: '0.5em', color: 'rgba(255,236,205,0.9)', textShadow: '0 2px 10px rgba(0,0,0,0.8)'}}>{sub}</div>
+				</div>
+			) : null}
+			{seal ? <Seal text={seal} x={x + size * 0.05} y={y + chars.length * size * 1.25 + 70} size={size * 0.52} at={from + chars.length * 10 + 16} to={to} /> : null}
+		</>
+	);
 };

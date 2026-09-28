@@ -73,6 +73,9 @@ var stun_vis := 0.0              # 大家都有：画破绽用
 var _act := {}                   # 正在做的大动作：冲锋 / 爬高落下 / 俯冲
 var _busy := 0.0                 # 这一招还要多久才出下一招
 var _stun_after := 0.0           # 潜水扑出来落地以后露破绽几秒
+var _gk := 1.0                   # 大个子：招式范围跟着体型放大（朱厌约 2）
+var _step_d := 0.0               # 巨兽走路：攒够一步的距离就震一下地
+var _leap_hint := false          # 跃击的提示只弹一次
 
 const HOLY_SHADER := """shader_type spatial;
 render_mode unshaded, blend_add, depth_draw_never, cull_back, shadows_disabled;
@@ -187,7 +190,8 @@ func _build() -> void:
 	_weak_pos = _box.get_center() + _box.size * wn
 	var mn := minf(size.x, minf(size.y, size.z))
 	var mx := maxf(size.x, maxf(size.y, size.z))
-	_weak_r = clampf(maxf(mn * 0.4, mx * 0.13), 1.0, 4.0)
+	_weak_r = clampf(maxf(mn * 0.4, mx * 0.13), 1.0, 6.0)
+	_gk = clampf(maxf(size.x, size.y) / 12.0, 1.0, 2.2)
 	var lo := _box.position + _box.size * 0.06
 	var hi := _box.end - _box.size * 0.06
 	if absf(wn.y) >= absf(wn.z):
@@ -205,7 +209,8 @@ func _build() -> void:
 		"water":
 			head.global_position = _anchor + Vector3(0, -size.y, 0)
 		"land":
-			head.global_position = _anchor + Vector3(0, 14, 0)
+			# 从天上砸下来（大个子从更高的地方）
+			head.global_position = _anchor + Vector3(0, 14.0 + size.y, 0)
 		"air":
 			head.global_position = _anchor + Vector3(0, 40, 0)
 
@@ -671,6 +676,8 @@ func _act_tick(dt: float) -> void:
 					world.arts.stun(self, st)
 					world.fx.slam(Vector3(head.global_position.x, g, head.global_position.z), 6.0)
 				_busy = 0.8
+		"leap":
+			_leap_tick(t, dt)
 		"climb":
 			# 千目蛛母：爬到高处（1 秒）→ 地上出圈跟着人（圈定了就不动）→ 砸下来 → 腿陷进蛛网里露破绽
 			var at: Vector3 = _act["at"]
@@ -697,6 +704,72 @@ func _act_tick(dt: float) -> void:
 			_act = {}
 			world.arts.stun(self, float(2.5))
 			_busy = 0.8
+
+
+func _leap_tick(t: float, dt: float) -> void:
+	var from: Vector3 = _act["from"]
+	var gy_from: float = world.island.height_at(from.x, from.z) + _hover()
+	var peak := 26.0 + size.y * 0.6
+	if t < LEAP_CROUCH:
+		# 蹲下去，盯着人
+		head.global_position = Vector3(from.x, gy_from - sin(t / LEAP_CROUCH * PI * 0.5) * size.y * 0.08, from.z)
+		_face_toward(_peer_pos_or(int(_act["peer"]), _act["at"]), dt * 3.0)
+		return
+	var at: Vector3 = _act["at"]
+	if t < LEAP_LOCK:
+		# 起跳：往人头顶上方飞（一次最多跳 60 米）
+		if not _act.has("off"):
+			_act["off"] = true
+			var g0 := Vector3(from.x, world.island.height_at(from.x, from.z), from.z)
+			world.fx.slam(g0, size.x * 0.5)
+			Sfx.play_at("slam", g0, 6.0, 0.05, 0.6)
+		at = _peer_pos_or(int(_act["peer"]), at)
+		at = from + Vector3(at.x - from.x, 0, at.z - from.z).limit_length(60.0)
+		_act["at"] = at
+		var k := (t - LEAP_CROUCH) / (LEAP_LOCK - LEAP_CROUCH)
+		var e := 1.0 - pow(1.0 - k, 2.0)
+		var p := from.lerp(Vector3(at.x, from.y, at.z), e * 0.7)
+		p.y = gy_from + peak * e
+		head.global_position = head.global_position.lerp(p, 1.0 - exp(-10.0 * dt))
+		_face_toward(at, dt * 3.0)
+		return
+	if not _act.has("top"):
+		# 锁定落点：地上出红圈（1.3 秒后砸下来）
+		at = _peer_pos_or(int(_act["peer"]), at)
+		at = from + Vector3(at.x - from.x, 0, at.z - from.z).limit_length(60.0)
+		at.y = world.island.height_at(at.x, at.z)
+		_act["at"] = at
+		_act["top"] = head.global_position
+		world.arts.circle(at, clampf(size.y * 0.42, 8.0, 11.0), LEAP_LAND - LEAP_LOCK, LEAP_DMG, "rock")
+		return
+	var top: Vector3 = _act["top"]
+	var gy: float = world.island.height_at(at.x, at.z) + _hover()
+	if t < LEAP_LAND:
+		# 先在空中顿一下（往上飘一点、挪到落点正上方），再猛地砸下来
+		var k2 := (t - LEAP_LOCK) / (LEAP_LAND - LEAP_LOCK)
+		var hold := clampf(k2 / 0.4, 0.0, 1.0)
+		var fall := clampf((k2 - 0.4) / 0.6, 0.0, 1.0)
+		var xz := top.lerp(Vector3(at.x, top.y, at.z), 1.0 - pow(1.0 - hold, 2.0))
+		var y := top.y + sin(hold * PI * 0.5) * 4.0
+		y = lerpf(y, gy, fall * fall)
+		head.global_position = Vector3(xz.x, y, xz.z)
+		return
+	# 落地：圈里的伤害由红圈算；外面再推出去一圈冲击波（跳起来能躲）
+	head.global_position = Vector3(at.x, gy, at.z)
+	var g := Vector3(at.x, world.island.height_at(at.x, at.z), at.z)
+	world.boss_shockwave(g, 34.0, 16.0, 18.0 * world.boss_mult())
+	world.fx.slam(g, clampf(size.y * 0.42, 8.0, 11.0) * 1.4)
+	world.fx._shake(g, 1.0, 60.0)
+	Sfx.play_at("boom", g, 8.0, 0.05, 0.6)
+	var again := bool(_act["again"])
+	_act = {}
+	if again:
+		var tp := _pick_target()
+		if not tp.is_empty():
+			_leap(int(tp["peer"]), tp["pos"], false)
+			return
+	world.arts.stun(self, 3.0)
+	_busy = 1.0
 
 
 # ------------------------------------------------------------------ 五个 Boss 的招式
@@ -781,9 +854,10 @@ func _art_spider(o: Vector3, t: Vector3, peer: int) -> void:
 
 func _art_titan(o: Vector3, t: Vector3, peer: int) -> void:
 	var A: BossArts = world.arts
-	var opts: Array = [["rocks", 2.5], ["charge", 2.5], ["quake", 2.0], ["fists", 2.5]]
+	var opts: Array = [["rocks", 2.5], ["charge", 2.5], ["quake", 2.0], ["fists", 2.5], ["stomp", 2.5]]
 	if phase == 2:
-		opts.append_array([["rockrain", 2.0], ["charge2", 2.0]])
+		opts.append_array([["rockrain", 2.0], ["charge2", 2.0], ["stomp2", 2.0]])
+	var gk := sqrt(_gk)
 	match _pick(opts):
 		"rocks":
 			# 三块石头，节奏不一样：躲完第一块别松劲
@@ -793,9 +867,13 @@ func _art_titan(o: Vector3, t: Vector3, peer: int) -> void:
 					world.boss_projectile("rock", _mouth() + Vector3(0, 1, 0), q, 1.1, 3.0, 26.0 * world.boss_mult()))
 			_busy = 2.0
 		"charge":
-			_lunge(o, t, 1.3, 26.0, 45.0, 7.0, 3.0)
+			_lunge(o, t, 1.3, 26.0, 45.0, 7.0 * gk, 3.0)
 		"charge2":
-			_lunge(o, t, 1.1, 30.0, 45.0, 7.0, 3.0, true)
+			_lunge(o, t, 1.1, 30.0, 45.0, 7.0 * gk, 3.0, true)
+		"stomp":
+			_leap(peer, t, false)
+		"stomp2":
+			_leap(peer, t, true)
 		"quake":
 			for i in 3:
 				_later(i * 0.8 + 0.05, func(): world.boss_shockwave(o, 36.0, 12.0, 24.0 * world.boss_mult()))
@@ -803,8 +881,8 @@ func _art_titan(o: Vector3, t: Vector3, peer: int) -> void:
 		"fists":
 			# 左右两拳：圈最后 0.4 秒才出来，看它抬手
 			var side := Vector3(t.z - o.z, 0, -(t.x - o.x)).normalized()
-			A.circle(t + side * 2.5, 5.0, 1.2, 40.0, "rock", true)
-			A.circle(t - side * 2.5, 5.0, 1.75, 40.0, "rock", true)
+			A.circle(t + side * 2.5 * gk, 5.0 * gk, 1.2, 40.0, "rock", true)
+			A.circle(t - side * 2.5 * gk, 5.0 * gk, 1.75, 40.0, "rock", true)
 			_busy = 2.1
 		"rockrain":
 			var pts: Array = []
@@ -872,6 +950,28 @@ func _art_whale(o: Vector3, t: Vector3, peer: int) -> void:
 			A.wall(t - dir * 38.0, dir, 42.0, 11.0, 70.0, randf_range(-18.0, 18.0), 8.0, 55.0, "water", 1.8)
 			_later(1.0, func(): A.chase(peer, 5, 0.5, 3.2, 0.8, 28.0, "water"))
 			_busy = 4.5
+
+
+## 巨猿跃击（朱厌，用户："超级大，跳起来踩到我一脚就掉很多血"）：
+## 蹲下蓄力 → 跳上高空、跟着人飘 → 地上出红圈锁定落点 → 砸下来：圈里掉一大半血，外面一圈冲击波（跳起来能躲）→ 露破绽。
+## 躲法：看它起跳就往外跑，或者落地那一瞬间翻滚（极限闪避）。again：二阶段落地马上再跳一次，第二次落地才露破绽
+const LEAP_CROUCH := 0.8         # 蹲下蓄力
+const LEAP_LOCK := 1.9           # 这时锁定落点、出红圈
+const LEAP_LAND := 3.2           # 这时砸到地上（红圈给 1.3 秒跑出去）
+const LEAP_DMG := 95.0           # 圈里挨一下（招式数，乘章节系数；第三章 55 级大约掉一半血）
+
+
+func _leap(peer: int, t: Vector3, again: bool) -> void:
+	_act = {"type": "leap", "t": 0.0, "peer": peer, "at": t, "from": head.global_position, "again": again}
+	_busy = 0.5
+	Sfx.play_at("boss_roar", head.global_position, 6.0, 0.05, 0.7)
+	if not _leap_hint:
+		_leap_hint = true
+		var msg := "它要跳起来踩人了——看地上的红圈跑出去，或者落地那一下翻滚！"
+		if peer == Net.my_id:
+			world.hud.toast(msg, Color(1.0, 0.75, 0.5), 3.0)
+		else:
+			Net.send(peer, "hint", [msg])
 
 
 func _target_by_peer(peer: int) -> Dictionary:
@@ -1002,7 +1102,7 @@ func _think_land(dt: float, speed_k: float) -> void:
 	match state:
 		"emerge":
 			# 从天上 / 树冠上落下来
-			head.global_position.y = move_toward(h.y, ground + off, 14.0 * dt)
+			head.global_position.y = move_toward(h.y, ground + off, 30.0 * dt)
 			if state_t > 1.5:
 				_set_state("idle")
 				world.boss_telegraph(Vector3(h.x, ground, h.z), size.x * 0.6 + 3.0, 0.1, 0.0, "slam", h)
@@ -1160,8 +1260,16 @@ func _update_visual(dt: float) -> void:
 	if dt > 0.0:
 		_speed = lerpf(_speed, p.distance_to(_last_pos) / dt, 1.0 - exp(-5.0 * dt))
 	_last_pos = p
-	var airborne := ai == "air" or state == "leap"
+	var airborne := ai == "air" or state == "leap" or str(_act.get("type", "")) == "leap"
 	BeastModels._animate_model(model, airborne, _speed, "fly" if ai == "air" else "run")
+	# 巨兽（朱厌）走路：每一步地面一震，近处镜头跟着晃
+	if ai == "land" and size.y > 16.0 and not airborne and _speed > 1.0 and _speed < 20.0:
+		_step_d += _speed * dt
+		if _step_d > size.y * 0.3:
+			_step_d = 0.0
+			var gp := Vector3(p.x, world.island.height_at(p.x, p.z), p.z)
+			world.fx._shake(gp, 0.14, 50.0)
+			Sfx.play_at("thud", gp, 4.0, 0.1, 0.45)
 	for b in parts:
 		b.global_transform = head.global_transform * Transform3D(Basis(), b.get_meta("offset") as Vector3)
 	# 灵环、光轮、光柱
