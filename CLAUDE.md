@@ -30,6 +30,8 @@
 | 枪没配件、没手感 | 全息 / 光学瞄具、夜光照门、激光、制退器、抛壳、新枪声、更狠的后坐；**用户还想要更好的枪感，下一轮继续** |
 | 在水上飘很怪 | 深水会沉，要游、要憋气，憋不住掉血；灵环落水沉底或冲上岸 |
 | Boss 太卡通 | 着色器流光 + 灵环 + 光轮 + 光柱 + 出场字幕 |
+| 手机上"很难射击、不合理"，要 **Mac 版**（很多朋友是 Mac 电脑） | 做了（见下面"Mac 版"一节）。手机版代码和 APK 还留着，但用户不再主推 |
+| 过场动画点屏幕跳不过；平板玩着玩着黑屏卡死 | 过场在 `_input` 里接点击（全屏控件会吃掉点击）；换地图 / 坐船 / 进游戏先盖"正在前往……"再建世界（`Main._loading_layer`）。黑屏卡死没查到确切原因，用户转去 Mac 了 |
 | 要手机版（朋友安卓、苹果都有） | 先做安卓：同一套代码加触屏操作 + 手机画质，CI 自动打 APK 一起发到 Releases；苹果版要苹果开发者账号（99 美元/年）才能发给朋友（TestFlight）；打包可以用 GitHub Actions 的 macOS 机器（用户不用买 Mac），但要在开发者后台建 App、证书 / 描述文件或 API Key 存进 GitHub Secrets。**还没做**，等用户有账号再说 |
 | 验证很费 token | 改完先打包、告诉用户怎么更新，**等用户说要验证再跑全流程**；只做语法检查和一两段短测 |
 | Boss 太卡通、要更好的素材 | 还没解决：需要写实的怪物模型，免费 CC0 里没有合适的，要用户提供 Sketchfab 账号 / 付费素材，或者接受现在的着色器方案 |
@@ -72,7 +74,7 @@
 
 - 仓库：`a1733719945-maker/Alu-Chen`，开发分支 `claude/douluo-multiplayer-game-lza8mi`（也是默认分支），**不要**建 PR，除非用户要求。
 - 每次推送，GitHub Actions（`.github/workflows/build.yml`）会：中继服务器测试 → 导入 → 单人全流程自动测试 → 联机测试 → 打包 Windows → 发到 Releases 的 `latest-claude-douluo-multiplayer-game-lza8mi`。
-- 下载页：https://github.com/a1733719945-maker/Alu-Chen/releases/tag/latest-claude-douluo-multiplayer-game-lza8mi （`DouluoHunter-Windows.zip` + 安卓 `CangxuHunter.apk`）
+- 下载页：https://github.com/a1733719945-maker/Alu-Chen/releases/tag/latest-claude-douluo-multiplayer-game-lza8mi （`DouluoHunter-Windows.zip` + Mac `CangxuHunter-Mac.zip` + 安卓 `CangxuHunter.apk`）
 - 联机服务器：Render 免费版 `https://douluo-relay.onrender.com`（2026-09-25 用户已部署，法兰克福，已验证 WebSocket 能连）。游戏默认连 `wss://douluo-relay.onrender.com`（`settings.gd` 的 `DEFAULT_SERVER`）。15 分钟没人会休眠，第一次连要等约 1 分钟。浏览器打开网址能看到房间数和在线人数。
 
 ## 版本历史
@@ -342,6 +344,18 @@
 - 本机导出安卓：SDK 在 `~/android-sdk`（cmdline-tools + build-tools 35 + platform-tools），导出模板要有 `android_release.apk`；编辑器设置 `export/android/android_sdk_path`；环境变量 `GODOT_ANDROID_KEYSTORE_RELEASE_PATH/USER/PASSWORD`。
 - 自动测试 `touch` 阶段：模拟手指（`InputEventScreenTouch/Drag`）测摇杆 + 冲刺、滑屏、开火、引魂索蓄力甩出、菜单 → 灵相 → 返回。截图：`xvfb-run ... --rendering-method mobile --resolution 1280x576 -- --autotest=shots --plan=touch,done --out=...`（20:9 手机比例 + 手机渲染器）。
 - 没有真机测过：性能、手感、按钮位置都要等用户和朋友试了反馈再调（`TouchControls._define_buttons` 里的位置和半径、`touch_look` 的 0.11°/像素、辅助瞄准强度）。
+
+## Mac 版（2026-09-28）
+
+- 导出预设 "macOS"（`export_presets.cfg` 的 preset.3）：通用二进制（Intel + M 芯片），包名 `com.aluchen.cangxu`，`codesign/codesign=1` = 引擎自带的 **ad-hoc 签名**（Linux 上就能签；M 芯片的 Mac 必须有签名才能跑），**没有苹果公证**（要 99 美元/年开发者账号）。
+  所以朋友第一次打开要到"系统设置 → 隐私与安全性 → 仍要打开"，或者终端 `xattr -cr 苍墟·猎灵.app`（说明在 `docs/Mac第一次打开.txt`，CI 塞进 zip 里）。
+- CI 在 Linux 机器上导出：模板 `macos.zip` 从官方 tpz 里解出来（缓存键 `…-win-linux-android-mac`），导出 zip 后追加说明文件，发布成 `CangxuHunter-Mac.zip`（约 215 MB，里面是 `苍墟·猎灵.app`）。本机只取 macos.zip 模板的办法：HTTP Range 分段读 tpz 的中央目录（会话里写过 `rz.py`）。
+- 通用二进制要求同时有 S3TC/BPTC 和 ETC2/ASTC 贴图（`import_etc2_astc=true` 已开）。Mac 上默认用 Metal（M 芯片）/ MoltenVK（Intel），Forward+。
+- Mac 专门处理（`settings.gd`）：
+  - 第一次启动默认中画质、3D 渲染比例按屏幕像素算到约 230 万像素（`mac_render_scale`，Retina 笔记本约 0.65），电脑上降分辨率用 FSR 放大；
+  - 窗口比屏幕大时缩到可用区域九成（`_fit_window`，13 寸 MacBook 放不下 1600×900）；
+  - **Godot 在 Mac 上把"按住 Ctrl + 左键"当成右键**，蹲原来只有 Ctrl（蹲着开枪会变开镜），现在 C 也是蹲（`crouch: [KEY_CTRL, KEY_C]`）；画板撤销 Cmd+Z 也行。
+- 没有真 Mac 测过：性能、全屏、触控板、Metal 下的画面都等朋友反馈。
 
 ## 技术概要
 

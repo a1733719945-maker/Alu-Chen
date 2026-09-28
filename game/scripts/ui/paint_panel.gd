@@ -508,7 +508,7 @@ func _input(e: InputEvent) -> void:
 		if k.keycode == KEY_ESCAPE:
 			_cancel()
 			get_viewport().set_input_as_handled()
-		elif k.keycode == KEY_Z and k.ctrl_pressed:
+		elif k.keycode == KEY_Z and (k.ctrl_pressed or k.meta_pressed):
 			_undo_step()
 			get_viewport().set_input_as_handled()
 

@@ -2,13 +2,14 @@
 
 第一人称联机猎灵游戏。玩法参考 How to Fish：用**引魂索**把灵兽拽上天，趁它在空中用**千机阁暗器**击杀。最多 8 人联机。
 
-用 [Godot 4.7.2](https://godotengine.org) 做，打包成 Windows 程序和安卓 APK（手机和电脑能一起联机）；联机走一台很小的中继服务器（`server/`，部署在 Render 免费版的法兰克福机房）。
+用 [Godot 4.7.2](https://godotengine.org) 做，打包成 Windows、Mac 程序和安卓 APK（都能一起联机）；联机走一台很小的中继服务器（`server/`，部署在 Render 免费版的法兰克福机房）。
 
 ## 下载试玩
 
 每次推送代码，GitHub Actions 会自动跑测试并打包 Windows 版和安卓版，发布在本仓库的 **Releases** 页面（`latest-<分支名>`）。
 
 - 电脑：下载 `DouluoHunter-Windows.zip`，解压后双击 `DouluoHunter.exe`。
+- Mac：下载 `CangxuHunter-Mac.zip`，解压后把“苍墟·猎灵”拖进应用程序（Intel 和 M 芯片通用）。没有苹果公证，第一次打开要到“系统设置 → 隐私与安全性”点“仍要打开”，见 [docs/Mac第一次打开.txt](docs/Mac第一次打开.txt)。
 - 安卓手机：用手机浏览器下载 `CangxuHunter.apk` 安装（要允许"安装未知应用"）。触屏操作：左手浮动摇杆，右手滑屏转视角，右下一圈按钮。
 
 详细说明见 [docs/玩家说明.txt](docs/玩家说明.txt)。

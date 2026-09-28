@@ -108,7 +108,15 @@ func _on_connected(_code: String) -> void:
 			Profile.stats["prologue"] = 1
 			Profile.mark_dirty()
 			await play_prologue()
+		var layer: CanvasLayer = null
+		if not Data.autotest:
+			var ch: Dictionary = Data.CHAPTERS.get(Profile.chapter, {})
+			layer = _loading_layer("正在进入%s……" % str(ch.get("name", "")))
+			await get_tree().process_frame
+			await get_tree().process_frame
 		_start_world(Profile.chapter, false)
+		if layer:
+			layer.queue_free()
 		if Net.is_online():
 			world.hud.toast("已进入房间 %s。按 Esc 可以看到房间码，发给朋友就能加入" % Net.room_code, Color(1, 0.9, 0.6), 7.0)
 	else:
@@ -157,6 +165,28 @@ func _start_world(chapter: int, announce: bool, hunt := {}) -> void:
 		Net.send(0, "hello", world.hello_payload(true))
 
 
+## 换地图时盖在最上面的"正在前往……"（建地图时画面不动，至少让人知道在加载）
+func _loading_layer(text: String) -> CanvasLayer:
+	var layer := CanvasLayer.new()
+	layer.layer = 100
+	add_child(layer)
+	var bg := ColorRect.new()
+	bg.color = Color(0.02, 0.03, 0.05, 0.94)
+	UiKit.fill(bg)
+	layer.add_child(bg)
+	var l := UiKit.title(text, 40, UiKit.GOLD)
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	UiKit.fill(l)
+	layer.add_child(l)
+	var sub := UiKit.label("手机 / 平板上要十几秒，别关游戏", 18, UiKit.MIST)
+	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	UiKit.place(sub, Vector4(0.5, 0.5, 0.5, 0.5), Vector4(-400, 40, 400, 80))
+	sub.visible = Settings.is_mobile()
+	layer.add_child(sub)
+	return layer
+
+
 ## 去猎场 / 从猎场回岛：同一章换一张图（不播开船动画）
 func _change_map(chapter: int, hunt: Dictionary) -> void:
 	if Data.autotest:
@@ -176,18 +206,7 @@ func _change_map(chapter: int, hunt: Dictionary) -> void:
 		hv.title = "猎场 · %s%s王" % [Data.age_name(int(hunt.get("age", 0))), Data.BEASTS[sp]["name"]] if Data.BEASTS.has(sp) else "猎场 · 灵兽王"
 		add_child(hv)
 		await hv.finished
-	var layer := CanvasLayer.new()
-	layer.layer = 100
-	add_child(layer)
-	var bg := ColorRect.new()
-	bg.color = Color(0.02, 0.03, 0.05, 0.94)
-	UiKit.fill(bg)
-	layer.add_child(bg)
-	var l := UiKit.title("正在前往猎场……" if not hunt.is_empty() else "正在回岛……", 40, UiKit.GOLD)
-	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	UiKit.fill(l)
-	layer.add_child(l)
+	var layer := _loading_layer("正在前往猎场……" if not hunt.is_empty() else "正在回岛……")
 	await get_tree().process_frame
 	await get_tree().process_frame
 	_start_world(chapter, true, hunt)
@@ -216,8 +235,13 @@ func _travel(chapter: int) -> void:
 	v.captions = [[1.4, 7.4, str(Data.CHAPTERS[chapter].get("story", ""))]]
 	add_child(v)
 	await v.finished
+	# 建新岛要一会儿（平板上十几秒）：先盖"正在前往"，画出来了再建，不然画面停在最后一帧像黑屏卡死
+	var layer := _loading_layer("正在前往%s……" % Data.CHAPTERS[chapter]["name"])
+	await get_tree().process_frame
+	await get_tree().process_frame
 	_sailing = false
 	_start_world(chapter, true)
+	layer.queue_free()
 	var q := _queue.duplicate()
 	_queue.clear()
 	for m in q:

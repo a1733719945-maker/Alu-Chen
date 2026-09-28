@@ -43,14 +43,45 @@ func _ready() -> void:
 		quality = 0
 		render_scale = 0.75
 		max_fps = 60
+	elif is_mac():
+		# Mac：Retina 屏像素是普通屏的 2~4 倍，默认中画质，3D 画面按屏幕降到约 1920×1200 再放大
+		quality = 1
+		render_scale = mac_render_scale()
 	_register_inputs()
 	load_settings()
 	apply()
+	_fit_window.call_deferred()
 
 
 ## 是不是手机 / 平板（导出的安卓、苹果版）
 func is_mobile() -> bool:
 	return OS.has_feature("mobile") or OS.has_feature("android") or OS.has_feature("ios")
+
+
+func is_mac() -> bool:
+	return OS.get_name() == "macOS"
+
+
+## Mac 默认的 3D 渲染比例：3D 画面大约 230 万像素（Retina 笔记本约 0.65，外接 1080p 屏是 1）
+func mac_render_scale() -> float:
+	if DisplayServer.get_name() == "headless":
+		return 1.0
+	var sz := DisplayServer.screen_get_size()
+	return snappedf(clampf(sqrt(2.3e6 / maxf(float(sz.x * sz.y), 1.0)), 0.5, 1.0), 0.05)
+
+
+## 窗口比屏幕大（13 寸 MacBook 放不下 1600×900 的窗口）：缩到屏幕可用区域的九成，居中
+func _fit_window() -> void:
+	if DisplayServer.get_name() == "headless" or fullscreen:
+		return
+	var area := DisplayServer.screen_get_usable_rect()
+	var sz := DisplayServer.window_get_size()
+	if area.size.x <= 0 or (sz.x <= area.size.x and sz.y <= area.size.y):
+		return
+	var k := minf(area.size.x * 0.92 / sz.x, area.size.y * 0.88 / sz.y)
+	var ns := Vector2i(int(sz.x * k), int(sz.y * k))
+	DisplayServer.window_set_size(ns)
+	DisplayServer.window_set_position(area.position + (area.size - ns) / 2)
 
 
 ## 现在用不用触屏操作
@@ -74,7 +105,7 @@ func _register_inputs() -> void:
 		"move_right": [KEY_D, KEY_RIGHT],
 		"jump": [KEY_SPACE],
 		"sprint": [KEY_SHIFT],
-		"crouch": [KEY_CTRL],
+		"crouch": [KEY_CTRL, KEY_C],   # Mac 上按住 Ctrl 点鼠标会变成右键，所以 C 也能蹲
 		"lure": [KEY_G],
 		"interact": [KEY_F],
 		"reload": [KEY_R],
@@ -200,7 +231,8 @@ func apply() -> void:
 		vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA if quality == 0 else Viewport.SCREEN_SPACE_AA_DISABLED
 		RenderingServer.directional_shadow_atlas_set_size([2048, 4096, 4096][quality], true)
 		# 3D 画面按比例渲染再放大（手机上省很多），界面还是原分辨率
-		vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
+		# 电脑上降分辨率用 FSR（放大后更清楚），手机用最省的双线性
+		vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR if is_mobile() or render_scale > 0.99 else Viewport.SCALING_3D_MODE_FSR
 		vp.scaling_3d_scale = render_scale
 		if is_mobile():
 			vp.msaa_3d = Viewport.MSAA_DISABLED

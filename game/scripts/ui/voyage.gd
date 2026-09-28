@@ -6,7 +6,7 @@ extends CanvasLayer
 ##   ascend.ogv   飞升结局 → 九重天 → 轮回
 ##   dungeon.ogv  进洞天秘境（叠秘境名字）
 ##   hunt.ogv     去猎场（叠猎物名字）
-## 字幕（captions）也可以叠在视频上：[[开始秒, 结束秒, 文字], ...]。按 Esc / 空格跳过。
+## 字幕（captions）也可以叠在视频上：[[开始秒, 结束秒, 文字], ...]。按 Esc / 空格 / 点屏幕 / 点鼠标跳过。
 
 signal finished
 
@@ -102,11 +102,17 @@ func _process(dt: float) -> void:
 		_finish()
 
 
-func _unhandled_input(event: InputEvent) -> void:
-	var tap := event is InputEventScreenTouch and (event as InputEventScreenTouch).pressed
-	if event.is_action_pressed("pause") or event.is_action_pressed("jump") or tap:
+## 用 _input（比界面控件先收到）：全屏的黑底 / 视频控件会把手指点击吃掉，放在 _unhandled_input 里手机上永远收不到
+func _input(event: InputEvent) -> void:
+	if _done:
+		return
+	var tap := (event is InputEventScreenTouch and (event as InputEventScreenTouch).pressed) \
+		or (event is InputEventMouseButton and (event as InputEventMouseButton).pressed)
+	if tap or event.is_action_pressed("pause") or event.is_action_pressed("jump"):
 		get_viewport().set_input_as_handled()
-		_finish()
+		# 刚开始 0.4 秒不算（上一下点击的余波别直接把过场跳了）
+		if _t > 0.4:
+			_finish()
 
 
 func _finish() -> void:

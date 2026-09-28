@@ -42,7 +42,7 @@ jobs:
           path: |
             ~/godot
             ~/.local/share/godot/export_templates
-          key: godot-${{ env.GODOT_VERSION }}-win-linux-android
+          key: godot-${{ env.GODOT_VERSION }}-win-linux-android-mac
 
       - name: 下载 Godot
         if: steps.cache-godot.outputs.cache-hit != 'true'
@@ -57,7 +57,8 @@ jobs:
           unzip -q -j t.tpz templates/version.txt \
             templates/windows_release_x86_64.exe templates/windows_debug_x86_64.exe \
             templates/linux_release.x86_64 templates/linux_debug.x86_64 \
-            templates/android_release.apk templates/android_debug.apk -d "$T"
+            templates/android_release.apk templates/android_debug.apk \
+            templates/macos.zip -d "$T"
           rm t.tpz
 
       - name: 导入资源
@@ -107,6 +108,21 @@ jobs:
           test -s build/android/CangxuHunter.apk
           ls -la build/android
 
+      - name: 打包 Mac 版（Intel + M 芯片通用，免费的 ad-hoc 签名，没有苹果公证）
+        run: |
+          mkdir -p build/mac
+          ~/godot/godot --headless --path game --export-release "macOS" ../build/mac/CangxuHunter.zip
+          test -s build/mac/CangxuHunter.zip
+          cp docs/Mac第一次打开.txt build/mac/
+          cd build/mac && zip -q CangxuHunter.zip Mac第一次打开.txt && mv CangxuHunter.zip ../CangxuHunter-Mac.zip
+          unzip -l ../CangxuHunter-Mac.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CangxuHunter-Mac
+          path: build/CangxuHunter-Mac.zip
+          retention-days: 14
+
       - uses: actions/upload-artifact@v4
         with:
           name: DouluoHunter-Windows
@@ -125,15 +141,19 @@ jobs:
         run: |
           tag="latest-${GITHUB_REF_NAME//\//-}"
           gh release delete "$tag" --cleanup-tag -y || true
-          gh release create "$tag" build/DouluoHunter-Windows.zip build/android/CangxuHunter.apk \
+          gh release create "$tag" build/DouluoHunter-Windows.zip build/CangxuHunter-Mac.zip build/android/CangxuHunter.apk \
             --prerelease --target "$GITHUB_SHA" \
-            --title "斗罗大陆·猎魂 测试版（${GITHUB_SHA::7}）" \
+            --title "苍墟·猎灵 测试版（${GITHUB_SHA::7}）" \
             --notes "电脑：下载下面的 DouluoHunter-Windows.zip，解压后双击 DouluoHunter.exe。
           第一次运行时 Windows 可能提示“已保护你的电脑”：点“更多信息”→“仍要运行”。
 
+          Mac：下载 CangxuHunter-Mac.zip，双击解压，把“苍墟·猎灵”拖进“应用程序”。Intel 和 M 芯片都能用（macOS 11 以上）。
+          第一次打开被拦住（“无法验证开发者”）：系统设置 → 隐私与安全性 → 拉到最下面点“仍要打开”。
+          提示“已损坏”：打开终端，输入 xattr -cr 加一个空格，把 app 拖进去，回车，再打开。详细见 zip 里的“Mac第一次打开.txt”。
+
           安卓手机：用手机浏览器打开这个页面，下载 CangxuHunter.apk，点开安装。
           第一次会提示“不允许安装未知来源的应用”：按提示允许浏览器（或文件管理器）安装应用，再点安装。
-          以后更新直接下载新的 APK 覆盖安装，存档不会丢。手机和电脑可以一起联机。
+          以后更新直接下载新的 APK 覆盖安装，存档不会丢。Windows、Mac、手机可以一起联机。
           联机：一个人点“创建联机房间”，按 Esc 看房间码，发给朋友；朋友在主菜单输入房间码加入。
 
           分支：${GITHUB_REF_NAME}，提交：${GITHUB_SHA}"
