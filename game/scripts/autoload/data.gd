@@ -1474,6 +1474,23 @@ const REF_KIT := {1: ["xiujian", 10, 2], 2: ["zhuge", 30, 3], 3: ["kongque", 50,
 const HP_SHOTS := [3.0, 4.0, 5.0, 7.0, 10.0]
 const HP_TTK := [0.5, 0.8, 1.2, 1.7, 2.4]
 const HP_FOLLOW := 0.75
+## 装饰（用户："船和帐篷、补给站可以弄得更豪华，玩家可以再花钱增加装饰"）：暗器铺「装饰」页买，买了可以摆上 / 收起。
+## 联机时所有人摆上的都会出现（谁买的都一起热闹）。where：dock 码头 / boat 船 / shop 暗器铺 / camp 猎场营地
+const DECOR := {
+	"lanterns": {"name": "红灯笼长廊", "where": "dock", "price": 800, "color": Color(1.0, 0.35, 0.2), "desc": "码头两边一路挂满红灯笼，晚上最好看"},
+	"pearls": {"name": "夜明珠灯柱", "where": "dock", "price": 2000, "color": Color(0.6, 0.9, 1.0), "desc": "码头入口两根石柱，顶上托着发光的夜明珠"},
+	"banners": {"name": "五色旌旗", "where": "dock", "price": 1800, "color": Color(0.95, 0.75, 0.3), "desc": "码头上岸的地方插一排五色长旗，风一吹就飘"},
+	"koi": {"name": "锦鲤", "where": "dock", "price": 3000, "color": Color(1.0, 0.55, 0.25), "desc": "码头边的水里多了一群发光的锦鲤，围着桩子游"},
+	"paifang": {"name": "苍墟牌坊", "where": "dock", "price": 8000, "color": Color(0.9, 0.2, 0.15), "desc": "码头入口立一座三开间的红柱牌坊，匾上两个金字：苍墟"},
+	"sail": {"name": "锦帆", "where": "boat", "price": 2500, "color": Color(0.85, 0.15, 0.12), "desc": "乌篷船竖起桅杆，挂一面绣金边的大红帆"},
+	"dragon": {"name": "龙首船头", "where": "boat", "price": 5000, "color": Color(1.0, 0.8, 0.3), "desc": "船头装一只金色的龙首，眼睛会发光"},
+	"lions": {"name": "镇门石狮", "where": "shop", "price": 3500, "color": Color(0.8, 0.78, 0.72), "desc": "暗器铺门口蹲一对石狮子，脚踩绣球"},
+	"censer": {"name": "青铜香炉", "where": "shop", "price": 1200, "color": Color(0.55, 0.75, 0.55), "desc": "暗器铺 / 营地补给前一座三足青铜鼎，一直冒青烟"},
+	"tiger": {"name": "虎皮大帐", "where": "camp", "price": 6000, "color": Color(0.95, 0.6, 0.2), "desc": "猎场营地的帐篷换成将军大帐：虎纹顶、旗杆、火盆"},
+}
+const DECOR_ORDER := ["lanterns", "banners", "pearls", "koi", "paifang", "sail", "dragon", "censer", "lions", "tiger"]
+
+
 ## 暗器升星（用户："把武器做成可以像 2KOL2 那样升星突破的，加入 gamble 的乐趣"）：
 ##   0 → 10 星，每颗 +STAR_DMG 伤害；成功率一颗比一颗低（STAR_RATE），失败攒祝福值（下次 +5%，成功清零）；
 ##   3 / 6 / 9 星是突破（要王魄，光的颜色变：灵光蓝 / 紫电 / 金身，额外伤害），突破过的不会再掉回去；

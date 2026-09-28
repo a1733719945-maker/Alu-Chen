@@ -6,7 +6,7 @@ extends ColorRect
 
 signal closed
 
-const TABS := [["weapons", "暗器"], ["attach", "配件"], ["upgrades", "升级"], ["stars", "升星"], ["enchant", "附魔"], ["items", "道具 · 鱼饵"], ["looks", "外观"]]
+const TABS := [["weapons", "暗器"], ["attach", "配件"], ["upgrades", "升级"], ["stars", "升星"], ["enchant", "附魔"], ["items", "道具 · 鱼饵"], ["looks", "外观"], ["decor", "装饰"]]
 
 var world: Node
 var _tab := "weapons"
@@ -99,6 +99,8 @@ func refresh() -> void:
 					_item_row(id)
 		"looks":
 			_looks_tab()
+		"decor":
+			_decor_tab()
 
 
 func _row(accent := Color(0, 0, 0, 0)) -> HBoxContainer:
@@ -410,6 +412,71 @@ func _star_reveal(id: String, res: Dictionary) -> void:
 			for k in 6:
 				tw.tween_property(_star_card, "position:x", _star_card.position.x + (8.0 if k % 2 == 0 else -8.0), 0.04)
 			tw.tween_property(_star_card, "position:x", _star_card.position.x, 0.04)
+
+
+# ------------------------------------------------------------------ 装饰：码头、船、暗器铺、营地（Decor）
+
+func _decor_tab() -> void:
+	_list.add_child(UiKit.section("装饰码头、渡船、暗器铺和猎场营地；联机时队友买的也会摆出来", UiKit.GOLD))
+	var where_name := {"dock": "码头", "boat": "渡船", "shop": "暗器铺", "camp": "猎场营地"}
+	var grid := GridContainer.new()
+	grid.columns = 2
+	grid.add_theme_constant_override("h_separation", 12)
+	grid.add_theme_constant_override("v_separation", 12)
+	_list.add_child(grid)
+	for id in Data.DECOR_ORDER:
+		var d: Dictionary = Data.DECOR[id]
+		var owned := Profile.decor.has(id)
+		var on := owned and bool(Profile.decor[id])
+		var card := PanelContainer.new()
+		card.add_theme_stylebox_override("panel", UiKit.card_style(d["color"] if on else Color(0, 0, 0, 0)))
+		card.custom_minimum_size = Vector2(610, 0)
+		grid.add_child(card)
+		var h := HBoxContainer.new()
+		h.add_theme_constant_override("separation", 14)
+		card.add_child(h)
+		var sw := ColorRect.new()
+		sw.color = d["color"]
+		sw.custom_minimum_size = Vector2(10, 64)
+		h.add_child(sw)
+		var v := VBoxContainer.new()
+		v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		v.add_theme_constant_override("separation", 3)
+		h.add_child(v)
+		var top := HBoxContainer.new()
+		top.add_theme_constant_override("separation", 10)
+		v.add_child(top)
+		top.add_child(UiKit.bold(str(d["name"]), 20, UiKit.MOON))
+		top.add_child(UiKit.chip(str(where_name.get(str(d["where"]), "")), UiKit.MIST, 12))
+		if on:
+			top.add_child(UiKit.chip("摆着", UiKit.JADE, 12))
+		var dl := UiKit.label(str(d["desc"]), 14, UiKit.MIST)
+		dl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		v.add_child(dl)
+		var did := str(id)
+		if owned:
+			var b := UiKit.button("收起" if on else "摆上", 17, not on)
+			b.custom_minimum_size.x = 120
+			b.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+			b.pressed.connect(func():
+				Profile.toggle_decor(did)
+				Sfx.play("switch", -4.0)
+				world.decor.refresh()
+				world._broadcast_prog()
+				refresh())
+			h.add_child(b)
+		else:
+			var b2 := _price_button(int(d["price"]))
+			b2.custom_minimum_size.x = 120
+			b2.pressed.connect(func():
+				if Profile.buy_decor(did):
+					Sfx.play("coin", -2.0)
+					Sfx.play("level_up", -8.0, 0.0, 1.3)
+					world.hud.toast("摆上了【%s】" % Data.DECOR[did]["name"], Data.DECOR[did]["color"])
+					world.decor.refresh()
+					world._broadcast_prog()
+				refresh())
+			h.add_child(b2)
 
 
 func _enchant_tab() -> void:

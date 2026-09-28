@@ -62,6 +62,7 @@ func _ready() -> void:
 			_plan.insert(_plan.find("shop") + 1, "guns2")
 			_plan.insert(_plan.find("guns2") + 1, "pills")
 			_plan.insert(_plan.find("pills") + 1, "stars")
+			_plan.insert(_plan.find("stars") + 1, "decor")
 		"shots":
 			_shots = true
 			_shots_dir = str(args.get("out", "user://shots"))
@@ -287,6 +288,10 @@ func _process(dt: float) -> void:
 			_run_dungeon()
 		"stars":
 			_run_stars()
+		"decor":
+			_run_decor()
+		"decorshot":
+			_run_decorshot()
 		"siege":
 			_run_siege()
 		"musou":
@@ -4295,3 +4300,95 @@ func _run_stars() -> void:
 			_note("暗器铺点升星：★%d → ★%d" % [int(_mem["s0"]), Profile.star_of(id)])
 			w.hud.close_panels()
 			_next_phase()
+
+
+# ------------------------------------------------------------------ 装饰
+
+func _run_decor() -> void:
+	var w := _ready_world()
+	if not w:
+		return
+	match _step:
+		0:
+			Profile.money += 100000
+			var n0 := w.decor.get_child_count()
+			for id in Data.DECOR_ORDER:
+				if not Profile.decor.has(id) and not _check(Profile.buy_decor(id), "买不了装饰 %s" % id):
+					return
+			w.decor.refresh()
+			var live: Node3D = w.decor._live
+			if not _check(live != null and live.get_child_count() > 20, "买了装饰没摆出来（%d 个零件）" % (live.get_child_count() if live else 0)):
+				return
+			_mem["n"] = live.get_child_count()
+			# 收起一样：少掉一些零件
+			Profile.toggle_decor("paifang")
+			w.decor.refresh()
+			_next(1)
+		1:
+			var live2: Node3D = w.decor._live
+			if not _check(live2.get_child_count() < int(_mem["n"]), "收起牌坊没少东西"):
+				return
+			Profile.toggle_decor("paifang")
+			w.decor.refresh()
+			# 暗器铺装饰页能打开
+			w.hud.open_shop()
+			var sp: ShopPanel = w.hud._shop
+			sp._tab = "decor"
+			sp.refresh()
+			_note("装饰：%d 样都摆上了（%d 个零件），收起 / 摆上都行" % [Data.DECOR.size(), int(_mem["n"])])
+			_next(2)
+		2:
+			if _step_t < 0.3:
+				return
+			w.hud.close_panels()
+			_next_phase()
+
+
+## 截图：码头装饰（要开窗口）
+func _run_decorshot() -> void:
+	var w := _ready_world()
+	if not w:
+		return
+	var p := w.player
+	match _step:
+		0:
+			Profile.money += 100000
+			for id in Data.DECOR_ORDER:
+				if not Profile.decor.has(id):
+					Profile.buy_decor(id)
+			w.decor.refresh()
+			var isl := w.island
+			var a: Vector3 = isl.dock_start
+			var e: Vector3 = isl.dock_end
+			var dir := Vector3(e.x - a.x, 0, e.z - a.z).normalized()
+			var st := a - dir * 16.0
+			st.y = isl.height_at(st.x, st.z) + 0.3
+			p.teleport(st)
+			_aim(p, a + dir * 6.0 + Vector3(0, 2.5, 0))
+			_next(1)
+		1:
+			p.hp = 99999.0
+			if _step_t > 2.0 and not _mem.has("d1"):
+				_mem["d1"] = true
+				await _shot("decor_dock")
+			elif _step_t > 2.5 and not _mem.has("d2"):
+				_mem["d2"] = true
+				var bp: Vector3 = w.builder.boat_pos
+				var e2: Vector3 = w.island.dock_end
+				p.teleport(Vector3(e2.x - 1.0, w.island.dock_y + 0.3, e2.z - 6.0))
+				_aim(p, bp + Vector3(0, 2.0, 0))
+			elif _step_t > 4.5 and not _mem.has("d3"):
+				_mem["d3"] = true
+				await _shot("decor_boat")
+			elif _step_t > 5.0 and not _mem.has("d4"):
+				_mem["d4"] = true
+				var xf := Transform3D(Basis(Vector3.UP, w.island.shop_yaw), w.island.shop_pos)
+				var sp := xf * Vector3(0, 0, 12.0)
+				sp.y = w.island.height_at(sp.x, sp.z) + 0.3
+				p.teleport(sp)
+				_aim(p, xf * Vector3(0, 2.0, 0))
+			elif _step_t > 7.0 and not _mem.has("d5"):
+				_mem["d5"] = true
+				await _shot("decor_shop")
+			elif _step_t > 7.5:
+				_next_phase()

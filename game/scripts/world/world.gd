@@ -34,6 +34,7 @@ var combo: Combo                  # 猎灵连击 + 灵相真身（world/combo.gd
 var hunt: Hunt                    # 猎灵榜的猎物、踪迹、吸收灵环时的护法（world/hunt.gd）
 var dungeon: Dungeon              # 秘境（world/dungeon.gd）
 var trial: Trial                  # 试炼：尸潮守关 / 万兽割草（world/trial.gd）
+var decor: Decor                  # 码头、船、暗器铺、营地的装饰（world/decor.gd）
 var hunting := {}                 # 在猎场里：{"species", "age", "seed", "by"}（空 = 在岛上）
 var trip: HuntTrip                # 猎场里的这次猎灵（world/hunt_trip.gd）
 var arts: BossArts                # Boss 的招式零件（world/boss_arts.gd）
@@ -191,6 +192,9 @@ func _ready() -> void:
 	peer_info[Net.my_id] = _my_info()
 	Net.peer_left.connect(_on_peer_left)
 	Profile.changed.connect(_on_profile_changed)
+	decor = Decor.new()
+	decor.world = self
+	add_child(decor)
 	Sfx.play_ambient("ambient", -16.0)
 	capture_mouse(true)
 	_last_prog = [Profile.level, Profile.rings.size()]
@@ -236,7 +240,7 @@ func _exit_tree() -> void:
 
 func _my_info() -> Dictionary:
 	var o := Profile.output()
-	return {"name": Settings.display_name(), "wuhun": Settings.wuhun, "level": Profile.level, "rings": _ring_summary(), "outfit": Profile.outfit, "skin": Profile.skin, "out": [o.x, o.y], "skins": Profile.skin_of.duplicate()}
+	return {"name": Settings.display_name(), "wuhun": Settings.wuhun, "level": Profile.level, "rings": _ring_summary(), "outfit": Profile.outfit, "skin": Profile.skin, "out": [o.x, o.y], "skins": Profile.skin_of.duplicate(), "decor": Profile.decor_on()}
 
 
 ## 队伍里最强的输出（灵兽血量下限按它算）
@@ -2544,7 +2548,7 @@ func _on_quest_done(msg: Array) -> void:
 func _broadcast_prog() -> void:
 	peer_info[Net.my_id] = _my_info()
 	var o := Profile.output()
-	var p := [Profile.level, _ring_summary(), Profile.outfit, Profile.skin, [snappedf(o.x, 0.1), snappedf(o.y, 0.1)], Profile.skin_of.duplicate()]
+	var p := [Profile.level, _ring_summary(), Profile.outfit, Profile.skin, [snappedf(o.x, 0.1), snappedf(o.y, 0.1)], Profile.skin_of.duplicate(), Profile.decor_on()]
 	if p == _last_prog:
 		return
 	_last_prog = p
@@ -3335,6 +3339,8 @@ func _on_peer_left(id: int) -> void:
 		remotes[id].queue_free()
 		remotes.erase(id)
 	peer_info.erase(id)
+	if decor:
+		decor.refresh.call_deferred()
 	if Net.is_host():
 		_host_check_quest.call_deferred()   # 人数变了，任务量跟着变
 		if not _boat_ready.is_empty():
@@ -3344,6 +3350,8 @@ func _on_peer_left(id: int) -> void:
 func _add_remote(id: int, info: Dictionary) -> void:
 	var is_new := not peer_info.has(id)
 	peer_info[id] = info
+	if decor:
+		decor.refresh.call_deferred()
 	if is_new and Net.is_host():
 		_host_check_quest.call_deferred()
 	if remotes.has(id):
@@ -3360,12 +3368,12 @@ func _add_remote(id: int, info: Dictionary) -> void:
 
 func hello_payload(want_reply: bool) -> Array:
 	var o := Profile.output()
-	return [Settings.display_name(), Settings.wuhun, want_reply, Profile.level, _ring_summary(), Profile.outfit, Profile.skin, [o.x, o.y], Profile.skin_of.duplicate()]
+	return [Settings.display_name(), Settings.wuhun, want_reply, Profile.level, _ring_summary(), Profile.outfit, Profile.skin, [o.x, o.y], Profile.skin_of.duplicate(), Profile.decor_on()]
 
 
 func _info_from_hello(d: Array) -> Dictionary:
 	return {"name": str(d[0]), "wuhun": int(d[1]), "level": int(d[3]) if d.size() > 3 else 1, "rings": d[4] if d.size() > 4 else [],
-		"outfit": str(d[5]) if d.size() > 5 else "default", "skin": str(d[6]) if d.size() > 6 else "default", "out": d[7] if d.size() > 7 else [], "skins": d[8] if d.size() > 8 else {}}
+		"outfit": str(d[5]) if d.size() > 5 else "default", "skin": str(d[6]) if d.size() > 6 else "default", "out": d[7] if d.size() > 7 else [], "skins": d[8] if d.size() > 8 else {}, "decor": d[9] if d.size() > 9 else []}
 
 
 ## 联机消息都从 Main 转到这里（Main 会先缓存世界还没建好时收到的消息）
@@ -3391,6 +3399,10 @@ func on_message(from: int, type: String, data: Variant) -> void:
 					peer_info[from]["out"] = d[4]
 				if d.size() > 5:
 					peer_info[from]["skins"] = d[5]
+				if d.size() > 6:
+					peer_info[from]["decor"] = d[6]
+					if decor:
+						decor.refresh()
 				if remotes.has(from):
 					remotes[from].set_info(peer_info[from])
 			if Net.is_host():

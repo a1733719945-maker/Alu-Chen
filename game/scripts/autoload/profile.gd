@@ -44,6 +44,7 @@ var materials := {}                 # 王魄：灵兽 -> 个数（打灵兽王�
 var enchant := {}                   # 暗器 -> 附魔 id（Data.ENCHANTS）
 var stars := {}                     # 暗器 -> 星数（升星，Data.STAR_*）
 var star_bless := {}                # 暗器 -> 失败攒下的祝福（每次 +5% 成功率，成功清零）
+var decor := {}                     # 装饰 id -> 摆没摆上（买了就有这个键）
 var chapter := 1
 var quest := 0              # 当前章节的任务进度
 var quest_count := 0        # 当前任务的计数（击杀数等）
@@ -124,6 +125,7 @@ func load_profile() -> void:
 	materials = d.get("materials", {})
 	enchant = d.get("enchant", {})
 	stars = d.get("stars", {})
+	decor = d.get("decor", {})
 	star_bless = d.get("star_bless", {})
 	skin = str(d.get("skin", "default"))
 	outfit = str(d.get("outfit", "default"))
@@ -181,7 +183,7 @@ func save_profile() -> void:
 		"version": VERSION, "money": money, "xp": xp, "level": level, "weapons": weapons,
 		"upgrades": upgrades, "items": items, "rings": rings, "bones": bones, "equipped": equipped, "bag": bag, "food": food, "bait": bait, "bounties": bounties, "skins": skins, "skin": skin, "outfits": outfits, "outfit": outfit, "codex": codex,
 		"skin_of": skin_of, "charms": charms, "charm_of": charm_of, "mastery": mastery, "paint": paint,
-		"skill_slots": skill_slots, "ring_hole": ring_hole, "attach_owned": attach_owned, "attach_on": attach_on, "stats": stats, "achieved": achieved, "god": god, "max_chapter": max_chapter, "rebirth": rebirth, "boss_tier": boss_tier, "materials": materials, "enchant": enchant, "stars": stars, "star_bless": star_bless,
+		"skill_slots": skill_slots, "ring_hole": ring_hole, "attach_owned": attach_owned, "attach_on": attach_on, "stats": stats, "achieved": achieved, "god": god, "max_chapter": max_chapter, "rebirth": rebirth, "boss_tier": boss_tier, "materials": materials, "enchant": enchant, "stars": stars, "star_bless": star_bless, "decor": decor,
 		"chapter": chapter, "quest": quest, "quest_count": quest_count, "kills": kills, "loadout": loadout,
 	}
 	var f := FileAccess.open(path, FileAccess.WRITE)
@@ -267,7 +269,7 @@ func do_rebirth() -> bool:
 		return false
 	var keep := {"skins": skins, "skin": skin, "outfits": outfits, "outfit": outfit, "achieved": achieved, "stats": stats,
 		"codex": codex, "attach_owned": attach_owned, "money": money / 10, "rebirth": rebirth + 1,
-		"skin_of": skin_of, "charms": charms, "charm_of": charm_of, "mastery": mastery, "paint": paint, "stars": stars, "star_bless": star_bless}
+		"skin_of": skin_of, "charms": charms, "charm_of": charm_of, "mastery": mastery, "paint": paint, "stars": stars, "star_bless": star_bless, "decor": decor}
 	_defaults()
 	for k in keep:
 		set(k, keep[k])
@@ -314,6 +316,7 @@ func _defaults() -> void:
 	enchant = {}
 	stars = {}
 	star_bless = {}
+	decor = {}
 	chapter = 1
 	quest = 0
 	quest_count = 0
@@ -527,6 +530,32 @@ func weapon_stats(id: String) -> Dictionary:
 		if d.has("splash_dmg"):
 			d["splash_dmg"] = float(d["splash_dmg"]) * sk
 	return d
+
+
+# ------------------------------------------------------------------ 装饰
+
+func decor_on() -> Array:
+	var out: Array = []
+	for k in decor:
+		if bool(decor[k]):
+			out.append(str(k))
+	return out
+
+
+func buy_decor(id: String) -> bool:
+	if decor.has(id) or not Data.DECOR.has(id) or money < int(Data.DECOR[id]["price"]):
+		return false
+	spend(int(Data.DECOR[id]["price"]))
+	decor[id] = true
+	mark_dirty()
+	changed.emit()
+	return true
+
+
+func toggle_decor(id: String) -> void:
+	if decor.has(id):
+		decor[id] = not bool(decor[id])
+		mark_dirty()
 
 
 # ------------------------------------------------------------------ 升星（赌一把）
