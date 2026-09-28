@@ -10,7 +10,7 @@ var _cam: Camera3D
 var _player: Node               # 用来震镜头（Player.trauma）
 var _shells: Array = []
 var _quad: QuadMesh             # 粒子和闪光用的 1×1 方片
-var _plane: PlaneMesh           # 躺平的 1×1 方片（冲击环、魂环）
+var _plane: PlaneMesh           # 躺平的 1×1 方片（冲击环、灵环）
 var _ball: SphereMesh           # 火球、热浪
 var _c_shrink: Curve
 var _c_grow: Curve
@@ -523,7 +523,7 @@ func impact_world(pos: Vector3, normal: Vector3) -> void:
 	_sparks(pos, normal, Color(1.0, 0.75, 0.4), 3, 4.0, 0.18, 0.03, -9.0, 50.0, 4.0)
 
 
-## 打到魂兽：颜色的星芒一闪 + 拉长的火花 + 几颗光点；爆头更大，还有一圈光
+## 打到灵兽：颜色的星芒一闪 + 拉长的火花 + 几颗光点；爆头更大，还有一圈光
 func impact_beast(pos: Vector3, normal: Vector3, color: Color, headshot: bool) -> void:
 	var c := Color(color.r, color.g, color.b, 1.0)
 	_flash(pos, c.lerp(Color.WHITE, 0.35), 0.8 if headshot else 0.45, 0.08)
@@ -548,7 +548,7 @@ func dirt_puff(pos: Vector3) -> void:
 	_bits(pos, Vector3.UP, Color(0.45, 0.35, 0.25), 8, 4.0, 0.07)
 
 
-## 魂兽死亡：星芒一闪、魂力碎片炸开、光点慢慢往上飘，脚下的魂环扩散消失；年份越高越大
+## 灵兽死亡：星芒一闪、灵力碎片炸开、光点慢慢往上飘，脚下的灵环扩散消失；年份越高越大
 func death_burst(pos: Vector3, color: Color, age: int) -> void:
 	var c := Color(color.r, color.g, color.b, 1.0)
 	if c.get_luminance() < 0.2:
@@ -595,7 +595,7 @@ func poof(pos: Vector3) -> void:
 	_glows(pos, Vector3.UP, Color(1, 1, 1), 6, 2.0, 0.6, 0.2, 0.5)
 
 
-# ------------------------------------------------------------------ 箭插在树上 / 地上 / 魂兽身上
+# ------------------------------------------------------------------ 箭插在树上 / 地上 / 灵兽身上
 
 var _arrows: Array = []
 
@@ -614,7 +614,7 @@ func stick_arrow(pos: Vector3, dir: Vector3, on: Node3D) -> void:
 		var old: Variant = _arrows.pop_front()
 		if is_instance_valid(old):
 			(old as Node).queue_free()
-	# 箭可能插在魂兽身上，魂兽先没了箭也跟着没了：用弱引用，别抓着已经释放的节点
+	# 箭可能插在灵兽身上，灵兽先没了箭也跟着没了：用弱引用，别抓着已经释放的节点
 	var wr: WeakRef = weakref(a)
 	_after(12.0, func():
 		var n: Node = wr.get_ref()
@@ -622,13 +622,13 @@ func stick_arrow(pos: Vector3, dir: Vector3, on: Node3D) -> void:
 			n.queue_free())
 
 
-# ------------------------------------------------------------------ 魂环
+# ------------------------------------------------------------------ 灵环
 
 func _ring_glow(color: Color) -> Color:
 	return Color(0.8, 0.08, 0.12) if color.get_luminance() < 0.2 else color
 
 
-## 地上掉落的魂环：两圈转着的魂环（大的贴地、小的在上面反着转）+ 冲天的光柱 + 往上飘的光点 + 灯
+## 地上掉落的灵环：两圈转着的灵环（大的贴地、小的在上面反着转）+ 冲天的光柱 + 往上飘的光点 + 灯
 func soul_ring(pos: Vector3, color: Color) -> Node3D:
 	var n := Node3D.new()
 	add_child(n)
@@ -687,7 +687,7 @@ func soul_ring(pos: Vector3, color: Color) -> Node3D:
 	return n
 
 
-## 吸收魂环：脚下法阵、光柱罩住玩家、魂环从头顶慢慢落下、光点往身上聚
+## 吸收灵环：脚下法阵、光柱罩住玩家、灵环从头顶慢慢落下、光点往身上聚
 func absorb(target: Node3D, color: Color) -> void:
 	var pos := target.global_position
 	var glow := _ring_glow(color)
@@ -738,7 +738,7 @@ func absorb(target: Node3D, color: Color) -> void:
 	_light(pos + Vector3.UP, glow, 4.0, 10.0, 2.6)
 
 
-# ------------------------------------------------------------------ Boss 和魂兽的攻击
+# ------------------------------------------------------------------ Boss 和灵兽的攻击
 
 ## 飞过来的东西：毒液（绿色火球 + 滴下来的毒）、蛛网团、石头（带尘土拖尾）
 func hazard_ball(kind: String, color: Color) -> Node3D:
@@ -887,7 +887,7 @@ func web_burst(pos: Vector3) -> void:
 	_smoke(pos + Vector3.UP * 0.5, Color(0.95, 0.95, 1.0, 0.5), 6, 2.0, 1.0, 1.2, 0.0)
 
 
-# ------------------------------------------------------------------ 佛怒唐莲
+# ------------------------------------------------------------------ 九转雷莲
 
 func lotus() -> Node3D:
 	var n := Node3D.new()
@@ -1038,7 +1038,7 @@ func shockwave(center: Vector3, radius: float, color: Color) -> void:
 	_distort(g + Vector3.UP * 0.5, radius, 0.35, 0.025)
 
 
-# ------------------------------------------------------------------ 魂技：藤蔓、法阵、漩涡、光束、光环
+# ------------------------------------------------------------------ 神通：藤蔓、法阵、漩涡、光束、光环
 
 ## 藤蔓：从地里钻出来的弯曲藤条（四节越来越细、带刺），脚下法阵，飘叶子
 func vines(center: Vector3, radius: float, color: Color, count := 14) -> void:
@@ -1078,7 +1078,7 @@ func vines(center: Vector3, radius: float, color: Color, count := 14) -> void:
 	sigil(center, radius, color)
 
 
-## 法阵：地上一个转着的魂力法阵，亮一下慢慢淡掉，外圈往上飘光点
+## 法阵：地上一个转着的灵力法阵，亮一下慢慢淡掉，外圈往上飘光点
 func sigil(center: Vector3, radius: float, color: Color) -> void:
 	var c := Color(color.r, color.g, color.b, 1.0)
 	var gy := _ground_y(center)
@@ -1207,7 +1207,7 @@ func trail(from: Vector3, to: Vector3, color: Color) -> void:
 	_glows(to, (from - to).normalized(), color, 4, 1.0, 0.35, 0.2, 0.0, 20.0)
 
 
-# ------------------------------------------------------------------ 成长的"爽感"：升级、魂环突破、高阶魂技的额外层次
+# ------------------------------------------------------------------ 成长的"爽感"：升级、灵环突破、高阶神通的额外层次
 
 ## 从地面往上飘的光点（环形发射）+ 几道往上的光条
 func _rise(pos: Vector3, color: Color, amount: int, radius: float, speed: float, life: float, size := 1.6) -> void:
@@ -1242,7 +1242,7 @@ func _rise(pos: Vector3, color: Color, amount: int, radius: float, speed: float,
 
 
 ## 一根从天上打下来的光柱：先细后粗，再收成一条线消失。里面一根白芯，脚下一闪。
-## 镜头在光柱里面的话（自己身上的魂环突破、魂技）：光柱从头顶上方开始，不然整个屏幕都是白的
+## 镜头在光柱里面的话（自己身上的灵环突破、神通）：光柱从头顶上方开始，不然整个屏幕都是白的
 func _pillar(pos: Vector3, color: Color, radius: float, height: float, dur: float) -> void:
 	var c := Color(color.r, color.g, color.b, 1.0)
 	var base := pos
@@ -1301,7 +1301,7 @@ func level_up_burst(pos: Vector3, rings: int) -> void:
 	_ground_ring(Vector3(pos.x, _ground_y(pos), pos.z), gold, 5.0 + rings * 0.4, 0.6, 3.0)
 
 
-## 魂环突破（大爽）：天上打下光柱，脚下大法阵，身上所有魂环一个接一个升起来，最后一圈冲击波把附近照亮
+## 灵环突破（大爽）：天上打下光柱，脚下大法阵，身上所有灵环一个接一个升起来，最后一圈冲击波把附近照亮
 func ring_breakthrough(pos: Vector3, color: Color, rings: int) -> void:
 	var c := _ring_glow(color)
 	var g := Vector3(pos.x, _ground_y(pos), pos.z)
@@ -1319,7 +1319,7 @@ func ring_breakthrough(pos: Vector3, color: Color, rings: int) -> void:
 		_shake(pos, 0.4, 20.0))
 
 
-## 高阶魂技的额外层次：tier 0~1 普通，2~3 加法阵和光点，4 加光柱，5（万年）黑红魂火，6（神技）金色神光
+## 高阶神通的额外层次：tier 0~1 普通，2~3 加法阵和光点，4 加光柱，5（万年）黑红魂火，6（神技）金色神光
 func skill_flourish(center: Vector3, color: Color, tier: int, radius: float) -> void:
 	if tier >= 2:
 		sigil(center, maxf(radius, 3.0), color)
@@ -1343,7 +1343,7 @@ func skill_flourish(center: Vector3, color: Color, tier: int, radius: float) -> 
 		_after(0.45, func(): shockwave(center, maxf(radius, 5.0) * 1.6, holy))
 
 
-# ------------------------------------------------------------------ 新魂技的特效：召唤魂灵、环绕、连锁、黑洞、领域、陨石、神技法相
+# ------------------------------------------------------------------ 新神通的特效：召唤魂灵、环绕、连锁、黑洞、领域、陨石、神技法相
 
 ## 魂灵的材质：轮廓亮、里面流光的半透明光体
 func _spirit_mat(color: Color, energy := 2.2) -> Material:
@@ -1886,7 +1886,7 @@ func _ground_grow(n: Node3D, dur: float) -> void:
 	tw.tween_method(func(s: float): _ground_size(n, s), full * 0.1, full, dur).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 
-## 雨类魂技的每一波：一颗火流星拖着火尾和烟从天上砸下来
+## 雨类神通的每一波：一颗火流星拖着火尾和烟从天上砸下来
 func meteor_strike(center: Vector3, radius: float, color: Color) -> void:
 	var c := Color(color.r, color.g, color.b, 1.0)
 	var from := center + Vector3(randf_range(-6, 6), 30.0, randf_range(-6, 6))
@@ -1922,7 +1922,7 @@ func meteor_strike(center: Vector3, radius: float, color: Color) -> void:
 		explosion(center + Vector3.UP * 0.5, radius * 0.6, color))
 
 
-## 神技：天上显现巨大的武魂法相（武魂原画做成圆形光盘），四周光柱冲天
+## 神技：天上显现巨大的灵相法相（灵相原画做成圆形光盘），四周光柱冲天
 const SHEN_SHADER := """shader_type spatial;
 render_mode unshaded, blend_add, depth_draw_never, cull_disabled, shadows_disabled, fog_disabled;
 uniform sampler2D art : source_color, filter_linear;
@@ -1983,7 +1983,7 @@ func shen_manifest(pos: Vector3, wuhun: int, color: Color) -> void:
 	_ring_rise(pos, color, 14.0, 0.2, 10.0, 2.0)
 
 
-## 武魂附体 / 附魔时每一发命中的小特效
+## 灵相附体 / 附魔时每一发命中的小特效
 func empower_hit(kind: String, pos: Vector3, color: Color) -> void:
 	match kind:
 		"explode":
@@ -2006,7 +2006,7 @@ func empower_hit(kind: String, pos: Vector3, color: Color) -> void:
 			_sparks(pos, Vector3.UP, color, 14, 5.0, 0.5, 0.06, 0.0, 180.0)
 
 
-## 武魂真身：脚下一圈转着的魂环、全身往上冒光焰、一盏灯，跟着人 dur 秒
+## 灵相真身：脚下一圈转着的灵环、全身往上冒光焰、一盏灯，跟着人 dur 秒
 func true_body_aura(target: Node3D, dur: float, color: Color) -> void:
 	if target == null or not is_instance_valid(target):
 		return

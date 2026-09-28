@@ -1,7 +1,7 @@
-// 斗罗大陆·猎魂 —— 联机中继服务器
+// 苍墟·猎灵 —— 联机中继服务器
 //
 // 服务器只做一件事：把同一个房间里各个玩家的数据包转发给彼此。
-// 游戏逻辑（魂兽、伤害、金魂币）都在房主的电脑上算，这里不参与。
+// 游戏逻辑（灵兽、伤害、灵石）都在房主的电脑上算，这里不参与。
 //
 // 连接：   wss://<host>/?mode=host&v=<协议版本>&name=<名字>[&room=<指定房间码>]
 //          wss://<host>/?mode=join&v=<协议版本>&name=<名字>&room=<房间码>
@@ -37,7 +37,7 @@ function sendJson(ws, obj) {
 
 function cleanName(s) {
   s = String(s || '').replace(/[\u0000-\u001f<>]/g, '').trim();
-  return s.slice(0, 12) || '魂师';
+  return s.slice(0, 12) || '修士';
 }
 
 const server = http.createServer((req, res) => {
@@ -49,7 +49,7 @@ const server = http.createServer((req, res) => {
   res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8' });
   let peers = 0;
   for (const r of rooms.values()) peers += r.peers.size;
-  res.end(`斗罗大陆·猎魂 联机服务器\n房间 ${rooms.size} 个，在线 ${peers} 人\n`);
+  res.end(`苍墟·猎灵 联机服务器\n房间 ${rooms.size} 个，在线 ${peers} 人\n`);
 });
 
 const wss = new WebSocketServer({ server, maxPayload: MAX_MSG });

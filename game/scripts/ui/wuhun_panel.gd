@@ -1,6 +1,6 @@
 class_name WuhunPanel
 extends ColorRect
-## 武魂面板（K）：左边武魂立绘和属性、猎魂录；中间十个魂环（装到 Q / E / F）；右边六块魂骨。
+## 灵相面板（K）：左边灵相立绘和属性、猎灵录；中间十个灵环（装到 Q / E / F）；右边六块灵骨。
 ## 样子：全屏毛玻璃，像角色面板。
 
 signal closed
@@ -19,7 +19,7 @@ func _ready() -> void:
 	v.custom_minimum_size = Vector2(1340, 800)
 	v.add_theme_constant_override("separation", 14)
 	center.add_child(v)
-	v.add_child(UiKit.panel_head("魂师", "武魂 · 魂环 · 魂骨", "K / Esc", func(): closed.emit()))
+	v.add_child(UiKit.panel_head("修士", "灵相 · 灵环 · 灵骨", "K / Esc", func(): closed.emit()))
 	_body = HBoxContainer.new()
 	_body.add_theme_constant_override("separation", 26)
 	_body.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -81,16 +81,16 @@ func _left() -> void:
 	st.add_theme_constant_override("separation", 16)
 	left.add_child(st)
 	st.add_child(_stat("体力", "%d" % int(Profile.max_hp()), Color(1.0, 0.5, 0.45)))
-	st.add_child(_stat("魂力", "%d" % int(Profile.max_soul()), Color(0.55, 0.72, 1.0)))
-	# 护体：等级（每级 0.4%）+ 魂骨的减伤
+	st.add_child(_stat("灵力", "%d" % int(Profile.max_soul()), Color(0.55, 0.72, 1.0)))
+	# 护体：等级（每级 0.4%）+ 灵骨的减伤
 	st.add_child(_stat("护体", "%d%%" % roundi(minf(Data.level_armor(Profile.level) + Profile.bone_bonus("dr"), 0.8) * 100.0), Color(0.6, 0.9, 0.75)))
-	st.add_child(_stat("魂环", "%d / %d" % [Profile.rings.size(), Data.MAX_RINGS], UiKit.GOLD))
+	st.add_child(_stat("灵环", "%d / %d" % [Profile.rings.size(), Data.MAX_RINGS], UiKit.GOLD))
 	if Profile.at_bottleneck():
-		var b := UiKit.chip("瓶颈 · 吸收第%s魂环才能继续升级" % Data.RING_NAMES[mini(Profile.rings.size(), Data.RING_NAMES.size() - 1)], UiKit.GOLD, 13)
+		var b := UiKit.chip("瓶颈 · 吸收第%s灵环才能继续升级" % Data.RING_NAMES[mini(Profile.next_ring_index(), Data.RING_NAMES.size() - 1)], UiKit.GOLD, 13)
 		left.add_child(b)
-	# 猎魂录：这张图每种魂兽三颗星
+	# 猎灵录：这张图每种灵兽三颗星
 	var stars := Profile.codex_stars()
-	left.add_child(UiKit.section("猎魂录  ★%d" % stars, UiKit.GOLD))
+	left.add_child(UiKit.section("猎灵录  ★%d" % stars, UiKit.GOLD))
 	var tip := UiKit.label("体力 +%d · 伤害 +%.1f%%。★ 杀 5 只 · ★★ 杀带词缀的 · ★★★ 杀千年或王；本图集齐送专属皮肤" % [stars * 2, stars * 0.5], 12, UiKit.MIST)
 	tip.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	tip.custom_minimum_size.x = 300
@@ -119,7 +119,7 @@ func _stat(name: String, value: String, color: Color) -> VBoxContainer:
 	return v
 
 
-## 中间：十个魂环。有的：魂技名、说明、Q / E / F 三个键（点了就装到那个键）
+## 中间：十个灵环。有的：神通名、说明、Q / E / F 三个键（点了就装到那个键）
 func _middle() -> void:
 	var mid := VBoxContainer.new()
 	mid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -128,10 +128,10 @@ func _middle() -> void:
 	var head := HBoxContainer.new()
 	head.add_theme_constant_override("separation", 12)
 	mid.add_child(head)
-	var sec := UiKit.section("魂环 · 魂技", UiKit.GOLD)
+	var sec := UiKit.section("灵环 · 神通", UiKit.GOLD)
 	sec.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	head.add_child(sec)
-	head.add_child(UiKit.label("点 Q / E / F 把魂技装到那个键上", 13, UiKit.MIST))
+	head.add_child(UiKit.label("点 Q / E / F 把神通装到那个键上", 13, UiKit.MIST))
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -140,9 +140,12 @@ func _middle() -> void:
 	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	list.add_theme_constant_override("separation", 6)
 	scroll.add_child(list)
+	var hole := Profile.ring_hole
 	for i in Data.MAX_RINGS:
-		var have := i < Profile.rings.size()
-		var age: int = int(Profile.rings[i]["age"]) if have else int(Data.RING_MIN_AGE[i])
+		# 第 i 个位置对应的灵环（散魂丹散掉的位置空着，后面的往前挪了一格）
+		var ri := i if (hole < 0 or i < hole) else i - 1
+		var have := i != hole and ri < Profile.rings.size()
+		var age: int = int(Profile.rings[ri]["age"]) if have else int(Data.RING_MIN_AGE[i])
 		var glow: Color = Data.AGES[age]["glow"]
 		var row := PanelContainer.new()
 		var st := UiKit.row_style(glow if have else Color(1, 1, 1, 0.08))
@@ -161,22 +164,22 @@ func _middle() -> void:
 		rv.add_theme_constant_override("separation", 2)
 		rh.add_child(rv)
 		if have:
-			var r: Dictionary = Profile.rings[i]
+			var r: Dictionary = Profile.rings[ri]
 			var s: Dictionary = Data.SKILLS[r["skill"]]
-			rv.add_child(UiKit.kicker("第%s魂环 · %s · %s" % [Data.RING_NAMES[i], Data.age_name(age), Data.BEASTS.get(r["beast"], {"name": "?"})["name"]], glow, 12))
+			rv.add_child(UiKit.kicker("第%s灵环 · %s · %s" % [Data.RING_NAMES[i], Data.age_name(age), Data.BEASTS.get(r["beast"], {"name": "?"})["name"]], glow, 12))
 			var top := HBoxContainer.new()
 			top.add_theme_constant_override("separation", 10)
 			rv.add_child(top)
 			top.add_child(UiKit.title(str(s["name"]), 24, UiKit.GOLD))
-			top.add_child(UiKit.chip("魂力 %d" % int(s["cost"]), Color(0.55, 0.72, 1.0), 12))
+			top.add_child(UiKit.chip("灵力 %d" % int(s["cost"]), Color(0.55, 0.72, 1.0), 12))
 			top.add_child(UiKit.chip("冷却 %d 秒" % int(s["cd"]), UiKit.MIST, 12))
 			var d := UiKit.label(str(s["desc"]), 14, Color(0.85, 0.88, 0.92))
 			d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			rv.add_child(d)
-			var ring_i := i
+			var ring_i := ri
 			for k in Data.SKILL_SLOTS:
 				var key: String = ["Q", "E", "F"][k]
-				var on := int(Profile.skill_slots[k]) == i
+				var on := int(Profile.skill_slots[k]) == ri
 				var b := UiKit.button(key, 18, on)
 				b.custom_minimum_size = Vector2(44, 44)
 				b.size_flags_vertical = Control.SIZE_SHRINK_CENTER
@@ -187,19 +190,52 @@ func _middle() -> void:
 					Sfx.play("switch", -4.0)
 					open())
 				rh.add_child(b)
+			# 散魂丹：散掉这个灵环（点一下变成"确定？"，再点才散）
+			var sb := UiKit.button("散", 16, false)
+			sb.custom_minimum_size = Vector2(52, 44)
+			sb.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+			sb.tooltip_text = "用一颗散魂丹散掉这个灵环（有 %d 颗）" % Profile.item_count("scatter_pill")
+			sb.modulate = Color(1.0, 0.6, 0.55) if Profile.item_count("scatter_pill") > 0 else Color(1, 1, 1, 0.35)
+			sb.pressed.connect(func():
+				if Profile.item_count("scatter_pill") <= 0:
+					_toast("要一颗散魂丹（暗器铺 → 道具）")
+					return
+				if sb.text != "确定？":
+					sb.text = "确定？"
+					return
+				var why := Profile.remove_ring(ring_i)
+				if why != "":
+					_toast(why)
+					return
+				Sfx.play("absorb", -2.0, 0.0, 0.6)
+				_toast("第%s灵环散掉了——按 L 挑一只灵兽，猎来补上这个位置" % Data.RING_NAMES[ring_i])
+				var wld: Node = get_tree().get_first_node_in_group("world")
+				if wld and wld.has_method("rings_changed"):
+					wld.rings_changed()
+				open())
+			rh.add_child(sb)
+		elif i == hole:
+			rv.add_child(UiKit.kicker("第%s灵环 · 散掉了 · 至少%s" % [Data.RING_NAMES[i], Data.age_name(Data.RING_MIN_AGE[i])], Color(1.0, 0.6, 0.55), 12))
+			rv.add_child(UiKit.label("按 L 看猎灵榜，猎一只补上这个位置（下一个吸收的灵环就是它）", 13, UiKit.MOON))
 		else:
-			rv.add_child(UiKit.kicker("第%s魂环 · %d 级 · 至少%s" % [Data.RING_NAMES[i], (i + 1) * 10, Data.age_name(Data.RING_MIN_AGE[i])], UiKit.DIM, 12))
-			rv.add_child(UiKit.label("按 L 看猎魂榜：挑哪只魂兽就学哪个魂技，年份越高越强", 13, UiKit.DIM))
+			rv.add_child(UiKit.kicker("第%s灵环 · %d 级 · 至少%s" % [Data.RING_NAMES[i], (i + 1) * 10, Data.age_name(Data.RING_MIN_AGE[i])], UiKit.DIM, 12))
+			rv.add_child(UiKit.label("按 L 看猎灵榜：挑哪只灵兽就学哪个神通，年份越高越强", 13, UiKit.DIM))
 
 
-## 右边：六个部位的魂骨 + 背包里的
+func _toast(t: String) -> void:
+	var wld: Node = get_tree().get_first_node_in_group("world")
+	if wld:
+		wld.hud.toast(t, Color(1.0, 0.8, 0.6), 3.0)
+
+
+## 右边：六个部位的灵骨 + 背包里的
 func _right() -> void:
 	var right := VBoxContainer.new()
 	right.custom_minimum_size.x = 340
 	right.add_theme_constant_override("separation", 8)
 	_body.add_child(right)
-	right.add_child(UiKit.section("魂骨", UiKit.GOLD))
-	var hint := UiKit.label("魂骨兽（金光）必掉，千年魂兽和 Boss 也会掉。按 T 能丢给队友或卖掉", 12, UiKit.MIST)
+	right.add_child(UiKit.section("灵骨", UiKit.GOLD))
+	var hint := UiKit.label("灵骨兽（金光）必掉，千年灵兽和 Boss 也会掉。按 T 能丢给队友或卖掉", 12, UiKit.MIST)
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	hint.custom_minimum_size.x = 340
 	right.add_child(hint)
@@ -233,7 +269,7 @@ func _right() -> void:
 	var spare: Array = Profile.bones.filter(func(b): return not Profile.is_equipped(str(b)))
 	if spare.is_empty():
 		return
-	right.add_child(UiKit.section("背包里的魂骨", UiKit.MIST))
+	right.add_child(UiKit.section("背包里的灵骨", UiKit.MIST))
 	var scroll := ScrollContainer.new()
 	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED

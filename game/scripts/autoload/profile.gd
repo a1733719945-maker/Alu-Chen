@@ -1,11 +1,11 @@
 extends Node
-## 个人存档：金魂币、魂力等级、魂环、魂技、暗器和升级、道具、魂骨、章节进度。
+## 个人存档：灵石、灵力等级、灵环、神通、暗器和升级、道具、灵骨、章节进度。
 ## 存在自己电脑上（user://profile.json）。联机时每个人用自己的存档，房主的存档决定当前章节。
 
 signal changed
 
 var path := "user://profile.json"   # 自动测试会换成别的文件，不碰玩家的存档
-const VERSION := 4          # 3：没有清单任务了（旧存档的任务进度清零），100 级，魂技槽，配件；4：第十一版每章前面多了"通关秘境、修炼到 N 级"两个任务
+const VERSION := 4          # 3：没有清单任务了（旧存档的任务进度清零），100 级，神通槽，配件；4：第十一版每章前面多了"通关秘境、修炼到 N 级"两个任务
 
 var money := 0
 var xp := 0
@@ -14,13 +14,13 @@ var weapons: Array = ["xiujian"]
 var upgrades := {}          # 暗器 id -> {"dmg": 0, "mag": 0, "reload": 0, "stab": 0}
 var items := {"grenade": 2, "pill": 1}
 var rings: Array = []       # [{"age": int, "skill": String, "beast": String}]
-var bones: Array = []        # 拥有的魂骨 "id@年份"（包括装上的）
+var bones: Array = []        # 拥有的灵骨 "id@年份"（包括装上的）
 var equipped := {}           # 部位 -> "id@年份"
 var bag := {}                # （旧版素材，已不用）
 var food := 100.0            # 饱食度
 var bait := "grass"          # 当前鱼饵
 var bounties: Array = []     # 悬赏 [{"ch", "species", "age", "affix", "reward"}]
-var skins: Array = ["default"]      # 拥有的暗器皮肤（买的、Boss、猎魂录；熟练度皮肤和自己画的不在这里）
+var skins: Array = ["default"]      # 拥有的暗器皮肤（买的、Boss、猎灵录；熟练度皮肤和自己画的不在这里）
 var skin := "default"               # 没单独设过的暗器穿这个
 var skin_of := {}                   # 暗器 -> 皮肤（第十二版：每把暗器可以穿不同的皮肤）
 var charms: Array = []              # 买过的挂件
@@ -29,17 +29,18 @@ var mastery := {}                   # 暗器 -> 熟练度经验
 var paint := {}                     # 暗器 -> {"finish": 颜料质感}（图存在 user://paint/）
 var outfits: Array = ["default"]    # 拥有的装扮
 var outfit := "default"
-var codex := {}                     # 猎魂录：魂兽 -> {"k": 杀了几只, "s": 星星（位：1 杀 5 只 / 2 带词缀 / 4 千年或精英）}
-var skill_slots: Array = [-1, -1, -1]   # Q / E / F 三个魂技槽装的是第几个魂环的魂技（-1 空）
+var codex := {}                     # 猎灵录：灵兽 -> {"k": 杀了几只, "s": 星星（位：1 杀 5 只 / 2 带词缀 / 4 千年或精英）}
+var skill_slots: Array = [-1, -1, -1]   # Q / E / F 三个神通槽装的是第几个灵环的神通（-1 空）
+var ring_hole := -1                  # 用散魂丹散掉的灵环位置（下一个吸收的补在这里），-1 = 没有
 var attach_owned := {}              # 暗器 -> [买过的配件]
 var attach_on := {}                 # 暗器 -> {部位: 配件}
 var stats := {}                     # 成就用的计数
 var achieved := {}                  # 已完成的成就 id -> true
-var god := false                    # 成神了（通关）
+var god := false                    # 飞升了（通关）
 var max_chapter := 1                # 去过的最远一章（渡船能回以前的岛）
-var rebirth := 0                    # 转生了几次（成神以后可以转生，换武魂从头再来，永久变强，魂兽也更凶）
+var rebirth := 0                    # 转生了几次（飞升以后可以转生，换灵相从头再来，永久变强，灵兽也更凶）
 var boss_tier := {}                 # 每个 Boss 打赢了几次：再召唤就是"二重、三重"，血更厚、奖励更高
-var materials := {}                 # 王魂：魂兽 -> 个数（打魂兽王掉，给暗器附魔用）
+var materials := {}                 # 王魄：灵兽 -> 个数（打灵兽王掉，给暗器附魔用）
 var enchant := {}                   # 暗器 -> 附魔 id（Data.ENCHANTS）
 var chapter := 1
 var quest := 0              # 当前章节的任务进度
@@ -76,6 +77,10 @@ func load_profile() -> void:
 	weapons = d.get("weapons", ["xiujian"])
 	upgrades = d.get("upgrades", {})
 	items = d.get("items", {"grenade": 2, "pill": 1})
+	# 烤肉去掉了：旧存档里的烤肉按收购价折成灵石
+	if int(items.get("meat", 0)) > 0:
+		money += int(items["meat"]) * int(Data.SELL_ITEMS.get("meat", 12))
+	items.erase("meat")
 	rings = d.get("rings", [])
 	bones = d.get("bones", [])
 	bones = bones.filter(func(b): return Data.BONES.has(Data.bone_id(str(b))))
@@ -104,6 +109,9 @@ func load_profile() -> void:
 	skill_slots = d.get("skill_slots", [-1, -1, -1])
 	while skill_slots.size() < 3:
 		skill_slots.append(-1)
+	ring_hole = int(d.get("ring_hole", -1))
+	if ring_hole > rings.size():
+		ring_hole = -1
 	attach_owned = d.get("attach_owned", {})
 	attach_on = d.get("attach_on", {})
 	stats = d.get("stats", {})
@@ -169,7 +177,7 @@ func save_profile() -> void:
 		"version": VERSION, "money": money, "xp": xp, "level": level, "weapons": weapons,
 		"upgrades": upgrades, "items": items, "rings": rings, "bones": bones, "equipped": equipped, "bag": bag, "food": food, "bait": bait, "bounties": bounties, "skins": skins, "skin": skin, "outfits": outfits, "outfit": outfit, "codex": codex,
 		"skin_of": skin_of, "charms": charms, "charm_of": charm_of, "mastery": mastery, "paint": paint,
-		"skill_slots": skill_slots, "attach_owned": attach_owned, "attach_on": attach_on, "stats": stats, "achieved": achieved, "god": god, "max_chapter": max_chapter, "rebirth": rebirth, "boss_tier": boss_tier, "materials": materials, "enchant": enchant,
+		"skill_slots": skill_slots, "ring_hole": ring_hole, "attach_owned": attach_owned, "attach_on": attach_on, "stats": stats, "achieved": achieved, "god": god, "max_chapter": max_chapter, "rebirth": rebirth, "boss_tier": boss_tier, "materials": materials, "enchant": enchant,
 		"chapter": chapter, "quest": quest, "quest_count": quest_count, "kills": kills, "loadout": loadout,
 	}
 	var f := FileAccess.open(path, FileAccess.WRITE)
@@ -219,8 +227,8 @@ func reset() -> void:
 	changed.emit()
 
 
-## 转生：成神以后从 1 级、第一章重新来（可以换武魂，魂技全新），
-## 留下：外观、成就、猎魂录、配件、一成金魂币；每转一次：自己伤害 / 体力 +25%，魂兽血量 / 伤害 +30%
+## 转生：飞升以后从 1 级、第一章重新来（可以换灵相，神通全新），
+## 留下：外观、成就、猎灵录、配件、一成灵石；每转一次：自己伤害 / 体力 +25%，灵兽血量 / 伤害 +30%
 func rebirth_power() -> float:
 	return 1.0 + 0.25 * rebirth
 
@@ -268,6 +276,7 @@ func _defaults() -> void:
 	paint = {}
 	codex = {}
 	skill_slots = [-1, -1, -1]
+	ring_hole = -1
 	attach_owned = {}
 	attach_on = {}
 	stats = {}
@@ -293,7 +302,7 @@ func _fix_loadout() -> void:
 	loadout = order
 
 
-# ------------------------------------------------------------------ 金魂币
+# ------------------------------------------------------------------ 灵石
 
 func add_money(n: int) -> void:
 	money += n
@@ -383,7 +392,7 @@ func toggle_attach(w: String, a: String) -> void:
 	mark_dirty()
 
 
-## 把第 ring 个魂环的魂技装到第 k 个键（Q/E/F）；已经装在别的键上就两个键互换
+## 把第 ring 个灵环的神通装到第 k 个键（Q/E/F）；已经装在别的键上就两个键互换
 func set_skill_slot(k: int, ring: int) -> void:
 	var old := int(skill_slots[k])
 	for j in skill_slots.size():
@@ -393,14 +402,14 @@ func set_skill_slot(k: int, ring: int) -> void:
 	mark_dirty()
 
 
-# ------------------------------------------------------------------ 王魂和附魔
+# ------------------------------------------------------------------ 王魄和附魔
 
 func add_material(species: String, n := 1) -> void:
 	materials[species] = int(materials.get(species, 0)) + n
 	mark_dirty()
 
 
-## 这个附魔能用的王魂一共有几个
+## 这个附魔能用的王魄一共有几个
 func enchant_mats(eid: String) -> int:
 	var t := 0
 	for sp in Data.ENCHANTS[eid]["mats"]:
@@ -465,7 +474,7 @@ func buy_upgrade(id: String, key: String) -> bool:
 func weapon_stats(id: String) -> Dictionary:
 	var d := Data.weapon_stats(id, upgrades.get(id, {}))
 	d = Data.apply_attach(d, attach_on.get(id, {}))
-	# 魂骨：爆头加成、伤害加成
+	# 灵骨：爆头加成、伤害加成
 	d["headshot"] = d["headshot"] * (1.0 + bone_bonus("headshot"))
 	d["damage"] = d["damage"] * (1.0 + bone_bonus("dmg") + codex_stars() * 0.005)
 	var rk := 1.0 / (1.0 + bone_bonus("reload"))
@@ -516,7 +525,7 @@ func skin_for(w: String) -> String:
 	return s if owns_skin(w, s) else ("default" if not owns_skin(w, skin) else skin)
 
 
-## 这把暗器能不能穿这款皮肤：买的 / Boss / 猎魂录是所有暗器通用；熟练度皮肤看这把的熟练度；自己画的要先画
+## 这把暗器能不能穿这款皮肤：买的 / Boss / 猎灵录是所有暗器通用；熟练度皮肤看这把的熟练度；自己画的要先画
 func owns_skin(w: String, id: String) -> bool:
 	var d: Dictionary = Data.GUN_SKINS.get(id, {})
 	if d.is_empty():
@@ -592,10 +601,10 @@ func use_item(id: String) -> bool:
 	return true
 
 
-# ------------------------------------------------------------------ 等级与魂环
+# ------------------------------------------------------------------ 等级与灵环
 
 func level_cap() -> int:
-	# 每 10 级要一个魂环才能突破
+	# 每 10 级要一个灵环才能突破
 	return mini((rings.size() + 1) * 10, Data.MAX_LEVEL)
 
 
@@ -603,7 +612,7 @@ func max_rings() -> int:
 	return Data.MAX_RINGS
 
 
-## 卡在瓶颈：到了下一个魂环要求的等级，还没吸收那个魂环
+## 卡在瓶颈：到了下一个灵环要求的等级，还没吸收那个灵环
 func at_bottleneck() -> bool:
 	return rings.size() < max_rings() and level >= (rings.size() + 1) * 10
 
@@ -624,33 +633,61 @@ func add_xp(n: int) -> int:
 	return ups
 
 
+## 下一个吸收的灵环是第几个（从 0 数）：用散魂丹散掉过的，先补那个位置
 func next_ring_index() -> int:
-	return rings.size()
+	return ring_hole if ring_hole >= 0 and ring_hole <= rings.size() else rings.size()
 
 
 func can_absorb(age: int) -> String:
 	## 返回空字符串表示可以；否则返回原因
 	if rings.size() >= max_rings():
-		return "已经有 %d 个魂环了" % max_rings()
+		return "已经有 %d 个灵环了" % max_rings()
 	if not at_bottleneck():
-		return "要修炼到 %d 级瓶颈才能吸收魂环" % level_cap()
-	var min_age: int = Data.RING_MIN_AGE[rings.size()]
+		return "要修炼到 %d 级瓶颈才能吸收灵环" % level_cap()
+	var ni := next_ring_index()
+	var min_age: int = Data.RING_MIN_AGE[ni]
 	if age < min_age:
-		return "第%d魂环至少要%s的魂兽" % [rings.size() + 1, Data.age_name(min_age)]
+		return "第%d灵环至少要%s的灵兽" % [ni + 1, Data.age_name(min_age)]
 	return ""
 
 
 func add_ring(age: int, skill: String, beast: String) -> void:
-	rings.append({"age": age, "skill": skill, "beast": beast})
-	# 魂技槽有空就自动装上
+	var at := next_ring_index()
+	rings.insert(at, {"age": age, "skill": skill, "beast": beast})
+	ring_hole = -1
+	# 神通槽记的是第几个灵环：插在中间的，后面的往后挪一格
+	for i in skill_slots.size():
+		if int(skill_slots[i]) >= at:
+			skill_slots[i] = int(skill_slots[i]) + 1
+	# 神通槽有空就自动装上
 	for i in skill_slots.size():
 		if int(skill_slots[i]) < 0:
-			skill_slots[i] = rings.size() - 1
+			skill_slots[i] = at
 			break
 	mark_dirty()
 
 
-## 猎魂录一共几颗星（每颗：体力 +2、伤害 +0.5%）
+## 散魂丹：散掉第 i 个灵环（神通跟着没了），下一个吸收的灵环补在这个位置。一次只能空一个
+func remove_ring(i: int) -> String:
+	if i < 0 or i >= rings.size():
+		return "没有这个灵环"
+	if ring_hole >= 0:
+		return "先把上次散掉的第%s灵环补上" % Data.RING_NAMES[ring_hole]
+	if not use_item("scatter_pill"):
+		return "要一颗散魂丹（暗器铺 → 道具）"
+	rings.remove_at(i)
+	ring_hole = i
+	for k in skill_slots.size():
+		var s := int(skill_slots[k])
+		if s == i:
+			skill_slots[k] = -1
+		elif s > i:
+			skill_slots[k] = s - 1
+	mark_dirty()
+	return ""
+
+
+## 猎灵录一共几颗星（每颗：体力 +2、伤害 +0.5%）
 func codex_stars() -> int:
 	var n := 0
 	for sp in codex:
@@ -664,7 +701,7 @@ func species_stars(sp: String) -> int:
 	return (s & 1) + ((s >> 1) & 1) + ((s >> 2) & 1)
 
 
-## 打死一只：记进猎魂录，返回这次新点亮的星（0 = 没有）
+## 打死一只：记进猎灵录，返回这次新点亮的星（0 = 没有）
 func codex_kill(sp: String, age: int, has_affix: bool, elite: bool) -> int:
 	var e: Dictionary = codex.get(sp, {"k": 0, "s": 0})
 	e["k"] = int(e.get("k", 0)) + 1
@@ -687,7 +724,7 @@ func max_hp() -> float:
 	return (100.0 + (level - 1) * 7.0 + bone_bonus("hp") * (1.0 + level * 0.02) + codex_stars() * 3.0) * rebirth_power()
 
 
-## 自己最强的一把暗器的输出（x = 一发，y = 每秒），魂兽血量下限按它算（Data.hp_floor）
+## 自己最强的一把暗器的输出（x = 一发，y = 每秒），灵兽血量下限按它算（Data.hp_floor）
 func output() -> Vector2:
 	var best := Vector2.ZERO
 	for id in weapons:
@@ -704,7 +741,7 @@ func max_soul() -> float:
 	return 60.0 + (level - 1) * 4.0 + bone_bonus("soul")
 
 
-## 装上的魂骨加起来的某项属性
+## 装上的灵骨加起来的某项属性
 func bone_bonus(stat: String) -> float:
 	var t := 0.0
 	for s in equipped:
@@ -719,7 +756,7 @@ func has_bone_id(id: String) -> bool:
 	return false
 
 
-## 拿到一块魂骨。unique = true 时已经有同种的就不要（Boss 魂骨每人一块）。部位空着就自动装上
+## 拿到一块灵骨。unique = true 时已经有同种的就不要（Boss 灵骨每人一块）。部位空着就自动装上
 func add_bone(entry: String, unique := false) -> bool:
 	if unique and has_bone_id(Data.bone_id(entry)):
 		return false

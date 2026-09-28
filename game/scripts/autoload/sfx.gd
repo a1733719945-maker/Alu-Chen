@@ -56,7 +56,7 @@ func play(sound: String, volume_db := 0.0, pitch_jitter := 0.0, pitch := 1.0) ->
 	p.play()
 
 
-## 在世界里某个位置播放（别人开枪、魂兽叫声、落水）
+## 在世界里某个位置播放（别人开枪、灵兽叫声、落水）
 func play_at(sound: String, pos: Vector3, volume_db := 0.0, pitch_jitter := 0.05, pitch := 1.0) -> void:
 	var s := stream(sound)
 	if not s or not is_inside_tree():

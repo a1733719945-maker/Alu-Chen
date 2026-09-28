@@ -1,14 +1,15 @@
 class_name World
 extends Node3D
-## 一局游戏：地图、玩家、魂兽、Boss、任务、奖励、联机同步。
+## 一局游戏：地图、玩家、灵兽、Boss、任务、奖励、联机同步。
 ##
 ## 联机分工：
-##   每个玩家 —— 算自己的移动、开枪射线、引魂索、魂技目标、自己受到的伤害，命中结果发给房主
-##   房主     —— 生成魂兽和 Boss、算它们的物理和血量、分奖励、推进任务，再广播给大家
-## 每个人的金魂币、等级、魂环存在自己的存档里；章节进度用房主的存档。
+##   每个玩家 —— 算自己的移动、开枪射线、引魂索、神通目标、自己受到的伤害，命中结果发给房主
+##   房主     —— 生成灵兽和 Boss、算它们的物理和血量、分奖励、推进任务，再广播给大家
+## 每个人的灵石、等级、灵环存在自己的存档里；章节进度用房主的存档。
 
 signal leave_requested
 signal travel_requested(chapter: int)
+signal map_requested(chapter: int, hunt: Dictionary)   # 去猎场 / 从猎场回岛（不改章节进度）
 
 const PLAYER_SNAP_RATE := 30.0
 const BEAST_SNAP_RATE := 20.0
@@ -28,9 +29,13 @@ var builder: WorldBuilder
 var fx: Fx
 var hud: Hud
 var skills: SkillSystem
-var combo: Combo                  # 猎魂连击 + 武魂真身（world/combo.gd）
-var hunt: Hunt                    # 猎魂榜的猎物、踪迹、吸收魂环时的护法（world/hunt.gd）
+var combo: Combo                  # 猎灵连击 + 灵相真身（world/combo.gd）
+var hunt: Hunt                    # 猎灵榜的猎物、踪迹、吸收灵环时的护法（world/hunt.gd）
 var dungeon: Dungeon              # 秘境（world/dungeon.gd）
+var hunting := {}                 # 在猎场里：{"species", "age", "seed", "by"}（空 = 在岛上）
+var trip: HuntTrip                # 猎场里的这次猎灵（world/hunt_trip.gd）
+var arts: BossArts                # Boss 的招式零件（world/boss_arts.gd）
+var boss_nohit := false           # 这一场 Boss 战自己还没挨过打（无伤击败有奖励）
 var loot: Loot
 var player: Player
 var players_root: Node3D
@@ -50,7 +55,7 @@ var quest_idx := 0
 var quest_count := 0
 var quest_target := 1          # 当前任务要做到多少（联机按人数加量，房主算好发给大家）
 
-var rings := {}            # 地上的魂环 rid -> {"pos", "age", "species", "node", "t"}
+var rings := {}            # 地上的灵环 rid -> {"pos", "age", "species", "node", "t"}
 var next_ring_id := 1
 var _hazards: Array = []   # 飞行中的毒液 / 蛛网 / 石头
 var _pools: Array = []     # 毒池
@@ -80,11 +85,22 @@ var _tide_total := 0
 var _tide_king_done := true
 
 
-func _init(p_chapter := 1) -> void:
+func _init(p_chapter := 1, p_hunt := {}) -> void:
 	chapter = clampi(p_chapter, 1, Data.CHAPTERS.size())
+	hunting = p_hunt
 
 
-## 自己赚到金魂币
+## 全队去猎场（Hunt.host_request 房主发 huntgo）
+func go_hunt(info: Dictionary) -> void:
+	map_requested.emit(chapter, info)
+
+
+## 从猎场回岛
+func travel_back() -> void:
+	map_requested.emit(chapter, {})
+
+
+## 自己赚到灵石
 func earn(money: int) -> void:
 	if money > 0:
 		Profile.add_money(money)
@@ -95,11 +111,11 @@ func _ready() -> void:
 	Data.cur_chapter = chapter
 	rng.randomize()
 	var ch: Dictionary = Data.CHAPTERS[chapter]
-	island = Island.new(str(ch["map"]))
 	var t0 := Time.get_ticks_msec()
+	island = Island.new(str(ch["map"]), int(hunting.get("seed", 0)), str(hunting.get("species", "")))
 	builder = WorldBuilder.new(island, self, chapter)
 	builder.build()
-	print("[world] 第 %d 章地图搭好了，用了 %d 毫秒" % [chapter, Time.get_ticks_msec() - t0])
+	print("[world] 第 %d 章%s搭好了，用了 %d 毫秒" % [chapter, "猎场" if island.hunting else "地图", Time.get_ticks_msec() - t0])
 	Settings.changed.connect(builder.apply_quality)
 	players_root = Node3D.new()
 	players_root.name = "Players"
@@ -136,7 +152,7 @@ func _ready() -> void:
 	hud.on_weapon(player.gun)
 	loot = Loot.new()
 	add_child(loot)
-	# 第十一版：野外不再有魂兽巢穴（刷怪去秘境）；Nests 留着是为了旧消息不出错
+	# 第十一版：野外不再有灵兽巢穴（刷怪去秘境）；Nests 留着是为了旧消息不出错
 	nests = Nests.new()
 	add_child(nests)
 	loot.setup(self)
@@ -148,6 +164,16 @@ func _ready() -> void:
 	dungeon.name = "Dungeon"
 	dungeon.world = self
 	add_child(dungeon)
+	arts = BossArts.new()
+	arts.name = "BossArts"
+	arts.world = self
+	add_child(arts)
+	if island.hunting:
+		trip = HuntTrip.new()
+		trip.name = "HuntTrip"
+		trip.world = self
+		trip.info = hunting
+		add_child(trip)
 
 	if Net.is_host():
 		quest_idx = Profile.quest if Profile.chapter == chapter else 0
@@ -160,16 +186,17 @@ func _ready() -> void:
 	capture_mouse(true)
 	_last_prog = [Profile.level, Profile.rings.size()]
 	var ch_trait := str(Data.CH_TRAIT.get(chapter, ""))
-	hud.chapter_banner(str(ch["name"]), str(ch["intro"]) + (("\n" + str(Data.TRAIT_TEXT[ch_trait])) if ch_trait != "" else ""))
+	if not island.hunting:
+		hud.chapter_banner(str(ch["name"]), str(ch["intro"]) + (("\n" + str(Data.TRAIT_TEXT[ch_trait])) if ch_trait != "" else ""))
 	# 第十一版：没有悬赏了
 	Profile.bounties = []
 	# 第一次玩第十一版：章节横幅之后讲一句新玩法
-	if int(Profile.stats.get("v11_intro", 0)) == 0 and not Data.autotest:
+	if int(Profile.stats.get("v11_intro", 0)) == 0 and not Data.autotest and not island.hunting:
 		Profile.stats["v11_intro"] = 1
 		Profile.mark_dirty()
 		var tw := create_tween()
 		tw.tween_interval(5.5)
-		tw.tween_callback(func(): hud._show_banner("新玩法", "野外不再刷怪 · 按 L 打开猎魂榜，挑一只魂兽去猎（它决定你学什么魂技）\n地图上的「秘」是秘境：刷修为、金魂币、魂骨", UiKit.GOLD, 8.0))
+		tw.tween_callback(func(): hud._show_banner("新玩法", "野外不再刷怪 · 按 L 打开猎灵榜，挑一只灵兽去猎（它决定你学什么神通）\n地图上的「秘」是秘境：刷修为、灵石、灵骨", UiKit.GOLD, 8.0))
 	if Net.is_host():
 		get_tree().create_timer(0.5).timeout.connect(_host_check_quest)
 
@@ -193,7 +220,7 @@ func _my_info() -> Dictionary:
 	return {"name": Settings.display_name(), "wuhun": Settings.wuhun, "level": Profile.level, "rings": _ring_summary(), "outfit": Profile.outfit, "skin": Profile.skin, "out": [o.x, o.y], "skins": Profile.skin_of.duplicate()}
 
 
-## 队伍里最强的输出（魂兽血量下限按它算）
+## 队伍里最强的输出（灵兽血量下限按它算）
 func team_output() -> Vector2:
 	var best := Profile.output()
 	for id in peer_info:
@@ -305,7 +332,7 @@ func raycast(from: Vector3, to: Vector3, mask: int, exclude: Array = []) -> Dict
 	return get_world_3d().direct_space_state.intersect_ray(q)
 
 
-## alive：没倒地；target：魂兽和 Boss 能打的（没倒地、没隐身、刚复活的几秒也不打）
+## alive：没倒地；target：灵兽和 Boss 能打的（没倒地、没隐身、刚复活的几秒也不打）
 func all_players() -> Array:
 	var out := [{"peer": Net.my_id, "pos": player.global_position, "alive": not player.dead, "target": not player.dead and not player.untargetable()}]
 	for id in remotes:
@@ -314,7 +341,7 @@ func all_players() -> Array:
 	return out
 
 
-## 魂兽和 Boss 会攻击的玩家
+## 灵兽和 Boss 会攻击的玩家
 func alive_players() -> Array:
 	return all_players().filter(func(p): return p["target"])
 
@@ -354,7 +381,7 @@ func _stat(id: int) -> Dictionary:
 	return stats[id]
 
 
-## 武魂真身：谁变身了都看得到（天上法相、身上光），离得近的队友伤害 +30%
+## 灵相真身：谁变身了都看得到（天上法相、身上光），离得近的队友伤害 +30%
 func on_true_body(peer: int) -> void:
 	var node: Node3D = player if peer == Net.my_id else (remotes.get(peer) as Node3D)
 	if node == null:
@@ -366,12 +393,12 @@ func on_true_body(peer: int) -> void:
 	Sfx.play_at("boss_roar", node.global_position, 0.0, 0.0, 1.4)
 	if peer == Net.my_id:
 		hud.true_body(true)
-		hud._show_banner("武魂真身", "", col, 2.2)
+		hud._show_banner("灵相真身", "", col, 2.2)
 	else:
-		hud.feed("%s 武魂真身！" % peer_name(peer), col)
+		hud.feed("%s 灵相真身！" % peer_name(peer), col)
 		if not player.dead and player.global_position.distance_to(node.global_position) < Combo.TB_ALLY_RANGE:
 			player.add_buff("dmg", Combo.TB_ALLY_DMG, Combo.TB_TIME)
-			hud.toast("%s 的武魂真身：你的伤害 +%d%%" % [peer_name(peer), int(Combo.TB_ALLY_DMG * 100)], col, 3.0)
+			hud.toast("%s 的灵相真身：你的伤害 +%d%%" % [peer_name(peer), int(Combo.TB_ALLY_DMG * 100)], col, 3.0)
 
 
 func caster_color(peer: int) -> Color:
@@ -394,7 +421,7 @@ func _falloff(w: Dictionary, dist: float) -> float:
 	return lerpf(1.0, f.z, k)
 
 
-## k：这一发的伤害倍数（观音泪蓄力）；pierce_over：这一发至少穿透几只（蓄满了穿透所有）
+## k：这一发的伤害倍数（天心泪蓄力）；pierce_over：这一发至少穿透几只（蓄满了穿透所有）
 func local_fire(g: Gun, origin: Vector3, dirs: Array[Vector3], muzzle: Vector3, k := 1.0, pierce_over := 0) -> void:
 	var w: Dictionary = g.d
 	var ends: Array = []
@@ -450,7 +477,7 @@ func local_fire(g: Gun, origin: Vector3, dirs: Array[Vector3], muzzle: Vector3, 
 				from = end
 				continue
 			elif col is Node and (col as Node).has_meta("nest"):
-				# 打魂兽巢穴
+				# 打灵兽巢穴
 				var nd: float = float(w["damage"]) * _falloff(w, hit_dist) * dmg_mult
 				fx.impact_beast(end, hit["normal"], Color(0.8, 0.6, 1.0), false)
 				hud.hitmarker(false, false)
@@ -463,7 +490,7 @@ func local_fire(g: Gun, origin: Vector3, dirs: Array[Vector3], muzzle: Vector3, 
 					Net.send(1, "nesthit", [nid, nd])
 				break
 			elif col is Node and (col as Node).has_meta("critter"):
-				# 天上飞的鸟、蛾子：打下来，变成一只真的魂兽
+				# 天上飞的鸟、蛾子：打下来，变成一只真的灵兽
 				fx.impact_beast(end, hit["normal"], Color(1.0, 0.95, 0.8), false)
 				hud.hitmarker(false, false)
 				Sfx.play("hit", -3.0, 0.05)
@@ -494,12 +521,12 @@ func local_fire(g: Gun, origin: Vector3, dirs: Array[Vector3], muzzle: Vector3, 
 			fx.tracer(muzzle, e, w["tracer"], 0.09 if heavy_shot else 0.06, 420.0 if heavy_shot else 300.0, 5.0, true)
 		else:
 			fx.tracer(muzzle, e, w["tracer"], 0.025, 240.0, 1.8)
-	# 观音泪蓄满：一道光贯穿过去
+	# 天心泪蓄满：一道光贯穿过去
 	if pierce_over > 0 and not ends.is_empty():
 		fx.beam(muzzle, dirs[0], muzzle.distance_to(ends[0]), w["tracer"], 0.14)
 	if not bool(w.get("quiet", false)):
 		fx.muzzle_flash(muzzle, dirs[0], w["tracer"], not single or heavy_shot)
-	# 爆炸（子母追魂夺命胆）：打到哪里炸到哪里（打到魂兽也炸），再散出几颗子胆各炸一次
+	# 爆炸（子母雷珠）：打到哪里炸到哪里（打到灵兽也炸），再散出几颗子胆各炸一次
 	if w.has("splash") and not ends.is_empty():
 		var at: Vector3 = ends[0]
 		var r := float(w["splash"])
@@ -518,7 +545,7 @@ func local_fire(g: Gun, origin: Vector3, dirs: Array[Vector3], muzzle: Vector3, 
 	_apply_hits(g, per_beast, boss_dmg, boss_weak, true, k > 1.5)
 
 
-## 爆炸：r 米内的魂兽都挨（中心全伤害，边上三成），往外掀
+## 爆炸：r 米内的灵兽都挨（中心全伤害，边上三成），往外掀
 func _blast(at: Vector3, r: float, dmg: float, w: Dictionary, per_beast: Dictionary) -> void:
 	for b: Beast in beasts.values():
 		if not b.alive():
@@ -562,7 +589,7 @@ func _child_blast(g: Gun, at: Vector3, dmg: float) -> void:
 	_apply_hits(g, pb, bd, false, false, false)
 
 
-## 把一发（或一次爆炸）打中的魂兽 / Boss 结算：飘字、命中音、连击、附体 / 附魔（procs）、发给房主
+## 把一发（或一次爆炸）打中的灵兽 / Boss 结算：飘字、命中音、连击、附体 / 附魔（procs）、发给房主
 func _apply_hits(g: Gun, per_beast: Dictionary, boss_dmg: float, boss_weak: bool, procs: bool, big: bool) -> void:
 	var w: Dictionary = g.d
 	var emp: Dictionary = player.empower
@@ -588,7 +615,7 @@ func _apply_hits(g: Gun, per_beast: Dictionary, boss_dmg: float, boss_weak: bool
 				skills.host_empower(ek, ep, ed, Net.my_id, int(id))
 			else:
 				Net.send(1, "emp", [ek, ep, ed, int(id)])
-		# 魂导附魔：命中有几率触发（每发最多 3 只）
+		# 符阵附魔：命中有几率触发（每发最多 3 只）
 		if procs and not ench.is_empty() and ench_n < 3 and randf() < float(ench["chance"]):
 			ench_n += 1
 			var xk := str(ench["kind"])
@@ -675,7 +702,7 @@ func local_melee(g: Gun, _origin: Vector3, dir: Vector3, hit: Dictionary) -> voi
 		fx.impact_world(at, hit["normal"])
 
 
-## 天上飞的鸟 / 蛾子 / 蝙蝠 / 海鸥被打中（或被引魂索钩中）：房主把它变成一只真的魂兽掉下来，天上那只藏 90 秒
+## 天上飞的鸟 / 蛾子 / 蝙蝠 / 海鸥被打中（或被引魂索钩中）：房主把它变成一只真的灵兽掉下来，天上那只藏 90 秒
 func critter_hit(idx: int, at: Vector3) -> void:
 	if Net.is_host():
 		_host_critter(idx, at)
@@ -696,7 +723,7 @@ func _host_critter(idx: int, at: Vector3) -> void:
 	_host_spawn_wild(at, sp, age, "flee")
 
 
-# ------------------------------------------------------------------ 引魂索拽出魂兽
+# ------------------------------------------------------------------ 引魂索拽出灵兽
 
 func request_yank(pos: Vector3, habitat: String, species: String, age: int, bait := "grass") -> void:
 	Net.send_host("yank", [pos, habitat, species, age, player.global_position, bait])
@@ -721,7 +748,7 @@ func _launch_velocity(from: Vector3, owner_pos: Vector3, _species: String) -> Ve
 		land = from + Vector3(1.5, 0, 0)
 	else:
 		land = owner_pos - dir * clampf(d * 0.3, 3.0, 7.0)
-	# 落点在水里的话，沿着往玩家的方向找到岸（或码头）再落，不然魂兽一落地就逃回水里了
+	# 落点在水里的话，沿着往玩家的方向找到岸（或码头）再落，不然灵兽一落地就逃回水里了
 	var ly := _solid_y(land.x, land.z)
 	var k := 0
 	while ly == -INF and k < 40:
@@ -762,7 +789,7 @@ func _host_spawn(owner: int, pos: Vector3, species: String, age: int, owner_pos:
 	if temper == "fierce" and owner == Net.my_id:
 		hud.toast("凶暴的%s！它会一直追着你打" % Data.BEASTS[species]["name"], Color(1.0, 0.45, 0.35), 2.5)
 	elif temper == "bone":
-		hud.feed("魂骨兽出现了！打死它必掉魂骨", UiKit.GOLD)
+		hud.feed("灵骨兽出现了！打死它必掉灵骨", UiKit.GOLD)
 	return b
 
 
@@ -770,7 +797,7 @@ func _spawn_beast(id: int, species: String, age: int, pos: Vector3, vel: Vector3
 	var b := Beast.new()
 	b.setup(self, id, species, age, owner, proxy, temper, affixes)
 	if not proxy and not Data.autotest:
-		# 血量下限：不会一枪一只（Data.hp_floor），魂兽王再高一大截
+		# 血量下限：不会一枪一只（Data.hp_floor），灵兽王再高一大截
 		var fl := Data.hp_floor(chapter, age, team_output()) * (Data.ELITE_FLOOR if temper == "elite" else 1.0)
 		if b.max_hp < fl:
 			b.max_hp = fl
@@ -858,8 +885,9 @@ func _host_kill(b: Beast) -> void:
 	var reward := roundi(base * mult * Data.KILL_MONEY)
 	var xp_total := roundi(xp * mult)
 	var rewards := {}
-	# 魂兽王是这一章的主线：全队每人再加一大笔修为（大约这一章 2.5 级），不用刷小怪升级
-	var king_xp := roundi(Data.xp_to_next(int(Data.CH_REF_LEVEL.get(chapter, 10))) * Data.KING_XP_LEVELS) if b.temper == "elite" else 0
+	# 灵兽王是这一章的主线：全队每人再加一大笔修为（大约这一章 2.5 级），不用刷小怪升级
+	# （猎场里守宝的王算一半）
+	var king_xp := roundi(Data.xp_to_next(int(Data.CH_REF_LEVEL.get(chapter, 10))) * Data.KING_XP_LEVELS * (0.5 if b.hunt_role == "guard" else 1.0)) if b.temper == "elite" else 0
 	for peer in _all_peers():
 		if peer == killer:
 			rewards[peer] = [reward, xp_total + king_xp]
@@ -875,10 +903,17 @@ func _host_kill(b: Beast) -> void:
 	_on_kill(msg)
 	hunt.host_on_kill(b)
 	dungeon.host_on_kill(b)
+	if trip:
+		trip.host_on_kill(b)
 	# 词缀：分裂成两只小的；自爆（先出红圈）
 	if "split" in b.affixes:
 		for i in 2:
-			_host_spawn(1, b.global_position + Vector3(randf_range(-1, 1), 0.3, randf_range(-1, 1)), b.species, maxi(b.age - 1, 0), nearest_player_pos(b.global_position), "fierce", "grass", false)
+			var sb := _host_spawn(1, b.global_position + Vector3(randf_range(-1, 1), 0.3, randf_range(-1, 1)), b.species, maxi(b.age - 1, 0), nearest_player_pos(b.global_position), "fierce", "grass", false)
+			# 秘境里分裂出来的也算秘境的灵兽（不然会被当成外来的收掉）
+			if sb and b.hunt_role in ["dg", "dgboss"]:
+				sb.hunt_role = "dg"
+				sb.spawn_pos = b.spawn_pos
+				sb.aggro_k = 3.0
 	if "blast" in b.affixes:
 		boss_telegraph(b.global_position, 5.5, 1.1, 30.0 * (1.0 + b.age * 0.5), "slam", b.global_position)
 	_host_maybe_drop_ring(b, killer)
@@ -894,31 +929,29 @@ func beast_escaped(b: Beast, reason: String) -> void:
 		return
 	var msg := [b.id, reason, b.global_position]
 	if Data.autotest:
-		print("[autotest] 魂兽逃走：%s %s %s state=%d life=%.1f 地面 %.2f" % [b.species, reason, b.global_position, b.state, b.life, island.height_at(b.global_position.x, b.global_position.z)])
+		print("[autotest] 灵兽逃走：%s %s %s state=%d life=%.1f 地面 %.2f" % [b.species, reason, b.global_position, b.state, b.life, island.height_at(b.global_position.x, b.global_position.z)])
 	Net.send(0, "be", msg)
 	_on_escape(msg)
 
 
-## 打死魂兽掉东西：魂骨兽必掉魂骨，千年的小概率掉；偶尔掉回血丹、佛怒唐莲
+## 打死灵兽掉东西：灵骨兽必掉灵骨，千年的小概率掉；偶尔掉回血丹、九转雷莲
 func _host_drop_loot(b: Beast) -> void:
 	var at := b.global_position + Vector3(0, 0.5, 0)
-	# 魂兽肉：吃了回饱食度，也能丢进收购箱卖
-	var meats := (3 if b.temper == "elite" else (1 if rng.randf() < 0.55 else 0))
-	for i in meats:
-		loot.spawn("item", "meat", 1, 0, at, Vector3(randf_range(-2, 2), 5.0, randf_range(-2, 2)))
+	# 丹药（以前掉烤肉；烤肉和饱食度去掉了）：普通灵兽偶尔掉一颗，灵兽王掉两颗
 	var r := rng.randf()
-	if r < 0.07 + b.age * 0.03:
-		loot.spawn("item", "pill", 1, 0, at, Vector3(randf_range(-2, 2), 5.5, randf_range(-2, 2)))
-	elif r < 0.11 + b.age * 0.05:
+	if r < 0.12 + b.age * 0.03:
+		loot.spawn("item", Data.random_pill(), 1, 0, at, Vector3(randf_range(-2, 2), 5.5, randf_range(-2, 2)))
+	elif r < 0.16 + b.age * 0.05:
 		loot.spawn("item", "grenade", 1, 0, at, Vector3(randf_range(-2, 2), 5.5, randf_range(-2, 2)))
 	if b.temper == "elite":
 		loot.spawn("item", "pill", 1, 0, at, Vector3(randf_range(-2, 2), 6.0, randf_range(-2, 2)))
+		loot.spawn("item", Data.random_pill(), 1, 0, at, Vector3(randf_range(-2, 2), 6.0, randf_range(-2, 2)))
 	var chance := 0.012 + (0.05 if b.age >= 2 else 0.0)
 	if b.temper == "bone" or b.temper == "elite" or rng.randf() < chance:
 		var bid: String = Data.BONE_BY_BEAST.get(b.species, "")
 		if bid != "":
 			loot.spawn("bone", "%s@%d" % [bid, b.age], 1, 0, at, Vector3(randf_range(-1.5, 1.5), 7.0, randf_range(-1.5, 1.5)))
-			var msg := "%s掉落了魂骨【%s】！" % [Data.BEASTS[b.species]["name"], Data.bone_name("%s@%d" % [bid, b.age])]
+			var msg := "%s掉落了灵骨【%s】！" % [Data.BEASTS[b.species]["name"], Data.bone_name("%s@%d" % [bid, b.age])]
 			Net.send(0, "feedall", [msg])
 			hud.feed(msg, UiKit.GOLD)
 
@@ -1001,25 +1034,28 @@ func _ach_kill(tags: Array, affixes: Array, elite: bool) -> void:
 	_ach_check()
 
 
-## 成神：100 级 + 第十魂环。播结局动画，之后还能接着玩
+## 飞升：100 级 + 第十灵环。播结局动画，之后还能接着玩
 func _check_god() -> void:
 	if Profile.god or Profile.level < Data.MAX_LEVEL or Profile.rings.size() < Data.MAX_RINGS:
 		return
 	Profile.god = true
 	Profile.mark_dirty()
 	_ach_check()
-	Net.send(0, "feedall", ["%s 成神了！" % Settings.display_name()])
+	Net.send(0, "feedall", ["%s 飞升了！" % Settings.display_name()])
 	if Data.autotest:
 		return
+	# 飞升结局（Remotion 画的）：五块碎片归位 → 天门重开 → 门后是九重天 → 轮回
 	var v := Voyage.new()
-	v.video = "res://assets/cutscene/ending.ogv"
-	v.length = 10.0
-	v.title = "成神 · %s" % Settings.display_name()
+	v.video = "res://assets/cutscene/ascend.ogv"
+	v.length = 26.0
+	v.music = "boss"
 	get_tree().root.add_child(v)
-	v.finished.connect(func(): hud._show_banner("成神！", "你已经是神了。还可以坐船回任何一个岛，继续猎魂、刷魂骨和外观。", UiKit.GOLD, 9.0))
+	v.finished.connect(func():
+		Sfx.play_music("explore")
+		hud._show_banner("飞升 · %s" % Settings.display_name(), "天门重开，兽潮平息。可门后不是天——是九重天的第一重。\n主菜单「轮回」：转世重修，再闯一遍五大灵主（第二重天）。也可以坐船回任何一个岛，接着猎灵。", UiKit.GOLD, 12.0))
 
 
-# ------------------------------------------------------------------ 猎魂录：每种魂兽三颗星，集齐一张图送专属皮肤
+# ------------------------------------------------------------------ 猎灵录：每种灵兽三颗星，集齐一张图送专属皮肤
 
 func _codex_kill(species: String, age: int, affixes: Array, elite: bool) -> void:
 	var gained := Profile.codex_kill(species, age, not affixes.is_empty(), elite)
@@ -1033,10 +1069,10 @@ func _codex_kill(species: String, age: int, affixes: Array, elite: bool) -> void
 	if gained & 4:
 		what.append("打倒千年 / 精英")
 	var stars := Profile.species_stars(species)
-	hud.toast("猎魂录 · %s %s（%s）  体力 +2  伤害 +0.5%%" % [Data.BEASTS[species]["name"], "★".repeat(stars) + "☆".repeat(3 - stars), "，".join(what)], UiKit.GOLD, 4.0)
+	hud.toast("猎灵录 · %s %s（%s）  体力 +2  伤害 +0.5%%" % [Data.BEASTS[species]["name"], "★".repeat(stars) + "☆".repeat(3 - stars), "，".join(what)], UiKit.GOLD, 4.0)
 	Sfx.play("quest_done", -4.0)
 	player.on_bones_changed()
-	# 这张图的魂兽全部三颗星：送专属皮肤
+	# 这张图的灵兽全部三颗星：送专属皮肤
 	var all3 := true
 	for sp in _map_species():
 		if Profile.species_stars(str(sp)) < 3:
@@ -1044,10 +1080,10 @@ func _codex_kill(species: String, age: int, affixes: Array, elite: bool) -> void
 	var skin := str(Data.CODEX_MAP_SKIN.get(island.map_id, ""))
 	if all3 and skin != "" and Profile.unlock_look("skin", skin):
 		Profile.count("codex_maps")
-		hud._show_banner("猎魂录 · %s 集齐！" % str(Data.CHAPTERS[chapter]["name"]), "解锁专属暗器皮肤【%s】（暗器铺 → 外观）" % Data.GUN_SKINS[skin]["name"], UiKit.GOLD, 6.0)
+		hud._show_banner("猎灵录 · %s 集齐！" % str(Data.CHAPTERS[chapter]["name"]), "解锁专属暗器皮肤【%s】（暗器铺 → 外观）" % Data.GUN_SKINS[skin]["name"], UiKit.GOLD, 6.0)
 
 
-## 这张图猎魂录的进度（武魂面板用）：[[魂兽 id, 星星数], ...]
+## 这张图猎灵录的进度（灵相面板用）：[[灵兽 id, 星星数], ...]
 func codex_page() -> Array:
 	var out: Array = []
 	for sp in _map_species():
@@ -1057,7 +1093,7 @@ func codex_page() -> Array:
 
 # ------------------------------------------------------------------ 悬赏（每个人自己的，打完换新的）
 
-## 这张地图上能抓到的魂兽
+## 这张地图上能抓到的灵兽
 func _map_species() -> Array:
 	var out: Array = []
 	for h in island.habitats:
@@ -1267,7 +1303,7 @@ func _host_tide_spawn(ev: Dictionary) -> void:
 			return
 
 
-## 奇遇里的王：精英，打死必掉魂骨
+## 奇遇里的王：精英，打死必掉灵骨
 func _host_tide_king(ev: Dictionary) -> void:
 	var king := str(ev.get("king", ""))
 	var targets := alive_players()
@@ -1286,8 +1322,8 @@ func _host_tide_king(ev: Dictionary) -> void:
 			hud.feed(str(msg[0]), Color(1.0, 0.6, 0.3))
 			return
 
-# ------------------------------------------------------------------ 野生魂兽：地图上有一些胆小的魂兽在游荡（氛围、能拿引魂索钓）
-# 第十一版：野外不再有成群的凶暴魂兽（用户：刷怪只在秘境里），只剩胆小的，一靠近就跑
+# ------------------------------------------------------------------ 野生灵兽：地图上有一些胆小的灵兽在游荡（氛围、能拿引魂索钓）
+# 第十一版：野外不再有成群的凶暴灵兽（用户：刷怪只在秘境里），只剩胆小的，一靠近就跑
 
 const WILD_GAP := 5.0
 var _wild_t := 6.0
@@ -1296,7 +1332,8 @@ var nests: Nests
 
 
 func _host_wild(dt: float) -> void:
-	if Data.autotest:
+	# 猎场里的灵兽群由 HuntTrip 按地点刷
+	if Data.autotest or island.hunting:
 		return
 	_wild_t -= dt
 	if _wild_t > 0.0:
@@ -1308,7 +1345,8 @@ func _host_wild(dt: float) -> void:
 	var cap := 3 if boss else 5
 	if _wild.size() >= cap:
 		return
-	var pl := alive_players()
+	# 在秘境里的人不算（以前秘境场地也算"陆地"，野外的胆小灵兽被刷进秘境：不打人、贴着墙跑、年份还是乱的）
+	var pl := alive_players().filter(func(e): return not island.on_floor((e["pos"] as Vector3).x, (e["pos"] as Vector3).z))
 	if pl.is_empty():
 		return
 	var p: Vector3 = pl[rng.randi() % pl.size()]["pos"]
@@ -1319,10 +1357,11 @@ func _host_wild(dt: float) -> void:
 		var a := rng.randf() * TAU
 		var r := rng.randf_range(36.0, 70.0)
 		var q := p + Vector3(cos(a) * r, 0, sin(a) * r)
-		if not island.is_land(q.x, q.z) or Vector2(q.x - island.spawn.x, q.z - island.spawn.z).length() < 30.0:
+		if not island.is_land(q.x, q.z) or island.on_floor(q.x, q.z) or Vector2(q.x - island.spawn.x, q.z - island.spawn.z).length() < 30.0:
 			continue
 		var sp := _species_near(q, land_sp)
-		var temper := "flee"
+		# 凶的灵兽（狼、犀牛、猿……）一半会主动打人（只追 32 米内的），其余的见人就跑
+		var temper := "fierce" if sp in Data.AGGRESSIVE and rng.randf() < 0.5 else "flee"
 		var n := rng.randi_range(1, 2)
 		for k in n:
 			var qq := q + Vector3(rng.randf_range(-3.0, 3.0), 0, rng.randf_range(-3.0, 3.0))
@@ -1335,7 +1374,7 @@ func _host_wild(dt: float) -> void:
 		return
 
 
-## 背景音乐：Boss 在就放 Boss 曲，奇遇放奇遇曲，附近有凶的魂兽就放战斗曲（打完再放 8 秒），不然放探索曲
+## 背景音乐：Boss 在就放 Boss 曲，奇遇放奇遇曲，附近有凶的灵兽就放战斗曲（打完再放 8 秒），不然放探索曲
 var _music_t := 0.0
 var _battle_hold := 0.0
 
@@ -1356,12 +1395,12 @@ func _update_music(dt: float) -> void:
 		want = "boss"
 	elif Time.get_ticks_msec() / 1000.0 < _tide_until:
 		want = "event"
-	elif _battle_hold > 0.0 or dungeon.inside:
+	elif _battle_hold > 0.0 or (dungeon.inside and str(dungeon.run.get("phase", "")) != "clear"):
 		want = "battle"
 	Sfx.play_music(want)
 
 
-## 离 q 最近的栖息地住的魂兽（只在 allowed 里挑）
+## 离 q 最近的栖息地住的灵兽（只在 allowed 里挑）
 func _species_near(q: Vector3, allowed: Array) -> String:
 	var best := str(allowed[rng.randi() % allowed.size()])
 	var bd := INF
@@ -1389,11 +1428,14 @@ func _host_spawn_wild(pos: Vector3, species: String, age: int, temper: String) -
 	return b
 
 
-# ------------------------------------------------------------------ 魂兽王：大招、暴怒、逃跑；引魂索钩魂兽 / 捆魂
+# ------------------------------------------------------------------ 灵兽王：大招、暴怒、逃跑；引魂索钩灵兽 / 捆魂
 
-## 房主：魂兽王出大招（地上先出圈，躲得开）
+## 房主：灵兽王出大招（地上先出圈，躲得开）
 func king_move(b: Beast, move: String, at: Vector3, wind: float) -> void:
-	var base: float = float(Data.BEASTS[b.species].get("hurt", 10.0)) * (1.0 + b.age * 0.5) * Data.ELITE_DMG * Data.BEAST_DMG * Profile.rebirth_hard() * b.dmg_mult
+	var base: float = float(Data.BEASTS[b.species].get("hurt", 10.0)) * (1.0 + b.age * 0.5) * Data.ELITE_DMG * Data.BEAST_DMG * b.dmg_mult
+	# boss_telegraph 还会再乘 CH_POWER。不封顶的话第五章十万年猎物一记扑杀掉八成血，比灵主的大招还疼；
+	# 封顶后 震地 ≈34%、扑杀 ≈39%、咆哮 ≈22%（按这一章的参考等级）
+	base = minf(base, Data.bite_cap(chapter, true) * 1.1 / float(Data.CH_POWER.get(chapter, 1.0))) * Profile.rebirth_hard()
 	var p := b.global_position
 	var r: float = 3.0 + BeastModels.body_size(b.species).x * float(Data.AGES[b.age]["scale"]) * b.size_k * 0.6
 	match move:
@@ -1408,7 +1450,7 @@ func king_move(b: Beast, move: String, at: Vector3, wind: float) -> void:
 				var q := p + Vector3(cos(a) * 5.0, 1.0, sin(a) * 5.0)
 				if island.is_land(q.x, q.z):
 					q.y = island.height_at(q.x, q.z) + 0.5
-					_host_spawn_wild(q, b.species, maxi(b.age - 1, 0), "fierce")
+					_minion(b, _host_spawn_wild(q, b.species, maxi(b.age - 1, 0), "fierce"))
 	var msg := [b.id, move]
 	Net.send(0, "kingmv", msg)
 	_on_king_move(msg)
@@ -1441,7 +1483,49 @@ func king_phase2(b: Beast) -> void:
 		var q := b.global_position + Vector3(cos(a) * 6.0, 1.0, sin(a) * 6.0)
 		if island.is_land(q.x, q.z):
 			q.y = island.height_at(q.x, q.z) + 0.5
-			_host_spawn_wild(q, b.species, maxi(b.age - 1, 0), "fierce")
+			_minion(b, _host_spawn_wild(q, b.species, maxi(b.age - 1, 0), "fierce"))
+
+
+## 灵兽王叫来的小弟：秘境之主叫的算秘境的灵兽（会被拉回场地、通关时散掉）
+func _minion(king: Beast, m: Beast) -> void:
+	if m and king.hunt_role == "dgboss":
+		m.hunt_role = "dg"
+		m.spawn_pos = king.spawn_pos
+		m.aggro_k = 3.0
+
+
+## 猎场的猎物在巢穴里睡着 / 被吵醒（shooter：偷袭的人）
+func king_sleep(b: Beast, on: bool, shooter: int) -> void:
+	var m := [b.id, on, shooter]
+	Net.send(0, "ksleep", m)
+	_on_king_sleep(m)
+
+
+func _on_king_sleep(msg: Array) -> void:
+	var b: Beast = beasts.get(int(msg[0]))
+	if not b:
+		return
+	var zz := b.get_node_or_null("Zzz")
+	if bool(msg[1]):
+		hud.feed("%s 逃回巢穴睡着了——悄悄摸过去偷袭（伤害 ×2.5）" % b.display_name(), Color(0.7, 0.8, 1.0))
+		if zz == null:
+			var l := U.label3d("Zzz", 72, Color(0.75, 0.85, 1.0), 10)
+			l.name = "Zzz"
+			l.position = Vector3(0, 2.2 * float(Data.AGES[b.age]["scale"]) * b.size_k, 0)
+			b.add_child(l)
+			var tw := l.create_tween().set_loops()
+			tw.tween_property(l, "modulate:a", 0.3, 0.9)
+			tw.tween_property(l, "modulate:a", 1.0, 0.9)
+	else:
+		if zz:
+			zz.queue_free()
+		var who := int(msg[2])
+		if who != 0:
+			hud.feed("偷袭！%s 打醒了 %s" % [peer_name(who), b.display_name()], UiKit.GOLD)
+			if who == Net.my_id:
+				hud._show_banner("偷袭", "伤害 ×2.5", UiKit.GOLD, 1.6)
+		else:
+			hud.feed("%s 醒了" % b.display_name(), Color(1.0, 0.6, 0.3))
 
 
 func king_retreat(b: Beast) -> void:
@@ -1458,7 +1542,7 @@ func _on_king_ev(msg: Array) -> void:
 		fx.aura_burst(b.global_position, Color(1.0, 0.35, 0.15), 4.0)
 
 
-## 引魂索钩住了魂兽（房主算）：小魂兽被拽上天；魂兽王要捆魂（单人 1 根索、联机 2 根索同时拽住才按得住）
+## 引魂索钩住了灵兽（房主算）：小灵兽被拽上天；灵兽王要捆魂（单人 1 根索、联机 2 根索同时拽住才按得住）
 func host_hook(bid: int, puller: int) -> void:
 	var b: Beast = beasts.get(bid)
 	if not b or not b.alive():
@@ -1477,12 +1561,15 @@ func host_hook(bid: int, puller: int) -> void:
 			var mb := [bid]
 			Net.send(0, "kingbind", mb)
 			_on_king_bind(mb)
+			# 猎场的猎物虚弱了：捆住就开始活捉
+			if b.hunt_role == "target" and b.weak:
+				hunt.host_capture_start(b)
 		else:
 			var mr := [bid, puller, n, need]
 			Net.send(0, "kingrope", mr)
 			_on_king_rope(mr)
 		return
-	# 普通魂兽：拽上天（往拽的人这边飞一点），接着空中连击
+	# 普通灵兽：拽上天（往拽的人这边飞一点），接着空中连击
 	var to: Vector3 = pp - b.global_position
 	to.y = 0.0
 	var vy := Beast.launch_vy(7.0)
@@ -1516,7 +1603,7 @@ func _on_king_rope(msg: Array) -> void:
 		if int(msg[1]) == Net.my_id:
 			hud.toast("它刚挣脱捆魂，过一会儿才能再捆", Color(0.9, 0.9, 0.9), 1.5)
 		return
-	hud.toast("%s 拽住了魂兽王（%d/%d）！再来一根引魂索就能捆住它" % [peer_name(int(msg[1])), int(msg[2]), int(msg[3])], Color(0.5, 0.85, 1.0), 2.5)
+	hud.toast("%s 拽住了灵兽王（%d/%d）！再来一根引魂索就能捆住它" % [peer_name(int(msg[1])), int(msg[2]), int(msg[3])], Color(0.5, 0.85, 1.0), 2.5)
 
 
 func _on_king_bind(msg: Array) -> void:
@@ -1530,7 +1617,7 @@ func _on_king_bind(msg: Array) -> void:
 	Profile.count("binds")
 
 
-## HUD 左上的魂兽王列表：[文字, 颜色]
+## HUD 左上的灵兽王列表：[文字, 颜色]
 func king_list() -> Array:
 	var out: Array = []
 	var me := player.global_position
@@ -1559,7 +1646,7 @@ func _king_row(nm: String, p: Vector3, me: Vector3, dirs: Array, b: Beast) -> St
 	return "%s  %d 米 %s%s" % [nm, int(d.length()), dir, hp]
 
 
-## HUD 顶上要显示哪只魂兽王的血条：离自己 45 米内、正在打的那只
+## HUD 顶上要显示哪只灵兽王的血条：离自己 45 米内、正在打的那只
 func focus_king() -> Beast:
 	var best: Beast = null
 	var bd := 45.0
@@ -1572,7 +1659,7 @@ func focus_king() -> Beast:
 	return best
 
 
-## 精英魂兽（小 Boss）：每张地图在陆地栖息地附近固定几个点，打死了 2 分钟后原地重生
+## 精英灵兽（小 Boss）：每张地图在陆地栖息地附近固定几个点，打死了 2 分钟后原地重生
 func _host_elites(dt: float) -> void:
 	if Data.autotest:
 		return
@@ -1580,7 +1667,7 @@ func _host_elites(dt: float) -> void:
 		if _t < 3.0:
 			return
 		_elite_init = true
-		# 第十一版：不刷固定的魂兽王了（猎物在猎魂榜上挑，秘境里有秘境之主）
+		# 第十一版：不刷固定的灵兽王了（猎物在猎灵榜上挑，秘境里有秘境之主）
 	for key in elites:
 		var e: Dictionary = elites[key]
 		if int(e["id"]) != 0:
@@ -1591,7 +1678,7 @@ func _host_elites(dt: float) -> void:
 		e["t"] = float(e["t"]) - dt
 		if float(e["t"]) <= 0.0:
 			_host_spawn_elite(key)
-	# 地上游荡的魂兽太多了：收掉离所有人最远的普通魂兽
+	# 地上游荡的灵兽太多了：收掉离所有人最远的普通灵兽
 	_cap_t += dt
 	if _cap_t > 2.0:
 		_cap_t = 0.0
@@ -1609,7 +1696,7 @@ func _host_elites(dt: float) -> void:
 
 
 func _init_elites() -> void:
-	# 精英的年份：第一、二章百年，第三章千年，第四、五章万年（第六~九魂环可以打王拿）
+	# 精英的年份：第一、二章百年，第三章千年，第四、五章万年（第六~九灵环可以打王拿）
 	var age: int = [1, 1, 2, 3, 3][clampi(chapter - 1, 0, 4)]
 	for h in island.habitats:
 		if elites.size() >= Data.ELITE_MAX:
@@ -1639,9 +1726,10 @@ func _host_spawn_elite(key: String) -> void:
 	Net.send(0, "bsp", [id, e["species"], e["age"], pos, Vector3.ZERO, 1, "elite", affixes])
 
 
-## 魔狼 / 犀牛 咬到玩家（章节越后越疼，还带这一章的特点：毒 / 冰冻 / 拖拽）
+## 恶狼 / 犀牛 咬到玩家（章节越后越疼，还带这一章的特点：毒 / 冰冻 / 拖拽）
 func beast_bite(b: Beast, peer: int, dmg: float) -> void:
-	dmg *= float(Data.CH_POWER.get(chapter, 1.0)) * Data.BEAST_DMG * Data.BITE_K * Profile.rebirth_hard()
+	dmg *= float(Data.CH_POWER.get(chapter, 1.0)) * Data.BEAST_DMG * Data.BITE_K
+	dmg = minf(dmg, Data.bite_cap(chapter, b.temper == "elite")) * Profile.rebirth_hard()
 	var ch_trait := str(Data.CH_TRAIT.get(chapter, ""))
 	if peer == Net.my_id:
 		player.take_damage(dmg, b.global_position)
@@ -1667,16 +1755,22 @@ func _apply_trait(ch_trait: String, from: Vector3, dmg: float) -> void:
 			hud.toast("被拖过去了！", Color(0.6, 0.8, 1.0), 1.2)
 
 
-## 金刚猿扔石头
+## 山魈扔石头
 func beast_throw_rock(b: Beast, target: Vector3) -> void:
 	var from := b.global_position + Vector3(0, 1.4 * Data.AGES[b.age]["scale"], 0)
 	var dmg: float = float(Data.BEASTS[b.species].get("hurt", 12.0)) * (1.0 + b.age * 0.5) * float(Data.CH_POWER.get(chapter, 1.0)) * Data.BEAST_DMG
-	_host_hazard("rock", from, target, 1.0, 2.2, dmg)
+	_host_hazard("rock", from, target, 1.0, 2.2, minf(dmg, Data.bite_cap(chapter, b.temper == "elite") * 1.5))
 
 
-# ------------------------------------------------------------------ 魂兽的独门本事（Data.BEAST_SKILLS）
+# ------------------------------------------------------------------ 灵兽的独门本事（Data.BEAST_SKILLS）
 
-## 房主：魂兽开始前摇，告诉大家（地上出圈、头顶冒招式名）
+## 每种灵兽的招式长什么样（砸下去的特效用 BossArts 的风格：冰锥、毒雾、蛛丝、水柱、碎石……）
+const BEAST_FX := {"icedeer": "ice", "icehorn": "ice", "snowape": "ice", "icefish": "ice", "snake": "poison", "frog": "poison", "vine": "poison",
+	"spiderling": "silk", "moth": "silk", "bird": "silk", "rhino": "rock", "ape": "rock", "rabbit": "rock", "raptor": "rock",
+	"crab": "water", "shark": "water", "manta": "water", "reeffish": "water", "gull": "water", "stag": "fire", "bat": "fire"}
+
+
+## 房主：灵兽开始前摇，告诉大家（地上出圈、头顶冒招式名）
 func beast_telegraph(b: Beast, sk: Dictionary, at: Vector3) -> void:
 	var center: Vector3 = b.global_position if str(sk["at"]) == "self" else at
 	var msg := [b.id, b.species, center, float(sk["wind"]), float(sk["radius"]) * b.size_k]
@@ -1691,7 +1785,8 @@ func _on_btel(msg: Array) -> void:
 	var center: Vector3 = msg[2]
 	var g: float = island.height_at(center.x, center.z)
 	var ctrl := sk.has("root") or sk.has("blind") or sk.has("silence") or sk.has("slow") or sk.has("pull") or sk.has("vuln")
-	var col := Color(0.75, 0.35, 1.0) if ctrl else Color(1.0, 0.25, 0.15)
+	# 控制类的圈是紫的（一看就知道会被定住 / 减速）；伤害类的按灵兽的风格上色
+	var col := Color(0.75, 0.35, 1.0) if ctrl else (BossArts.col(str(BEAST_FX[msg[1]])) if BEAST_FX.has(msg[1]) else Color(1.0, 0.25, 0.15))
 	if not sk.has("howl"):
 		var t := fx.telegraph(Vector3(center.x, maxf(g, Island.WATER_Y), center.z), float(msg[4]), float(msg[3]), col)
 		get_tree().create_timer(float(msg[3]) + 0.1).timeout.connect(t.queue_free)
@@ -1716,7 +1811,8 @@ func host_beast_special(b: Beast, sk: Dictionary, at: Vector3) -> void:
 	var center: Vector3 = b.global_position if str(sk["at"]) == "self" else at
 	var r := float(sk["radius"]) * b.size_k
 	var base: float = float(Data.BEASTS[b.species].get("hurt", 8.0)) * (1.0 + b.age * 0.5) * (Data.ELITE_DMG if b.temper == "elite" else 1.0) * b._dmgk() * float(Data.CH_POWER.get(chapter, 1.0)) * Data.BEAST_DMG * Profile.rebirth_hard()
-	var dmg := base * float(sk.get("dmg", 1.0))
+	# 有红圈、能躲的招可以比普通一口疼一倍，但不会一下打掉半管血（第二章铁甲兕王的冲撞以前能掉 78%）
+	var dmg := minf(base * float(sk.get("dmg", 1.0)), Data.bite_cap(chapter, b.temper == "elite") * 2.0 * Profile.rebirth_hard())
 	if sk.has("howl"):
 		for o: Beast in beasts.values():
 			if o.alive() and o.global_position.distance_to(b.global_position) < r:
@@ -1742,7 +1838,7 @@ func host_beast_special(b: Beast, sk: Dictionary, at: Vector3) -> void:
 	_on_bskfx(fxm)
 
 
-## 客人 / 自己：中了魂兽的招
+## 客人 / 自己：中了灵兽的招
 func _apply_beast_special(msg: Array) -> void:
 	var sk: Dictionary = Data.BEAST_SKILLS.get(str(msg[0]), {})
 	if sk.is_empty() or player.dead:
@@ -1781,7 +1877,7 @@ func _apply_beast_special(msg: Array) -> void:
 		col = Color(0.6, 0.8, 1.0)
 	if sk.has("silence"):
 		player.silence_t = maxf(player.silence_t, float(sk["silence"]))
-		txt += "：电麻了，放不了魂技"
+		txt += "：电麻了，放不了神通"
 		col = Color(0.5, 0.8, 1.0)
 	if sk.has("poison"):
 		player.poison(maxf(base * float(sk["poison"]), 2.0), float(sk.get("dur", 4.0)))
@@ -1795,7 +1891,7 @@ func _apply_beast_special(msg: Array) -> void:
 		var n := mini(int(Profile.money * float(sk["steal"])), int(float(Data.CH_MONEY.get(chapter, 12.0)) * 8.0))
 		if n > 0:
 			Profile.add_money(-n)
-			txt += "：叼走了 %d 金魂币（打下它能多拿回来）" % n
+			txt += "：叼走了 %d 灵石（打下它能多拿回来）" % n
 			col = UiKit.GOLD
 	hud.toast(txt, col, 1.8)
 
@@ -1810,6 +1906,15 @@ func _on_bskfx(msg: Array) -> void:
 		fx.aura_burst(c, Color(1.0, 0.4, 0.3), r * 0.3)
 		Sfx.play_at("boss_roar", c, -4.0, 0.1, 1.6)
 		return
+	# 按风格砸下去（冰锥从地里扎出来、毒雾、蛛丝、水柱……），再叠这一招自己的效果
+	var style := str(BEAST_FX.get(str(msg[0]), ""))
+	if style != "":
+		arts._impact(style, c, r, 0.0)
+		if msg[0] == "bird":
+			for k in 3:
+				fx._air_ring(c + Vector3.UP * (0.6 + k * 0.5), BossArts.col("silk"), 0.5, r * (0.8 + k * 0.3), 0.5, 0.0, "ring", 2.5, k * 0.08)
+		if not (sk.has("root") or sk.has("blind") or sk.has("silence") or sk.has("poison") or sk.has("bleed")):
+			return
 	if sk.has("root"):
 		fx.vines(c, r, Color(0.6, 0.4, 1.0) if msg[0] != "icedeer" else Color(0.6, 0.9, 1.0))
 	elif sk.has("blind"):
@@ -1867,20 +1972,20 @@ func _on_kill(msg: Array) -> void:
 		_ach_kill(tags, msg[9] if msg.size() > 9 else [], bool(msg[10]) if msg.size() > 10 else false)
 		_check_bounty(species, age, msg[9] if msg.size() > 9 else [])
 		_codex_kill(species, age, msg[9] if msg.size() > 9 else [], bool(msg[10]) if msg.size() > 10 else false)
-	# 自己的击杀中间已经弹了奖励，右边只写队友的（和魂兽王）
+	# 自己的击杀中间已经弹了奖励，右边只写队友的（和灵兽王）
 	if killer != Net.my_id or (msg.size() > 10 and bool(msg[10])):
 		hud.feed("%s 击杀 %s·%s" % [who, Data.age_name(age), Data.BEASTS[species]["name"]], Data.age_color(age))
 	_gain(int(mine[0]), int(mine[1]))
-	# 魂兽王：打死的人和附近 80 米的队友每人一个王魂（附魔材料）
+	# 灵兽王：打死的人和附近 80 米的队友每人一个王魄（附魔材料）
 	if msg.size() > 10 and bool(msg[10]) and (killer == Net.my_id or player.global_position.distance_to(pos) < 80.0):
 		Profile.add_material(species, 1)
-		hud.feed("获得 %s王魂 ×1（暗器铺 → 附魔）" % Data.BEASTS[species]["name"], UiKit.GOLD)
+		hud.feed("获得 %s王魄 ×1（暗器铺 → 附魔）" % Data.BEASTS[species]["name"], UiKit.GOLD)
 		fx.ring_breakthrough(pos, Data.AGES[age]["glow"], 0)
 	if killer == Net.my_id:
 		Profile.kills += 1
 		hud.hitmarker(false, true)
 		_mastery_kill(age, tags, msg.size() > 10 and bool(msg[10]))
-		# 连杀：5 秒内接着杀，每多一只多 15% 金魂币（最多 +75%）
+		# 连杀：5 秒内接着杀，每多一只多 15% 灵石（最多 +75%）
 		var now := Time.get_ticks_msec() / 1000.0
 		_streak = _streak + 1 if now - _streak_at < 5.0 else 1
 		_streak_at = now
@@ -1888,7 +1993,7 @@ func _on_kill(msg: Array) -> void:
 		if bonus > 0:
 			earn(bonus)
 			tags = tags.duplicate()
-			tags.append("%s  +%d 金魂币" % [["", "", "双杀", "三连杀", "四连杀", "五连杀"][mini(_streak, 5)] if _streak <= 5 else "%d 连杀！" % _streak, bonus])
+			tags.append("%s  +%d 灵石" % [["", "", "双杀", "三连杀", "四连杀", "五连杀"][mini(_streak, 5)] if _streak <= 5 else "%d 连杀！" % _streak, bonus])
 		hud.kill_popup(int(mine[0]) + bonus, int(mine[1]), tags, species, age)
 		Sfx.play("kill", -9.0, 0.12)
 		Sfx.play("coin", -4.0, 0.03)
@@ -1917,16 +2022,16 @@ func _mastery_kill(age: int, tags: Array, elite: bool) -> void:
 	player.rebuild_guns()
 
 
-## 炼化魂环精华：相当于打死 4 只这种魂兽的修为
+## 炼化灵环精华：相当于打死 4 只这种灵兽的修为
 func _gain_essence(age: int, species: String) -> void:
 	var xp := int(Data.kill_xp(species, age) * 4.0)
 	fx.absorb(player, Data.age_color(age))
 	Sfx.play("absorb", -6.0, 0.0, 1.3)
-	hud.toast("炼化了%s魂环精华：修为 +%d" % [Data.age_name(age), xp], Data.AGES[age]["glow"], 2.0)
+	hud.toast("炼化了%s灵环精华：修为 +%d" % [Data.age_name(age), xp], Data.AGES[age]["glow"], 2.0)
 	_gain(0, xp)
 
 
-## 自己拿到金魂币和修为
+## 自己拿到灵石和修为
 func _gain(money: int, xp: int) -> void:
 	if money > 0:
 		earn(money)
@@ -1941,7 +2046,7 @@ func _gain(money: int, xp: int) -> void:
 			_broadcast_prog()
 			_check_god()
 		if Profile.at_bottleneck() and not was_cap:
-			hud.toast("到瓶颈了！猎杀魂兽，吸收第%d魂环才能继续修炼（至少%s）" % [Profile.rings.size() + 1, Data.age_name(Data.RING_MIN_AGE[Profile.rings.size()])], Color(1.0, 0.85, 0.4), 6.0)
+			hud.toast("到瓶颈了！猎杀灵兽，吸收第%d灵环才能继续修炼（至少%s）" % [Profile.next_ring_index() + 1, Data.age_name(Data.RING_MIN_AGE[Profile.next_ring_index()])], Color(1.0, 0.85, 0.4), 6.0)
 
 
 func _on_escape(msg: Array) -> void:
@@ -1977,12 +2082,15 @@ func _remove_beast(b: Beast) -> void:
 	b.queue_free()
 
 
-# ------------------------------------------------------------------ 魂环
+# ------------------------------------------------------------------ 灵环
 
-## 魂环只在有人用得上的时候才掉：有人卡在瓶颈、这只魂兽的年份也够。
-## 地上已经有够多没人吸收的魂环就不掉了（不会掉一地没用的魂环）
+## 灵环只在有人用得上的时候才掉：有人卡在瓶颈、这只灵兽的年份也够。
+## 地上已经有够多没人吸收的灵环就不掉了（不会掉一地没用的灵环）
 func _host_maybe_drop_ring(b: Beast, killer: int) -> void:
-	# 魂兽王：卡在瓶颈、年份够的人每人一个魂环；没人要也掉一个（能炼化精华）
+	# 猎场里守宝的王不掉灵环（灵环要从自己挑的猎物身上拿），奖励是大宝箱
+	if b.hunt_role == "guard":
+		return
+	# 灵兽王：卡在瓶颈、年份够的人每人一个灵环；没人要也掉一个（能炼化精华）
 	if b.temper == "elite":
 		var n := 0
 		for id in peer_info:
@@ -1993,15 +2101,15 @@ func _host_maybe_drop_ring(b: Beast, killer: int) -> void:
 		for i in maxi(n, 1):
 			_host_drop_ring(b.global_position + Vector3(randf_range(-2, 2), 1.0, randf_range(-2, 2)), b.age, b.species, 180.0 if n > 0 else 45.0)
 		return
-	# 第十一版：普通魂兽不掉魂环了——魂环要去猎魂榜上挑一只猎（它决定你学什么魂技），或者打秘境之主
+	# 第十一版：普通灵兽不掉灵环了——灵环要去猎灵榜上挑一只猎（它决定你学什么神通），或者打秘境之主
 	if Data.autotest or true:
 		return
-	# 打的人卡在瓶颈、但这只年份不够：告诉他要什么年份（免得以为魂环不掉）
+	# 打的人卡在瓶颈、但这只年份不够：告诉他要什么年份（免得以为灵环不掉）
 	var kinfo: Dictionary = peer_info.get(killer, {})
 	var knr: int = (kinfo.get("rings", []) as Array).size()
 	var klv := int(kinfo.get("level", 1))
 	if knr < Data.MAX_RINGS and klv >= (knr + 1) * 10 and b.age < int(Data.RING_MIN_AGE[knr]):
-		var tip := "这只年份不够：第%s魂环要%s以上的魂兽——去猎地图上的魂兽王（地图上的「王」），它一定掉魂环；也可以用好鱼饵钓" % [Data.RING_NAMES[knr], Data.age_name(int(Data.RING_MIN_AGE[knr]))]
+		var tip := "这只年份不够：第%s灵环要%s以上的灵兽——去猎地图上的灵兽王（地图上的「王」），它一定掉灵环；也可以用好鱼饵钓" % [Data.RING_NAMES[knr], Data.age_name(int(Data.RING_MIN_AGE[knr]))]
 		if killer == Net.my_id:
 			hud.toast(tip, Color(1.0, 0.8, 0.5), 4.0)
 		else:
@@ -2019,14 +2127,14 @@ func _host_maybe_drop_ring(b: Beast, killer: int) -> void:
 	if need > rings.size() and (killer_needs or rng.randf() < 0.6):
 		_host_drop_ring(b.global_position + Vector3(0, 1.0, 0), b.age, b.species)
 		return
-	# 没人要的魂环也按年份概率掉（十年 25% … 十万年 100% 的一半），30 秒后散掉；
-	# 走过去按 F 能炼化魂环精华，涨一截修为
+	# 没人要的灵环也按年份概率掉（十年 25% … 十万年 100% 的一半），30 秒后散掉；
+	# 走过去按 F 能炼化灵环精华，涨一截修为
 	if rings.size() < 6 and rng.randf() < float(Data.AGES[b.age]["ring_drop"]) * 0.5:
 		_host_drop_ring(b.global_position + Vector3(0, 1.0, 0), b.age, b.species, 30.0)
 
 
 func _host_drop_ring(pos: Vector3, age: int, species: String, life := 90.0) -> void:
-	# 魂兽多半死在半空：魂环落到地面上方一人高，走过去就能吸收
+	# 灵兽多半死在半空：灵环落到地面上方一人高，走过去就能吸收
 	# 掉进水里的：浅水沉到水底（潜下去拿，注意憋气），深水冲到最近的岸边
 	var g := island.height_at(pos.x, pos.z)
 	if island.is_land(pos.x, pos.z):
@@ -2059,7 +2167,7 @@ func _on_ring(msg: Array) -> void:
 	var life := float(msg[4]) if msg.size() > 4 else 90.0
 	rings[rid] = {"pos": pos, "age": age, "species": str(msg[3]), "node": node, "t": 0.0, "life": life}
 	if Profile.can_absorb(age) == "":
-		hud.feed("掉落了%s魂环！走过去按 F 吸收" % Data.age_name(age), Data.age_color(age))
+		hud.feed("掉落了%s灵环！走过去按 F 吸收" % Data.age_name(age), Data.age_color(age))
 	Sfx.play_at("ring_drop", pos, 0.0)
 
 
@@ -2093,7 +2201,7 @@ func _start_absorb(age: int, species: String) -> void:
 	hud.absorb_start(age, species)
 	fx.absorb(player, Data.age_color(age))
 	Sfx.play("absorb", -2.0)
-	# 魂技由武魂 + 魂兽 + 年份决定，吸收完才揭晓
+	# 神通由灵相 + 灵兽 + 年份决定，吸收完才揭晓
 	get_tree().create_timer(3.0).timeout.connect(func(): _reveal_skill(age, species))
 
 
@@ -2105,24 +2213,34 @@ func _reveal_skill(age: int, species: String) -> void:
 	finish_absorb(age, species, sid)
 	var s: Dictionary = Data.SKILLS[sid]
 	var key := "按 K 把它装到 Q / E / F"
-	var slot := Profile.skill_slots.find(Profile.rings.size() - 1)
+	# （finish_absorb 把 skills.current 设成了新灵环的位置：散魂丹补的洞不一定在最后）
+	var slot := Profile.skill_slots.find(skills.current)
 	if slot >= 0:
 		key = "已经装在 %s 键上（K 面板里可以换）" % ["Q", "E", "F"][slot]
-	hud._show_banner("领悟魂技 · %s" % s["name"], "%s\n%s" % [s["desc"], key], Data.AGES[age]["glow"], 6.0)
+	hud._show_banner("领悟神通 · %s" % s["name"], "%s\n%s" % [s["desc"], key], Data.AGES[age]["glow"], 6.0)
 
 
-## 界面选好魂技后调用
+## 灵环变了（散魂丹散掉一个）：神通、体力灵力上限、队友看到的灵环跟着变
+func rings_changed() -> void:
+	skills.current = clampi(skills.current, 0, maxi(Profile.rings.size() - 1, 0))
+	player.soul = minf(player.soul, Profile.max_soul())
+	player.hp = minf(player.hp, Profile.max_hp())
+	_broadcast_prog()
+
+
+## 界面选好神通后调用
 func finish_absorb(age: int, species: String, sid: String) -> void:
+	var at := Profile.next_ring_index()
 	Profile.add_ring(age, sid, species)
 	var ups := Profile.add_xp(0)
 	player.soul = Profile.max_soul()
 	player.hp = Profile.max_hp()
-	skills.current = Profile.rings.size() - 1
-	# 大提升：魂环突破，全屏一闪，魂环从脚下升起
+	skills.current = at
+	# 大提升：灵环突破，全屏一闪，灵环从脚下升起
 	fx.ring_breakthrough(player.global_position, Data.age_color(age), Profile.rings.size())
 	player.trauma = 0.7
 	player.hud_flash(Data.age_color(age))
-	hud.toast("吸收了%s魂环！获得魂技【%s】" % [Data.age_name(age), Data.SKILLS[sid]["name"]], Data.AGES[age]["glow"], 6.0)
+	hud.toast("吸收了%s灵环！获得神通【%s】" % [Data.age_name(age), Data.SKILLS[sid]["name"]], Data.AGES[age]["glow"], 6.0)
 	Sfx.play("level_up", -2.0)
 	_broadcast_prog()
 	_check_god()
@@ -2133,31 +2251,36 @@ func finish_absorb(age: int, species: String, sid: String) -> void:
 
 # ------------------------------------------------------------------ 交互（F）
 
-## act = true：按 F 真的会做点什么（开店、召唤、上船、吸收、救人）；false 的只显示说明，F 照样放第三个魂技
+## act = true：按 F 真的会做点什么（开店、召唤、上船、吸收、救人）；false 的只显示说明，F 照样放第三个神通
 func interactables() -> Array:
 	var out := [
-		{"id": "shop", "pos": builder.shop_door, "r": 3.5, "text": "按 F 打开唐门暗器铺", "act": true},
-		{"id": "altar", "pos": island.altar_pos + Vector3(0, 1, 0), "r": 3.5, "text": _altar_text(), "act": _can_summon()},
-		{"id": "boat", "pos": builder.boat_pos + Vector3(0, 1.0, 0), "r": 4.2, "text": _boat_text(), "act": not boat_destinations().is_empty()},
+		{"id": "shop", "pos": builder.shop_door, "r": 3.5, "text": "按 F 打开营地补给（暗器铺）" if island.hunting else "按 F 打开千机阁暗器铺", "act": true},
 	]
+	# 猎场里没有祭坛、渡船、告示牌（它们的位置是空的，别在地图中间冒出"按 F 上船"）
+	if not island.hunting:
+		out.append({"id": "altar", "pos": island.altar_pos + Vector3(0, 1, 0), "r": 3.5, "text": _altar_text(), "act": _can_summon()})
+		out.append({"id": "boat", "pos": builder.boat_pos + Vector3(0, 1.0, 0), "r": 4.2, "text": _boat_text(), "act": not boat_destinations().is_empty()})
 	for rid in rings:
 		var r: Dictionary = rings[rid]
 		var why := Profile.can_absorb(int(r["age"]))
-		var t := "按 F 吸收%s魂环（%s）" % [Data.age_name(int(r["age"])), Data.BEASTS[r["species"]]["name"]] if why == "" else "%s魂环：%s" % [Data.age_name(int(r["age"])), why]
+		var t := "按 F 吸收%s灵环（%s）" % [Data.age_name(int(r["age"])), Data.BEASTS[r["species"]]["name"]] if why == "" else "%s灵环：%s" % [Data.age_name(int(r["age"])), why]
 		var ess := why != "" and not Profile.at_bottleneck()
 		if ess:
-			t = "按 F 炼化%s魂环精华（+修为）" % Data.age_name(int(r["age"]))
+			t = "按 F 炼化%s灵环精华（+修为）" % Data.age_name(int(r["age"]))
 		if why == "":
 			var dur := Data.HUNT_CHANNEL_SOLO if _all_peers().size() == 1 else Data.HUNT_CHANNEL_TEAM
-			t = "按 F 吸收%s魂环 · %s（站着 %d 秒）" % [Data.age_name(int(r["age"])), Data.SKILLS[hunt.skill_preview(str(r["species"]), int(r["age"]))]["name"], int(dur)]
+			t = "按 F 吸收%s灵环 · %s（站着 %d 秒）" % [Data.age_name(int(r["age"])), Data.SKILLS[hunt.skill_preview(str(r["species"]), int(r["age"]))]["name"], int(dur)]
 		out.append({"id": "ring", "rid": rid, "pos": r["pos"], "r": 2.6, "text": t, "ok": why == "", "act": why == "" or ess, "essence": ess})
 	out.append_array(dungeon.interactables())
 	out.append_array(hunt.interactables())
-	out.append({"id": "board", "pos": builder.board_pos + Vector3(0, 1.2, 0), "r": 3.0, "text": "按 F 看猎魂榜（也可以随时按 L）", "act": true})
+	if trip:
+		out.append_array(trip.interactables())
+	if not island.hunting:
+		out.append({"id": "board", "pos": builder.board_pos + Vector3(0, 1.2, 0), "r": 3.0, "text": "按 F 看猎灵榜（也可以随时按 L）", "act": true})
 	return out
 
 
-## Boss 打赢过了（主线到了坐船 / 成神）
+## Boss 打赢过了（主线到了坐船 / 飞升）
 func boss_cleared() -> bool:
 	return str(_cur_quest().get("type", "")) in ["boat", "god"] or quest_idx >= (Data.CHAPTERS[chapter]["quests"] as Array).size()
 
@@ -2172,7 +2295,7 @@ func _can_summon() -> bool:
 	return t == "altar" or (boss_cleared() and _altar_cd <= 0.0)
 
 
-## 渡船能去哪：Boss 打赢了可以去下一章；以前去过的岛随时能回去；猎魂远征随时能去
+## 渡船能去哪：Boss 打赢了可以去下一章；以前去过的岛随时能回去；猎灵远征随时能去
 ## 远征里：只能回原来的章节（存档里的章节）
 func boat_destinations() -> Array:
 	var out: Array = []
@@ -2199,8 +2322,8 @@ func _altar_text() -> String:
 	if boss_cleared():
 		if _altar_cd > 0.0:
 			return "祭坛：%d 秒后可以再次召唤 Boss" % ceili(_altar_cd)
-		return "按 F 再次召唤 Boss（刷魂骨、魂环）"
-	return "祭坛：先猎杀岛上的魂兽王（%d / %d），才能召唤 Boss" % [quest_count, maxi(quest_target, 1)]
+		return "按 F 再次召唤 Boss（刷灵骨、灵环）"
+	return "祭坛：先猎杀岛上的灵兽王（%d / %d），才能召唤 Boss" % [quest_count, maxi(quest_target, 1)]
 
 
 func _boat_text() -> String:
@@ -2239,6 +2362,9 @@ func interact() -> void:
 			dungeon.interact(it)
 		"hclue":
 			hunt.read_clue(int(it["cid"]))
+		"htreasure", "htflag", "htchest":
+			if trip:
+				trip.interact(it)
 		"board":
 			hud.open_board()
 		"boat":
@@ -2395,9 +2521,11 @@ func _on_boss_spawn(msg: Array) -> void:
 	boss.setup(self, str(msg[0]), float(msg[1]), not Net.is_host(), msg[2])
 	boss_tier = int(msg[3]) if msg.size() > 3 else 0
 	_boss_k = (1.0 + 0.25 * boss_tier) * Profile.rebirth_hard()
-	var bname := str(Data.BOSSES[msg[0]]["name"]) + ((" · %s重" % ["一", "二", "三", "四", "五", "六", "七", "八", "九", "十"][mini(boss_tier, 9)]) if boss_tier > 0 else "")
+	# 再叩天召出来的：它吞下的是更高一重天的碎片（第二重、第三重……）
+	var bname := str(Data.BOSSES[msg[0]]["name"]) + ((" · 第%s重天" % ["一", "二", "三", "四", "五", "六", "七", "八", "九", "十"][mini(boss_tier, 9)]) if boss_tier > 0 else "")
 	hud.boss_bar(bname)
-	hud.boss_intro(bname)
+	hud.boss_intro(bname, str(Data.BOSSES[msg[0]].get("lore", "")))
+	boss_nohit = true
 	Sfx.play("boss_roar", 2.0)
 	if str(Data.BOSSES[msg[0]].get("ai", "")) == "water":
 		fx.splash(msg[2], true)
@@ -2419,6 +2547,20 @@ func boss_summon(b: Boss, species: String, n: int) -> void:
 		var tp := nearest_player(b.center())
 		var tpos: Vector3 = tp["pos"] if not tp.is_empty() else player.global_position
 		_host_spawn(1, b.center() + Vector3(randf_range(-3, 3), -2.0, randf_range(-3, 3)), species, 1, tpos, "fierce")
+
+
+## Boss 用 world.boss_projectile / boss_shockwave / boss_ultimate 时再乘这个（这几个函数自己乘的是 CH_POWER，灵兽王也在用）
+func boss_mult() -> float:
+	return float(Data.BOSS_DMG_CH.get(chapter, 1.0)) / float(Data.CH_POWER.get(chapter, 1.0))
+
+
+## 夺回了几块天枢碎片（打倒过几个不同的灵主）
+func shards_recovered() -> int:
+	var n := 0
+	for k in Data.BOSSES:
+		if int(Profile.stats.get("boss_" + str(k), 0)) > 0:
+			n += 1
+	return n
 
 
 func boss_died(b: Boss) -> void:
@@ -2451,14 +2593,25 @@ func _on_boss_dead(msg: Array) -> void:
 		boss.die_visual()     # 播死亡动画、摔下来，自己炸掉
 		boss = null
 	hud.boss_bar("")
+	arts.clear_all()
 	# 重数越高奖励越多（每重 +60%），下次召唤再加一重
 	var tier_k := 1.0 + 0.6 * boss_tier
 	_boss_k = 1.0
+	# 无伤击败（一下都没挨）：报酬再 +50%，记下来
+	if boss_nohit and not player.dead:
+		tier_k *= 1.5
+		Profile.count("nohit_" + kind)
+		Profile.count("nohit")
+		hud.feed("无伤击败 %s！报酬 +50%%" % str(d["name"]), UiKit.GOLD)
+		get_tree().create_timer(2.5).timeout.connect(func():
+			if is_instance_valid(hud):
+				hud._show_banner("无伤击败", "一下都没挨——报酬 +50%", UiKit.GOLD, 4.0))
+	boss_nohit = false
 	_gain(int(float(mine[0]) * tier_k), int(float(mine[1]) * tier_k))
 	Profile.count("boss_" + kind)
 	Profile.boss_tier[kind] = maxi(int(Profile.boss_tier.get(kind, 0)), boss_tier + 1)
 	Profile.mark_dirty()
-	# 魂骨：每人拿一块自己还没有的
+	# 灵骨：每人拿一块自己还没有的
 	# 每章 Boss 送一款专属外观
 	for sid in Data.GUN_SKINS:
 		if str(Data.GUN_SKINS[sid].get("boss", "")) == kind and Profile.unlock_look("skin", sid):
@@ -2467,13 +2620,13 @@ func _on_boss_dead(msg: Array) -> void:
 		if str(Data.OUTFITS[oid].get("boss", "")) == kind and Profile.unlock_look("outfit", oid):
 			hud.feed("解锁了装扮【%s】（暗器铺 → 外观）" % Data.OUTFITS[oid]["name"], UiKit.GOLD)
 	var got := ""
-	var bone_age := mini(int(d["age"]) + boss_tier / 2, 4)    # 二重、三重掉的魂骨年份更高
+	var bone_age := mini(int(d["age"]) + boss_tier / 2, 4)    # 二重、三重掉的灵骨年份更高
 	for bid in d["bones"]:
 		if Profile.add_bone("%s@%d" % [str(bid), bone_age], true):
 			got = "%s@%d" % [str(bid), bone_age]
 			player.on_bones_changed()
 			break
-	hud.boss_defeated(str(d["name"]), int(mine[0]), got)
+	hud.boss_defeated(str(d["name"]), int(mine[0]), got, int(d["age"]), int(d.get("shard", 0)), shards_recovered())
 	Sfx.play("quest_done", 0.0)
 	player.rebuild_guns()
 
@@ -2744,7 +2897,7 @@ func _update_hazards(dt: float) -> void:
 		if _pool_tick >= 0.25:
 			var at: Vector3 = pl["pos"]
 			if Vector2(me.x - at.x, me.z - at.z).length() < float(pl["radius"]) and absf(me.y - at.y) < 2.5:
-				player.take_damage(float(pl["dps"]) * 0.25, at)
+				player.take_damage(float(pl["dps"]) * 0.25, at, true)
 	if _pool_tick >= 0.25:
 		_pool_tick = 0.0
 	for tg in _telegraphs.duplicate():
@@ -2765,7 +2918,7 @@ func _update_hazards(dt: float) -> void:
 				player.trauma = minf(player.trauma + 0.4, 1.0)
 
 
-# ------------------------------------------------------------------ 佛怒唐莲
+# ------------------------------------------------------------------ 九转雷莲
 
 func throw_grenade(pos: Vector3, vel: Vector3) -> void:
 	_spawn_grenade(pos, vel, Net.my_id, true)
@@ -2812,7 +2965,7 @@ func _update_grenades(dt: float) -> void:
 
 
 func _host_boom(pos: Vector3, owner: int) -> void:
-	# 佛怒唐莲跟着章节变强（不然后面的图炸不动）
+	# 九转雷莲跟着章节变强（不然后面的图炸不动）
 	var base := 160.0 * float(Data.CH_HP.get(chapter, 1.0)) * 2.5
 	for b in skills._beasts_in(pos, 7.0):
 		var dmg := base * (1.0 - clampf(b.global_position.distance_to(pos) / 8.0, 0.0, 0.7))
@@ -2824,7 +2977,7 @@ func _host_boom(pos: Vector3, owner: int) -> void:
 	nests.host_area_damage(pos, 7.0, base, owner)
 
 
-# ------------------------------------------------------------------ 魂技特效（大家都放）
+# ------------------------------------------------------------------ 神通特效（大家都放）
 
 func skill_fx(sid: String, center: Vector3, dir: Vector3, caster: int, origin: Vector3) -> void:
 	var s: Dictionary = Data.SKILLS.get(sid, {})
@@ -2841,13 +2994,13 @@ func skill_fx(sid: String, center: Vector3, dir: Vector3, caster: int, origin: V
 	fx.skill_flourish(fc, col, tier, float(s.get("radius", 4.0)))
 	var who_node: Node3D = player if caster == Net.my_id else (remotes.get(caster) as Node3D)
 	if s.get("shen", false):
-		# 神技：天上显现武魂法相
+		# 神技：天上显现灵相法相
 		var wh := int(peer_info.get(caster, {}).get("wuhun", Settings.wuhun if caster == Net.my_id else 0))
 		fx.shen_manifest(who0, wh, col)
 		if who0.distance_to(player.global_position) < 150.0:
 			player.trauma = 1.0
 			hud.flash(Color(col.r, col.g, col.b, 0.5))
-			hud._show_banner("神技 · %s" % s["name"], "%s 的武魂法相降临" % peer_name(caster), col, 3.5)
+			hud._show_banner("神技 · %s" % s["name"], "%s 的灵相法相降临" % peer_name(caster), col, 3.5)
 	match str(s["type"]):
 		"summon":
 			var kind := str(s.get("kind", ""))
@@ -2987,6 +3140,9 @@ func _respawn_at_dock() -> void:
 	player.teleport(island.spawn + Vector3(0, 0.5, 0))
 	player.invuln_t = 4.0
 	hud.death_countdown(-1.0)
+	# 猎场：倒下回营地算一次（全队 3 次就失败）
+	if trip:
+		trip.on_my_faint()
 
 ## 换了外观：自己手里的重建，告诉队友
 func on_look_changed() -> void:
@@ -3072,7 +3228,7 @@ func _add_remote(id: int, info: Dictionary) -> void:
 	r.set_camera(player.cam)
 	remotes[id] = r
 	_stat(id)
-	hud.feed("%s 加入了" % str(info.get("name", "魂师")), Color(0.6, 0.95, 0.7))
+	hud.feed("%s 加入了" % str(info.get("name", "修士")), Color(0.6, 0.95, 0.7))
 
 
 func hello_payload(want_reply: bool) -> Array:
@@ -3136,7 +3292,7 @@ func on_message(from: int, type: String, data: Variant) -> void:
 			if Net.is_host():
 				var d: Array = data
 				_host_spawn(from, d[0], str(d[2]), int(d[3]), d[4], "", str(d[5]) if d.size() > 5 else "grass")
-				# 星斗大森林：成群的魂兽，同窝的会跑来帮忙
+				# 苍梧林海：成群的灵兽，同窝的会跑来帮忙
 				if str(Data.CH_TRAIT.get(chapter, "")) == "pack" and rng.randf() < 0.45 and not Data.autotest:
 					for k in rng.randi_range(1, 2):
 						var a := rng.randf() * TAU
@@ -3333,6 +3489,19 @@ func on_message(from: int, type: String, data: Variant) -> void:
 			_on_boat_ready(data)
 		"travel":
 			_travel(int(data[0]))
+		"huntgo":
+			go_hunt((data as Array)[0])
+		"huntback":
+			travel_back()
+		"ba":
+			arts.on_message(data)
+		"bstun":
+			arts.on_stun(data)
+		"htst", "htfaint", "htdone", "htfail", "htback", "htguard":
+			if trip:
+				trip.on_message(from, type, data)
+		"ksleep":
+			_on_king_sleep(data)
 		"died":
 			hud.feed("%s 倒下了，被海鸥叼到天上了！把海鸥打下来救他" % peer_name(from), Color(1, 0.5, 0.4))
 		"gullend":
@@ -3419,7 +3588,7 @@ func _send_init(to: int) -> void:
 	var bs := []
 	if boss and not boss.dead:
 		bs = [boss.kind, boss.max_hp, boss._anchor, boss.hp / boss.max_hp]
-	Net.send(to, "init", [chapter, quest_idx, quest_count, list, rl, bs, stats, loot.init_list()])
+	Net.send(to, "init", [chapter, quest_idx, quest_count, list, rl, bs, stats, loot.init_list(), hunting])
 
 
 func _apply_init(d: Array) -> void:

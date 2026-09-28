@@ -21,8 +21,8 @@ const HIP := {
 const ADS_DIST := {"xiujian": 0.22, "meihua": 0.22, "zhuge": 0.15, "longxu": 0.13, "kongque": 0.14, "baoyu": 0.2, "zimu": 0.16,
 	"hansha": 0.14, "zhuihun": 0.09, "guanyin": 0.14, "fist": 0.0}
 
-var charge := 0.0               # 观音泪蓄力（泪滴越来越亮）
-var spin := 0.0                 # 含沙射影的转速（枪管转起来）
+var charge := 0.0               # 天心泪蓄力（泪滴越来越亮）
+var spin := 0.0                 # 流沙机弩的转速（枪管转起来）
 var move_vel := Vector3.ZERO    # 人的速度（挂件跟着晃）
 var _charm_a := Vector2.ZERO    # 挂件摆角（x 前后，z 左右）
 var _charm_v := Vector2.ZERO
@@ -56,10 +56,26 @@ var _arm_flex := 0.0
 var _lever_t := 0.0
 var _lever_len := 0.0
 var _idle_t := 0.0
-var _item: Node3D                # 手上拿的道具（唐莲、回血丹、魂骨），拿着时暗器收起来
+var _item: Node3D                # 手上拿的道具（雷莲、回血丹、灵骨），拿着时暗器收起来
 var _punch_t := 0.0              # 出拳进度（1 → 0）
 var _inspect_t := 0.0            # 检视暗器（按 V）：把暗器翻过来看皮肤
 var _punch_side := 1.0
+# 切枪（参考 CoD，用户说原来"只是把枪拿出来，没手感"）：
+#   收枪：手上这把往右下沉、枪口朝下、侧翻着收走（HOLSTER 秒）
+#   掏枪：新的从右下斜着翻上来，稍微冲过头再落稳（按轻重 0.3~0.5 秒），落稳时一震 + 咔哒一声；
+#   这局第一次掏出带机括的（连机神弩、穿云弩、千丝雨针、子母雷珠）还会拉一下栓 / 泵
+const HOLSTER := 0.14
+const HOL_POS := Vector3(0.07, -0.3, 0.07)
+const HOL_ROT := Vector3(-0.75, 0.3, -0.85)
+const RAISE_POS := Vector3(0.1, -0.3, 0.1)
+const RAISE_ROT := Vector3(-0.6, 0.45, -1.0)
+const HEAVY := ["hansha", "zimu", "zhuihun", "guanyin"]
+var _hol_t := -1.0               # 收枪进行了多久（-1 = 没在收）
+var _pending := ""               # 收完以后要掏的
+var _raise_t := -1.0             # 掏枪进行了多久（-1 = 没在掏）
+var _raise_len := 0.4
+var _rack := false               # 这次掏枪要拉栓
+var _drawn := {}                 # 这局掏过的暗器（第一次掏才拉栓）
 
 
 func _ready() -> void:
@@ -124,19 +140,104 @@ func show_item(kind: String, key: String) -> void:
 	for k in models:
 		models[k].visible = false
 	_switch = 1.0
+	# 正在收枪 / 掏枪：直接结束（道具自己从下面升上来）
+	if _hol_t >= 0.0:
+		_hol_t = -1.0
+		cur = _pending
+	_raise_t = -1.0
 
 
-func set_weapon(id: String, instant := false) -> void:
+## 换暗器。返回多久以后能开枪（Player.switch_t）
+func set_weapon(id: String, instant := false) -> float:
+	var had_item := _item != null
 	if _item:
 		_item.queue_free()
 		_item = null
-	cur = id
 	_inspect_t = 0.0
-	for k in models:
-		models[k].visible = k == id
-	_switch = 0.0 if instant else 1.0
+	_switch = 0.0
 	_kp = Vector3.ZERO
 	_kr = Vector3.ZERO
+	if instant:
+		_hol_t = -1.0
+		_raise_t = -1.0
+		_drawn[id] = true
+		_show_only(id)
+		return 0.0
+	# 正在收上一把：收完直接掏这把
+	if _hol_t >= 0.0:
+		_pending = id
+		return (HOLSTER - _hol_t) + raise_time(id) * 0.8
+	# 手上有暗器露着：先收枪
+	if not had_item and models.has(cur) and (models[cur] as Node3D).visible and cur != id:
+		_pending = id
+		_hol_t = 0.0
+		return HOLSTER + raise_time(id) * 0.8
+	_begin_raise(id)
+	return _raise_len * 0.8
+
+
+## 掏这把要多久：副手快、重的慢；第一次掏带机括的多一截（拉栓）
+func raise_time(id: String) -> float:
+	var t := 0.3 if (id in Data.SIDEARMS or id == "fist") else (0.5 if id in HEAVY else 0.4)
+	if not _drawn.has(id) and id in ["zhuge", "zhuihun", "baoyu", "zimu"]:
+		t += 0.22
+	return t
+
+
+func _begin_raise(id: String) -> void:
+	_raise_len = raise_time(id)
+	_rack = not _drawn.has(id) and id in ["zhuge", "zhuihun", "baoyu", "zimu"]
+	_drawn[id] = true
+	_raise_t = 0.0
+	_show_only(id)
+
+
+func _show_only(id: String) -> void:
+	cur = id
+	for k in models:
+		models[k].visible = k == id
+
+
+## 回弹的缓动：冲过头一点再落回来（0 → 1）
+static func _ease_back(t: float) -> float:
+	var c1 := 1.35
+	var c3 := c1 + 1.0
+	var u := t - 1.0
+	return 1.0 + c3 * u * u * u + c1 * u * u
+
+
+## 收枪 / 掏枪的进度：返回 [收枪程度 0~1, 掏枪剩下的程度（1 = 还在最下面，负的 = 冲过头）]
+func _switch_anim(dt: float) -> Vector2:
+	var hk := 0.0
+	if _hol_t >= 0.0:
+		_hol_t += dt
+		var h := clampf(_hol_t / HOLSTER, 0.0, 1.0)
+		hk = h * h
+		if _hol_t >= HOLSTER:
+			_hol_t = -1.0
+			hk = 0.0
+			_begin_raise(_pending)
+	var rk := 0.0
+	if _raise_t >= 0.0:
+		_raise_t += dt
+		var t := clampf(_raise_t / _raise_len, 0.0, 1.0)
+		# 要拉栓的：前七成掏上来，后面拉栓
+		var up := clampf(t / (0.7 if _rack else 1.0), 0.0, 1.0)
+		rk = 1.0 - _ease_back(up)
+		if _rack and t >= 0.62 and _lever_t <= 0.0:
+			_rack = false
+			_lever_t = 0.3
+			_lever_len = 0.3
+			var snd := "bolt_cycle" if cur == "zhuihun" else ("pump" if cur in ["baoyu", "zimu"] else "reload_end")
+			Sfx.play(snd, -8.0, 0.05, 1.1)
+		if t >= 1.0:
+			_raise_t = -1.0
+			rk = 0.0
+			# 落稳：往上一震、咔哒一声
+			_krv += Vector3(0.9, randf_range(-0.2, 0.2), 0.6 * (1.0 if randf() < 0.5 else -1.0))
+			_kpv += Vector3(0, 0.15, -0.35)
+			Sfx.play("reload_end", -13.0, 0.05, 1.35)
+	return Vector2(hk, rk)
 
 
 func model() -> Node3D:
@@ -233,6 +334,7 @@ func update(dt: float, ads: float, speed_k: float, grounded: bool, reload_k: flo
 		_bob_amt = U.damp(_bob_amt, 0.0, 6.0, dt)
 
 	_punch_t = move_toward(_punch_t, 0.0, dt / 0.26)
+	var sw := _switch_anim(dt)
 	# 全屏瞄准镜开着时手里的东西藏起来（像 CS 的狙击镜）
 	visible = not scoped
 	var m := model()
@@ -251,6 +353,8 @@ func update(dt: float, ads: float, speed_k: float, grounded: bool, reload_k: flo
 	p += _kp * Vector3(0.3, 0.3, 1.0) * lerpf(1.0, 0.55, ads_k)
 	p.y -= _land * 0.045 * calm
 	p.y -= _switch * 0.32
+	# 切枪：收的往右下沉走，掏的从右下翻上来
+	p += HOL_POS * sw.x + RAISE_POS * sw.y
 	# 换弹：放低、侧过来
 	var rs := sin(reload_k * PI)
 	if per_shell:
@@ -271,7 +375,7 @@ func update(dt: float, ads: float, speed_k: float, grounded: bool, reload_k: flo
 	m.rotation = Vector3(
 		_kr.x + rs * 0.35 - sprint * 0.35 * (1.0 - ads_k) + _switch * 0.5 + insp.x,
 		-_sway.x * 1.4 + _kr.y + sprint * 0.55 * (1.0 - ads_k) + insp.y,
-		-_sway.x * 1.8 + _kr.z + rs * 0.55 + _move_tilt * calm + insp.z)
+		-_sway.x * 1.8 + _kr.z + rs * 0.55 + _move_tilt * calm + insp.z) + HOL_ROT * sw.x + RAISE_ROT * sw.y
 
 	_animate_parts(m, reload_k, per_shell)
 	_animate_extras(m, dt)
@@ -298,7 +402,7 @@ func update(dt: float, ads: float, speed_k: float, grounded: bool, reload_k: flo
 	coil.rotation.y += dt * 2.0
 
 
-## 含沙射影的枪管转、观音泪的泪滴随蓄力变亮、挂件像摆一样晃
+## 流沙机弩的枪管转、天心泪的泪滴随蓄力变亮、挂件像摆一样晃
 func _animate_extras(m: Node3D, dt: float) -> void:
 	var rotor := m.get_node_or_null("Rotor") as Node3D
 	if rotor:
@@ -370,7 +474,7 @@ func _animate_parts(m: Node3D, reload_k: float, per_shell: bool) -> void:
 		mag.position.y = float(mag.get_meta("y")) - off * 0.14
 		mag.position.z = float(mag.get_meta("z")) + off * 0.05
 		mag.visible = off < 0.95
-	# 机括：诸葛神弩的拉杆、追魂弩的栓、梨花针的泵
+	# 机括：连机神弩的拉杆、穿云弩的栓、千丝雨针的泵
 	var lever := m.get_node_or_null("Lever") as Node3D
 	if lever:
 		if not lever.has_meta("rest"):

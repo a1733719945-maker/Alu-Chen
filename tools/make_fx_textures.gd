@@ -251,7 +251,7 @@ func _swirl() -> void:
 	_save("swirl", n, n, px)
 
 
-## 月牙斩：一道弧光，头亮尾淡（爪击、镰刀）
+## 月牙斩：一道弧光，头亮尾淡（爪击、玄月镰）
 func _slash() -> void:
 	var n := 512
 	var px := PackedByteArray()
@@ -365,7 +365,7 @@ func _seg(p: Vector2, a: Vector2, b: Vector2) -> float:
 	return p.distance_to(a + ab * t)
 
 
-## 魂环：一圈亮的细环 + 外面一层柔光（魂兽脚下的魂环、掉在地上的魂环）
+## 灵环：一圈亮的细环 + 外面一层柔光（灵兽脚下的灵环、掉在地上的灵环）
 func _halo() -> void:
 	var n := 512
 	var px := PackedByteArray()

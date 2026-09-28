@@ -37,7 +37,7 @@ func _draw() -> void:
 	var len := 9.0
 	var ads := player.ads
 	var line_a := 1.0 - ads * 0.85
-	# 观音泪蓄力：一圈从上面顺时针走满，满了变金色、一闪一闪
+	# 天心泪蓄力：一圈从上面顺时针走满，满了变金色、一闪一闪
 	var gch := player.gun.charge
 	if gch > 0.0:
 		var full := gch >= 0.98

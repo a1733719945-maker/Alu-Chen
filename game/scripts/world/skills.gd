@@ -1,15 +1,15 @@
 class_name SkillSystem
 extends Node
-## 魂技：每个魂环一个魂技。Q / E / F 三个槽各装一个（Profile.skill_slots，K 面板里换），见 cast_slot。
+## 神通：每个灵环一个神通。Q / E / F 三个槽各装一个（Profile.skill_slots，K 面板里换），见 cast_slot。
 ##
-## 放技能的人：扣魂力、算目标、处理自己身上的效果（增益、冲刺、跳跃），把"对魂兽的效果"发给房主。
-## 房主：对魂兽 / Boss 生效（炸飞、定身、易伤、牵引、光束……），再广播特效。
-## 威力 = 魂环年份倍率（十年 1.0 / 百年 1.3 / 千年 1.7 / 万年 2.3 / 十万年 3.2）× (1 + 等级 × 2%)
+## 放技能的人：扣灵力、算目标、处理自己身上的效果（增益、冲刺、跳跃），把"对灵兽的效果"发给房主。
+## 房主：对灵兽 / Boss 生效（炸飞、定身、易伤、牵引、光束……），再广播特效。
+## 威力 = 灵环年份倍率（十年 1.0 / 百年 1.3 / 千年 1.7 / 万年 2.3 / 十万年 3.2）× (1 + 等级 × 2%)
 
 var world: Node
 var cooldowns := [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-var current := 0                # 当前魂技是第几个魂环的
-var _leap := {}                  # 凤翼天翔 / 天使之翼 落地时触发
+var current := 0                # 当前神通是第几个灵环的
+var _leap := {}                  # 凤翼天翔 / 玄女之翼 落地时触发
 var _projectiles: Array = []     # 本地模拟的飞弹 {sid, pos, vel, power, caster, life, mi}
 var _rains: Array = []           # 房主排队的连击 {sid, center, power, caster, waves, t}
 var _summons: Array = []         # 房主：召唤出来的魂灵 {sid, pos, t, next, heal_t, power, caster}
@@ -43,7 +43,7 @@ func _process(dt: float) -> void:
 		_update_delayed(dt)
 
 
-# ------------------------------------------------------------------ 魂技槽：Q / E / F 放的是哪个魂环的魂技（Profile.skill_slots，K 面板里换）
+# ------------------------------------------------------------------ 神通槽：Q / E / F 放的是哪个灵环的神通（Profile.skill_slots，K 面板里换）
 
 func slot_ring(k: int) -> int:
 	if k < 0 or k >= Profile.skill_slots.size():
@@ -56,16 +56,16 @@ func cast_slot(k: int) -> void:
 	var r := slot_ring(k)
 	if r < 0:
 		if Profile.rings.is_empty():
-			world.hud.toast("还没有魂技。到 10 级瓶颈后吸收魂环就能获得", Color(0.9, 0.9, 0.9))
+			world.hud.toast("还没有神通。到 10 级瓶颈后吸收灵环就能获得", Color(0.9, 0.9, 0.9))
 		else:
-			world.hud.toast("这个魂技槽空着：按 K 打开武魂面板，把魂技装到 Q / E / F", Color(0.9, 0.9, 0.9))
+			world.hud.toast("这个神通槽空着：按 K 打开灵相面板，把神通装到 Q / E / F", Color(0.9, 0.9, 0.9))
 		return
 	current = r
 	cast(r)
 
 
-# ------------------------------------------------------------------ 按类别放魂技（旧版，留着兼容）
-# Q 攻击 / F 辅助 / 双击 Shift 位移。同一类有好几个：放冷却好、魂力够、魂环最高的那个，连按就轮着放
+# ------------------------------------------------------------------ 按类别放神通（旧版，留着兼容）
+# Q 攻击 / F 辅助 / 双击 Shift 位移。同一类有好几个：放冷却好、灵力够、灵环最高的那个，连按就轮着放
 const CATS := {
 	"attack": ["launch", "beam", "projectile", "rain", "root", "mark", "pull"],
 	"support": ["buff", "heal", "shield", "giant", "invis"],
@@ -83,7 +83,7 @@ func slots_of(cat: String) -> Array:
 	return out
 
 
-## 这一类现在该放哪个：能放的里面魂环最高的；都在冷却就返回冷却最快好的那个；没有返回 -1
+## 这一类现在该放哪个：能放的里面灵环最高的；都在冷却就返回冷却最快好的那个；没有返回 -1
 func pick(cat: String) -> int:
 	var ss := slots_of(cat)
 	if ss.is_empty():
@@ -105,7 +105,7 @@ func pick(cat: String) -> int:
 func cast_cat(cat: String) -> void:
 	var i := pick(cat)
 	if i < 0:
-		world.hud.toast("还没有%s类魂技（吸收魂环时选）" % CAT_NAMES[cat], Color(0.85, 0.85, 0.85), 1.6)
+		world.hud.toast("还没有%s类神通（吸收灵环时选）" % CAT_NAMES[cat], Color(0.85, 0.85, 0.85), 1.6)
 		return
 	if cooldowns[i] > 0.0:
 		world.hud.toast("%s还要 %.1f 秒" % [Data.SKILLS[slot_skill(i)]["name"], cooldowns[i]], Color(0.8, 0.85, 1.0), 1.0)
@@ -121,18 +121,18 @@ func cast(slot: int) -> void:
 	var p: Player = world.player
 	var sid := slot_skill(slot)
 	if sid == "":
-		world.hud.toast("还没有魂技。到 10 级瓶颈后吸收魂环就能获得", Color(0.9, 0.9, 0.9))
+		world.hud.toast("还没有神通。到 10 级瓶颈后吸收灵环就能获得", Color(0.9, 0.9, 0.9))
 		return
 	var s: Dictionary = Data.SKILLS[sid]
 	if p.silence_t > 0.0:
-		world.hud.toast("被电麻了，%.1f 秒内放不了魂技" % p.silence_t, Color(0.5, 0.8, 1.0), 1.0)
+		world.hud.toast("被电麻了，%.1f 秒内放不了神通" % p.silence_t, Color(0.5, 0.8, 1.0), 1.0)
 		Sfx.play("dry", -8.0)
 		return
 	if cooldowns[slot] > 0.0:
 		Sfx.play("dry", -8.0)
 		return
 	if p.soul < float(s["cost"]):
-		world.hud.toast("魂力不够（需要 %d）" % int(s["cost"]), Color(0.6, 0.8, 1.0))
+		world.hud.toast("灵力不够（需要 %d）" % int(s["cost"]), Color(0.6, 0.8, 1.0))
 		Sfx.play("dry", -8.0)
 		return
 	p.soul -= float(s["cost"])
@@ -146,7 +146,7 @@ func cast(slot: int) -> void:
 			center = _aim_point(origin, dir, 60.0)
 		"dir":
 			center = origin
-	# 放在原地的召唤物（宝塔、香肠）摆在身前，不然镜头在它身体里面，满屏都是光
+	# 放在原地的召唤物（宝塔、灵葫）摆在身前，不然镜头在它身体里面，满屏都是光
 	if str(s["type"]) == "summon" and str(s.get("target", "self")) == "self" and not str(s.get("kind", "")) in FOLLOW_KINDS:
 		var fl := Vector3(dir.x, 0, dir.z).normalized()
 		center = p.global_position + fl * 4.0 + fl.cross(Vector3.UP) * 3.5
@@ -180,7 +180,7 @@ func cast(slot: int) -> void:
 				Net.send_host("skill", [sid, power, start + Vector3.UP, flat, Net.my_id])
 			center = start + Vector3.UP
 		"grapple":
-			# 蓝银飞索：打到哪儿把自己拉过去
+			# 青冥飞索：打到哪儿把自己拉过去
 			var hit: Dictionary = world.raycast(origin, origin + dir * float(s["range"]), U.LAYER_WORLD | U.LAYER_BEAST, [p.get_rid()])
 			if hit.is_empty():
 				world.hud.toast("太远了，飞索够不着", Color(0.8, 0.9, 1.0))
@@ -219,7 +219,7 @@ func cast(slot: int) -> void:
 			_spawn_projectile(sid, origin + dir * 0.8, dir * float(s["speed"]), power, Net.my_id, true)
 			Net.send(0, "skproj", [sid, origin + dir * 0.8, dir * float(s["speed"])])
 		"empower":
-			# 武魂附体：一段时间内暗器命中带额外效果（World.local_fire 里处理）
+			# 灵相附体：一段时间内暗器命中带额外效果（World.local_fire 里处理）
 			p.empower = {"sid": sid, "kind": str(s["kind"]), "frac": float(s["frac"]) * lerpf(1.0, power, 0.5), "t": float(s["dur"])}
 			p.add_buff("dmg", 0.1, float(s["dur"]))
 		"domain":
@@ -319,7 +319,7 @@ func _update_projectiles(dt: float) -> void:
 				Net.send_host("skillhit", [pr["sid"], pr["power"], at, pr["caster"]])
 
 
-# ------------------------------------------------------------------ 房主：对魂兽生效
+# ------------------------------------------------------------------ 房主：对灵兽生效
 
 func host_apply(sid: String, power: float, center: Vector3, dir: Vector3, caster: int) -> void:
 	var s: Dictionary = Data.SKILLS.get(sid, {})
@@ -376,7 +376,7 @@ func host_apply(sid: String, power: float, center: Vector3, dir: Vector3, caster
 			_new_skill_host(sid, s, power, center, caster)
 
 
-# ------------------------------------------------------------------ 房主：新魂技（召唤、环绕、连锁、黑洞、领域、附体）
+# ------------------------------------------------------------------ 房主：新神通（召唤、环绕、连锁、黑洞、领域、附体）
 
 func _caster_pos(caster: int) -> Vector3:
 	for pl in world.all_players():
@@ -385,7 +385,7 @@ func _caster_pos(caster: int) -> Vector3:
 	return Vector3.INF
 
 
-## 离 pos 最近的活魂兽（range 以内），没有返回 null
+## 离 pos 最近的活灵兽（range 以内），没有返回 null
 func _nearest_beast(pos: Vector3, range_m: float, skip: Dictionary = {}) -> Beast:
 	var best: Beast = null
 	var bd := range_m
@@ -433,7 +433,7 @@ func _update_summons(dt: float) -> void:
 				pos = cp
 				sm["pos"] = cp
 		var power := float(sm["power"])
-		# 回血型（香肠补给站、琉璃宝塔）：每秒给附近队友回血
+		# 回血型（灵葫补给站、玲珑宝塔）：每秒给附近队友回血
 		if s.has("heal"):
 			sm["heal_t"] = float(sm["heal_t"]) - dt
 			if float(sm["heal_t"]) <= 0.0:
@@ -582,7 +582,7 @@ func _update_delayed(dt: float) -> void:
 		_launch(d["center"], float(s["radius"]), float(s["damage"]) * power, float(s.get("impulse", 12.0)), int(d["caster"]), float(s.get("burn", 0.0)) * power)
 
 
-## 武魂附体：暗器打中魂兽以后的额外效果（放技能的人报给房主）
+## 灵相附体：暗器打中灵兽以后的额外效果（放技能的人报给房主）
 func host_empower(kind: String, pos: Vector3, dmg: float, caster: int, bid: int) -> void:
 	var b: Beast = world.beasts.get(bid)
 	match kind:
@@ -652,7 +652,7 @@ func _beasts_in(center: Vector3, radius: float) -> Array:
 		if not b.alive():
 			continue
 		var d: Vector3 = b.global_position - center
-		# 竖直方向放宽，空中的魂兽也能打到
+		# 竖直方向放宽，空中的灵兽也能打到
 		if Vector2(d.x, d.z).length() <= radius and d.y > -3.0 and d.y < radius + 6.0:
 			out.append(b)
 	return out
@@ -704,7 +704,7 @@ func _beam(origin: Vector3, dir: Vector3, length: float, dmg: float, pierce: int
 		_boss_hit(dmg, true, caster)
 
 
-## 魂技伤害跟着章节的魂兽血量一起涨（魂兽血量每章翻倍，魂技不涨的话后面的章节刮痧；用户反馈"很多魂技基本打不动后面的怪物"）
+## 神通伤害跟着章节的灵兽血量一起涨（灵兽血量每章翻倍，神通不涨的话后面的章节刮痧；用户反馈"很多神通基本打不动后面的怪物"）
 func _dk() -> float:
 	if Data.autotest:
 		return 1.0

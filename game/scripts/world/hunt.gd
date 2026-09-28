@@ -1,15 +1,15 @@
 class_name Hunt
 extends Node
-## 猎魂（第十一版）：野外不刷怪，只猎自己挑的魂兽。
+## 猎灵（第十一版）：野外不刷怪，只猎自己挑的灵兽。
 ##
-## 猎魂榜（L）列出这座岛能猎的魂兽，每张卡写明它的魂环会给你哪个魂技（原著里唐三为了蓝银草专门去找曼陀罗蛇）。
+## 猎灵榜（L）列出这座岛能猎的灵兽，每张卡写明它的灵环会给你哪个神通。
 ## 挑一只 → 房主让它在离大家远的地方出现，在栖息地之间游荡。**要自己找**（用户：以前"路太好找了，没有探索的感觉"）：
 ##   榜上只说它在哪一带出没；它走过的地方每隔十几米留一处爪痕（走近才看得见，35 米外看不到），
 ##   走过去按 F 查看：它往哪个方向去了、痕迹新不新。看过 3 处就"锁定"它 45 秒（罗盘上标准确位置）；
 ##   它隔半分钟吼一声，140 米内才听得到，只知道方向；30 米内直接看得到它。脚印只在 45 米内显示。
-## 打倒它（王的大招、半血暴怒、引魂索捆魂）→ 掉魂环（卡瓶颈、年份够的每人一个）、王魂、魂骨、一大截修为。
-## 吸收魂环（任何魂环都一样）：站着不动，能开枪。单人 10 秒、只来一小波；联机 25 秒，魂兽一波波冲吸收的人，队友护法。
-## 吸收的人倒下 → 失败，魂环掉回原地。
+## 打倒它（王的大招、半血暴怒、引魂索捆魂）→ 掉灵环（卡瓶颈、年份够的每人一个）、王魄、灵骨、一大截修为。
+## 吸收灵环（任何灵环都一样）：站着不动，能开枪。单人 10 秒、只来一小波；联机 25 秒，灵兽一波波冲吸收的人，队友护法。
+## 吸收的人倒下 → 失败，灵环掉回原地。
 ##
 ## 联机：房主管猎物和护法，每秒发 "hst"；踪迹 hfp、吼声 hroar、护法结束 hchend、放弃 hchq、挑猎物 hreq、提示 hev。
 
@@ -24,7 +24,7 @@ var target_species := ""
 var target_age := 0
 var region := ""                   # 猎物在哪一带出没（栖息地名字）
 var clues: Array = []              # 痕迹 [[id, 位置, 往哪走 x, z], ...]（房主算好发过来）
-var channel := {}                  # 正在吸收魂环：{"peer", "age", "species", "pos", "t", "dur"}
+var channel := {}                  # 正在吸收灵环：{"peer", "age", "species", "pos", "t", "dur"}
 # 房主
 var _sync_t := 0.0
 var _wander_t := 0.0
@@ -36,6 +36,11 @@ var _wave_ids: Array = []
 var _clue_id := 1
 var _clue_last := Vector3.INF
 var hold := false                  # 自动截图用：房主逻辑暂停
+var weak := false                  # 猎物虚弱了（两成血以下，能活捉）
+var _blood_last := Vector3.INF
+var _cap_id := 0                   # 正在活捉的猎物
+var _cap_t := 0.0
+var _weak_told := false
 # 自己
 var _prints: Array = []
 var _ch_node: Node3D
@@ -61,6 +66,18 @@ var _c_time: Label
 
 func _ready() -> void:
 	_build_ui()
+	# 猎场：过一会儿猎物出现在它的老窝（离营地很远）
+	if world.island.hunting and Net.is_host():
+		get_tree().create_timer(1.5).timeout.connect(host_spawn_trip_target)
+
+
+## 猎场里的一些距离：地图大，踪迹间隔大、看得远、吼声传得远
+func _gap() -> float:
+	return 24.0 if world.island.hunting else 16.0
+
+
+func _see() -> float:
+	return 60.0 if world.island.hunting else 35.0
 
 
 func _process(dt: float) -> void:
@@ -71,9 +88,9 @@ func _process(dt: float) -> void:
 	_local(dt)
 
 
-# ------------------------------------------------------------------ 猎魂榜（界面在 Hud.open_board）
+# ------------------------------------------------------------------ 猎灵榜（界面在 Hud.open_board）
 
-## 这座岛能猎哪些魂兽：陆地上的和天上飞的（水里的不行，找不到踪迹）
+## 这座岛能猎哪些灵兽：陆地上的和天上飞的（水里的不行，找不到踪迹）
 func species_list() -> Array:
 	var out: Array = []
 	for sp in world._map_species():
@@ -82,13 +99,13 @@ func species_list() -> Array:
 	return out
 
 
-## 默认的猎物年份：够自己下一个魂环用，最少是这一章的年份
+## 默认的猎物年份：够自己下一个灵环用，最少是这一章的年份
 func base_age() -> int:
-	var need := int(Data.RING_MIN_AGE[mini(Profile.rings.size(), Data.MAX_RINGS - 1)])
-	return clampi(maxi(int(Data.CH_AGE.get(world.chapter, 0)), need), 0, 3)
+	var need := int(Data.RING_MIN_AGE[mini(Profile.next_ring_index(), Data.MAX_RINGS - 1)])
+	return clampi(maxi(int(Data.CH_AGE.get(world.chapter, 0)), need), 0, 4)
 
 
-## 自己吸收这只魂兽的魂环会领悟哪个魂技（和吸收时算的是同一个）
+## 自己吸收这只灵兽的灵环会领悟哪个神通（和吸收时算的是同一个）
 func skill_preview(species: String, age: int) -> String:
 	var owned: Array = []
 	for r in Profile.rings:
@@ -115,7 +132,7 @@ func _sync() -> void:
 	var ch: Array = []
 	if not channel.is_empty():
 		ch = [int(channel["peer"]), int(channel["age"]), str(channel["species"]), channel["pos"], float(channel["t"]), float(channel["dur"])]
-	Net.send(0, "hst", [target_id, target_species, target_age, ch, region, clues])
+	Net.send(0, "hst", [target_id, target_species, target_age, ch, region, clues, weak])
 
 
 func _team_n() -> int:
@@ -158,19 +175,25 @@ func _far_point(min_d: float) -> Vector3:
 	return best
 
 
-## 猎物换地方：去另一片栖息地附近
+## 猎物换地方：去另一片栖息地附近（猎场：别的区域，不去巢穴，更喜欢自己的地盘）
 func _wander_point(from: Vector3) -> Vector3:
 	var cands: Array = []
+	var hunting := world.island.hunting
+	var own := str(Data.BEASTS.get(target_species, {"habitat": ""})["habitat"])
 	for h in world.island.habitats:
 		var type := str(h["type"])
 		if not Data.HABITATS.has(type) or world.island.is_water_habitat(type):
 			continue
+		if hunting and str(h.get("role", "")) == "nest":
+			continue
 		var c: Vector2 = h["center"]
 		var p := Vector3(c.x, 0, c.y)
 		var d := Vector2(p.x - from.x, p.z - from.z).length()
-		if d < 25.0 or d > 140.0 or _spawn_dist(p) < 40.0:
+		if d < 25.0 or d > (360.0 if hunting else 140.0) or _spawn_dist(p) < (70.0 if hunting else 40.0):
 			continue
 		cands.append(p)
+		if hunting and type == own:
+			cands.append(p)
 	var p2: Vector3 = from + Vector3(randf_range(-40, 40), 0, randf_range(-40, 40))
 	if not cands.is_empty():
 		p2 = (cands[randi() % cands.size()] as Vector3) + Vector3(randf_range(-8, 8), 0, randf_range(-8, 8))
@@ -180,44 +203,82 @@ func _wander_point(from: Vector3) -> Vector3:
 	return p2
 
 
-## 有人在猎魂榜上挑了一只：换掉现在的猎物（如果有）
+## 有人在猎灵榜上挑了一只：全队去这一章的猎场（第十二版补丁：以前是在岛上刷一只，岛太小、没有探索感）
 func host_request(from: int, species: String, age: int) -> void:
 	if not Data.BEASTS.has(species):
 		return
-	age = clampi(age, 0, 3)
-	var old: Beast = world.beasts.get(target_id) if target_id != 0 else null
-	if old and old.alive():
-		world.beast_escaped(old, "despawn")
-	var pos := _far_point(70.0)
+	var why := ""
+	if world.island.hunting:
+		why = "已经在猎场里了：先把这只猎完（猎完按 L 回岛）"
+	elif world.dungeon and world.dungeon.inside:
+		why = "有人在秘境里，等出来再去猎场"
+	elif world.boss:
+		why = "Boss 还在，打完再去猎场"
+	if why != "":
+		if from == Net.my_id:
+			world.hud.toast(why, Color(1.0, 0.8, 0.5), 3.5)
+		else:
+			Net.send(from, "hint", [why])
+		return
+	age = clampi(age, 0, 4)
+	var info := {"species": species, "age": age, "seed": randi() % 2000000000 + 1, "by": from}
+	var m := ["%s 挑了猎物：%s%s王——全队出发去猎场" % [world.peer_name(from), Data.age_name(age), Data.BEASTS[species]["name"]], 0]
+	Net.send(0, "hev", m)
+	_on_ev(m)
+	await get_tree().create_timer(1.2).timeout
+	if not is_instance_valid(world):
+		return
+	Net.send(0, "huntgo", [info])
+	world.go_hunt(info)
+
+
+## 猎场：猎物出现在它的老窝（离营地很远），重伤了逃回另一头的巢穴
+func host_spawn_trip_target() -> void:
+	var info: Dictionary = world.hunting
+	var species := str(info.get("species", ""))
+	if not Data.BEASTS.has(species):
+		return
+	var age := clampi(int(info.get("age", 0)), 0, 4)
+	var pos := world.island.home + Vector3(0, 0.8, 0)
 	var id := world.next_beast_id
 	world.next_beast_id += 1
 	var affixes: Array = [] if Data.autotest else Data.roll_affixes(world.rng, age, world.chapter, "grass", true).slice(0, 1)
 	var b := world._spawn_beast(id, species, age, pos, Vector3.ZERO, 1, false, "elite", affixes)
 	Net.send(0, "bsp", [id, species, age, pos, Vector3.ZERO, 1, "elite", affixes])
-	# 魂兽王的血量是按一群人打设计的：单人少一些
-	b.max_hp *= Data.DG_BOSS_HP_SOLO + Data.DG_BOSS_HP_PER * float(_team_n() - 1)
+	# 猎场的猎物是这一趟的主菜：比岛上的灵兽王厚一点
+	b.max_hp *= Data.HUNT_HP_SOLO + Data.HUNT_HP_PER * float(_team_n() - 1)
 	b.hp = b.max_hp
-	b.home_speed = 3.2
+	b.home_speed = 3.4
 	b.hunt_role = "target"
+	b.spawn_pos = pos
+	b.nest_pos = world.island.nest + Vector3(0, 0.6, 0)
 	target_id = id
 	target_species = species
 	target_age = age
-	region = _region_name(pos)
+	weak = false
+	_weak_told = false
+	region = world.island.zone_name(pos)
 	_fp_last = pos
-	_roar_t = 12.0
-	_wander_t = 30.0
-	# 它是从别处走过来的：来路上已经有两处爪痕（从那一带的边上开始找）
+	_roar_t = 10.0
+	_wander_t = 40.0
+	# 它是从别处走过来的：来路上已经有两处爪痕
 	clues.clear()
-	var a0 := randf() * TAU
-	var back := Vector3(cos(a0), 0, sin(a0))
-	for k in [34.0, 18.0]:
+	var back := Vector3.RIGHT
+	for tries in 16:
+		var a0 := randf() * TAU
+		back = Vector3(cos(a0), 0, sin(a0))
+		var q1 := pos + back * 48.0
+		var q2 := pos + back * 24.0
+		if world.island.is_land(q1.x, q1.z) and world.island.is_land(q2.x, q2.z):
+			break
+	for k in [48.0, 24.0]:
 		var q: Vector3 = pos + back * float(k)
 		if world.island.is_land(q.x, q.z):
 			_add_clue(q, -back)
 	_clue_last = pos
 	_add_clue(pos, -back)
 	_sync()
-	var m := ["%s 挑了猎物：%s%s王 · 在「%s」一带出没——去那边找地上的爪痕（走近按 F 看）" % [world.peer_name(from), Data.age_name(age), Data.BEASTS[species]["name"], region], 0]
+	var m := ["猎物 %s 在「%s」一带出没——去那边找地上的爪痕（走近按 F 看）" % [b.display_name(), region], 0]
 	Net.send(0, "hev", m)
 	_on_ev(m)
 
@@ -230,12 +291,13 @@ func _host_target(dt: float) -> void:
 		return
 	var b: Beast = world.beasts[target_id]
 	var fp := b.global_position
-	# 爪痕：走出 16 米留一处（带着它往哪走）
-	if _clue_last == Vector3.INF or Vector2(fp.x - _clue_last.x, fp.z - _clue_last.z).length() > 16.0:
+	# 爪痕：走出 16 米（猎场 24 米）留一处（带着它往哪走）
+	if _clue_last == Vector3.INF or Vector2(fp.x - _clue_last.x, fp.z - _clue_last.z).length() > _gap():
 		var mv := fp - (_clue_last if _clue_last != Vector3.INF else fp)
 		_clue_last = fp
 		if world.island.is_land(fp.x, fp.z):
 			_add_clue(fp, mv)
+			region = world.island.zone_name(fp) if world.island.hunting else region
 			_sync()
 	# 踪迹：它走过的地方留一对发光的脚印（飞的印在它下面的地上）
 	if Vector2(fp.x - _fp_last.x, fp.z - _fp_last.z).length() > 3.2 and b.state != Beast.State.AIR:
@@ -243,6 +305,36 @@ func _host_target(dt: float) -> void:
 		var m := [Vector3(fp.x, world.island.height_at(fp.x, fp.z), fp.z), b.global_basis.x]
 		Net.send(0, "hfp", m)
 		_on_fp(m)
+	# 猎场：重伤了一路滴血（红色的血迹，老远就看得到），追着血迹找巢穴
+	if world.island.hunting and b.hp < b.max_hp * 0.35:
+		if _blood_last == Vector3.INF or Vector2(fp.x - _blood_last.x, fp.z - _blood_last.z).length() > 6.0:
+			_blood_last = fp
+			var bm := [Vector3(fp.x, world.island.height_at(fp.x, fp.z), fp.z)]
+			Net.send(0, "hblood", bm)
+			_on_blood(bm)
+	# 虚弱：两成血以下，一瘸一拐，能活捉
+	var w: bool = world.island.hunting and b.hp < b.max_hp * Data.HUNT_WEAK
+	if w != weak:
+		weak = w
+		b.weak = w
+		_sync()
+		if w and not _weak_told:
+			_weak_told = true
+			var wm := ["%s 虚弱了！用引魂索（G）捆住它就能活捉——活捉报酬 ×1.5" % b.display_name(), 3]
+			Net.send(0, "hev", wm)
+			_on_ev(wm)
+	# 活捉：捆住以后别打死它，捆满 2.5 秒就捉住了
+	if _cap_id == b.id:
+		if b.root_t > 0.0:
+			_cap_t -= dt
+			if _cap_t <= 0.0:
+				_host_captured(b)
+				return
+		else:
+			_cap_id = 0
+			var cm := ["%s 挣脱了！" % b.display_name(), 1]
+			Net.send(0, "hev", cm)
+			_on_ev(cm)
 	_roar_t -= dt
 	if _roar_t <= 0.0:
 		_roar_t = randf_range(22.0, 32.0)
@@ -251,9 +343,56 @@ func _host_target(dt: float) -> void:
 		_on_roar(r)
 	# 没人在打它：隔一会儿换一片栖息地
 	_wander_t -= dt
-	if _wander_t <= 0.0 and b._aggro_t <= 0.0 and not b._retreat and world.nearest_player_pos(fp).distance_to(fp) > 30.0:
-		_wander_t = randf_range(25.0, 40.0)
+	if _wander_t <= 0.0 and b._aggro_t <= 0.0 and not b._retreat and not b.napping and world.nearest_player_pos(fp).distance_to(fp) > 30.0:
+		_wander_t = randf_range(35.0, 55.0) if world.island.hunting else randf_range(25.0, 40.0)
 		b.spawn_pos = _wander_point(fp)
+
+
+## 房主：猎物虚弱时被引魂索捆住了（World.host_hook）
+func host_capture_start(b: Beast) -> void:
+	if not world.island.hunting or b.id != target_id or _cap_id == b.id:
+		return
+	_cap_id = b.id
+	_cap_t = 2.5
+	var m := ["正在活捉 %s……别打死它！" % b.display_name(), 3]
+	Net.send(0, "hev", m)
+	_on_ev(m)
+
+
+func _host_captured(b: Beast) -> void:
+	_cap_id = 0
+	var pos := b.global_position
+	# 灵环照样掉（活捉的灵兽献出灵环），再加两个王魄
+	world._host_maybe_drop_ring(b, 0)
+	var m := [b.species, pos]
+	Net.send(0, "hcap", m)
+	_on_captured(m)
+	target_id = 0
+	world.beast_escaped(b, "despawn")
+	_sync()
+	if world.trip:
+		world.trip.host_finish(true)
+
+
+func _on_captured(d: Array) -> void:
+	var sp := str(d[0])
+	var pos: Vector3 = d[1]
+	world.fx.ring_breakthrough(pos, Color(0.45, 0.8, 1.0), 0)
+	world.fx.chain_fx([pos + Vector3(0, 6, 0), pos, pos + Vector3(3, 0.5, 0), pos + Vector3(-3, 0.5, 0)], Color(0.45, 0.8, 1.0))
+	Sfx.play_at("absorb", pos, 0.0)
+	if world.player.global_position.distance_to(pos) < 120.0:
+		Profile.add_material(sp, 2)
+		world.hud.feed("活捉！获得 %s王魄 ×2（暗器铺 → 附魔）" % Data.BEASTS[sp]["name"], UiKit.GOLD)
+	world.hud._show_banner("活捉成功", "灵环掉在它身边 · 王魄 ×2", Color(0.45, 0.8, 1.0), 3.0)
+
+
+## 血迹：红色的光点，60 秒后淡掉，80 米内看得到
+func _on_blood(d: Array) -> void:
+	var pos: Vector3 = d[0]
+	if pos.distance_to(world.player.global_position) > 80.0:
+		return
+	var n := world.fx._ground(pos + Vector3(randf_range(-0.4, 0.4), 0, randf_range(-0.4, 0.4)), "glow", Color(1.0, 0.12, 0.08), 0.8, 60.0, 30.0, 2.5)
+	_prints.append(n)
 
 
 ## 猎物在哪一带：离它最近的栖息地的名字
@@ -283,23 +422,26 @@ func _add_clue(p: Vector3, move: Vector3) -> void:
 	_sync_clue_nodes()
 
 
-## 房主：有魂兽死了（World._host_kill 调）
+## 房主：有灵兽死了（World._host_kill 调）
 func host_on_kill(b: Beast) -> void:
 	_wave_ids.erase(b.id)
 	if b.id == target_id:
 		target_id = 0
-		var m := ["魂环掉在地上了——走过去按 F 吸收", 2]
+		_cap_id = 0
+		var m := ["灵环掉在地上了——走过去按 F 吸收", 2]
 		Net.send(0, "hev", m)
 		_on_ev(m)
 		_sync()
+		if world.trip:
+			world.trip.host_finish(false)
 
 
-## 房主：有人要吸收魂环。站在魂环那里不动，时间到了才学会
+## 房主：有人要吸收灵环。站在灵环那里不动，时间到了才学会
 func host_absorb(from: int, rid: int) -> void:
 	if not world.rings.has(rid):
 		return
 	if not channel.is_empty():
-		var tip := "%s 正在吸收魂环，等他吸收完再来" % world.peer_name(int(channel["peer"]))
+		var tip := "%s 正在吸收灵环，等他吸收完再来" % world.peer_name(int(channel["peer"]))
 		if from == Net.my_id:
 			world.hud.toast(tip, Color(1.0, 0.8, 0.5), 3.0)
 		else:
@@ -346,7 +488,7 @@ func _host_channel(dt: float) -> void:
 		_host_wave()
 
 
-## 护法的一波：从同一个方向来几只凶的，只冲吸收魂环的人
+## 护法的一波：从同一个方向来几只凶的，只冲吸收灵环的人
 func _host_wave() -> void:
 	var pos: Vector3 = channel["pos"]
 	var land_sp := _land_species()
@@ -416,6 +558,10 @@ func on_message(from: int, type: String, data: Variant) -> void:
 				host_request(from, str(d[0]), int(d[1]))
 		"hev":
 			_on_ev(data)
+		"hblood":
+			_on_blood(data)
+		"hcap":
+			_on_captured(data)
 
 
 func _apply_state(d: Array) -> void:
@@ -426,6 +572,8 @@ func _apply_state(d: Array) -> void:
 		region = str(d[4])
 		clues = d[5]
 		_sync_clue_nodes()
+	if d.size() > 6:
+		weak = bool(d[6])
 	var ch: Array = d[3]
 	if ch.is_empty():
 		if not channel.is_empty():
@@ -442,7 +590,7 @@ func _apply_state(d: Array) -> void:
 
 func _on_fp(d: Array) -> void:
 	var pos: Vector3 = d[0]
-	if pos.distance_to(world.player.global_position) > 45.0:
+	if pos.distance_to(world.player.global_position) > (70.0 if world.island.hunting else 45.0):
 		return
 	var side: Vector3 = d[1]
 	side.y = 0.0
@@ -472,7 +620,7 @@ func _on_roar(d: Array) -> void:
 	if world.dungeon and world.dungeon.inside:
 		return
 	# 离得太远听不到；听到了也只知道大概方向
-	if dist > 140.0:
+	if dist > (240.0 if world.island.hunting else 140.0):
 		return
 	Sfx.play("boss_roar", clampf(-2.0 - dist * 0.08, -16.0, -2.0), 0.05, 0.8)
 	if dist > Data.HUNT_REVEAL:
@@ -487,11 +635,14 @@ func _on_ev(d: Array) -> void:
 			Sfx.play("rare", -4.0, 0.0, 0.8)
 		2:
 			world.hud._show_banner("猎物倒下", t, UiKit.GOLD, 4.0)
+		3:
+			world.hud.toast(t, Color(0.45, 0.8, 1.0), 4.5)
+			Sfx.play("rare", -4.0, 0.0, 1.1)
 		_:
 			world.hud.feed(t, Color(0.85, 0.85, 0.9))
 
 
-# ------------------------------------------------------------------ 吸收魂环
+# ------------------------------------------------------------------ 吸收灵环
 
 func _on_channel_start() -> void:
 	var age := int(channel["age"])
@@ -504,10 +655,10 @@ func _on_channel_start() -> void:
 		p.channeling = true
 		p.busy_t = 0.0
 		world.fx.absorb(p, col)
-		var sub := "站着不能走，能开枪 · " + ("魂兽会一波波冲你来，队友护法" if _team_n() > 1 else "会来一小波魂兽")
-		world.hud._show_banner("吸收%s魂环" % Data.age_name(age), sub, col, 3.0)
+		var sub := "站着不能走，能开枪 · " + ("灵兽会一波波冲你来，队友护法" if _team_n() > 1 else "会来一小波灵兽")
+		world.hud._show_banner("吸收%s灵环" % Data.age_name(age), sub, col, 3.0)
 	else:
-		world.hud.toast("%s 开始吸收%s魂环——去护法，别让魂兽碰到他" % [world.peer_name(int(channel["peer"])), Data.age_name(age)], col, 4.0)
+		world.hud.toast("%s 开始吸收%s灵环——去护法，别让灵兽碰到他" % [world.peer_name(int(channel["peer"])), Data.age_name(age)], col, 4.0)
 	Sfx.play_at("absorb", pos, 0.0)
 
 
@@ -525,15 +676,15 @@ func _on_channel_end(msg: Array) -> void:
 		if ok:
 			world._reveal_skill(age, sp)
 		elif not world.player.dead:
-			world.hud.toast("吸收被打断了——魂环掉回了原地，回去重新吸收", Color(1.0, 0.6, 0.45), 5.0)
+			world.hud.toast("吸收被打断了——灵环掉回了原地，回去重新吸收", Color(1.0, 0.6, 0.45), 5.0)
 	elif ok:
 		world.fx._pillar(pos, col, 1.6, 40.0, 0.8)
-		world.hud.feed("%s 吸收了%s魂环！" % [world.peer_name(peer), Data.age_name(age)], col)
+		world.hud.feed("%s 吸收了%s灵环！" % [world.peer_name(peer), Data.age_name(age)], col)
 	else:
-		world.hud.feed("%s 的吸收被打断了，魂环掉回了地上" % world.peer_name(peer), Color(1.0, 0.6, 0.45))
+		world.hud.feed("%s 的吸收被打断了，灵环掉回了地上" % world.peer_name(peer), Color(1.0, 0.6, 0.45))
 
 
-## 吸收的人脚下两圈转着的魂环、一盏灯；别人看还有一道光柱（自己看会糊一脸，不加）
+## 吸收的人脚下两圈转着的灵环、一盏灯；别人看还有一道光柱（自己看会糊一脸，不加）
 func _channel_visual(on: bool) -> void:
 	if _ch_node and is_instance_valid(_ch_node):
 		_ch_node.queue_free()
@@ -594,7 +745,7 @@ func _local(dt: float) -> void:
 		var c: Dictionary = _clue_nodes[id]
 		var n: Node3D = c["node"]
 		if is_instance_valid(n):
-			n.visible = _flat(c["pos"], p.global_position) < 35.0
+			n.visible = _flat(c["pos"], p.global_position) < _see()
 	# 第一次走到猎物 30 米内：发现它了
 	if tb and tb.alive() and _found_id != tb.id and not p.dead and _flat(tb.global_position, p.global_position) < Data.HUNT_REVEAL:
 		_found_id = tb.id
@@ -687,6 +838,7 @@ func read_clue(cid: int) -> void:
 		if int(o[0]) > cid:
 			newest = false
 	var fresh := "还很新，它刚过去" if newest or age < 40.0 else ("有一会儿了" if age < 150.0 else "是旧的了")
+	_butterflies(c["pos"], cid, dir)
 	_last_read = "往%s去了 · %s" % [dname, fresh]
 	Sfx.play("pickup", -6.0, 0.0, 0.8)
 	_track += 1
@@ -702,6 +854,45 @@ func read_clue(cid: int) -> void:
 		world.hud.toast("痕迹：%s · 再看 %d 处就能锁定它" % [_last_read, 3 - _track], PREY_COL, 3.5)
 
 
+## 寻魂蝶：看过的爪痕里飞出几只发光的蝴蝶，飞向它接下来去的地方（下一处更新的爪痕；最新的一处就飞向猎物），飞 40 米左右
+func _butterflies(from: Vector3, cid: int, dir: Vector2) -> void:
+	var to := from + Vector3(dir.x, 0, dir.y) * 40.0
+	var next_id := INF
+	for o in clues:
+		if int(o[0]) > cid and float(o[0]) < next_id:
+			next_id = float(o[0])
+			to = o[1]
+	if next_id == INF:
+		var tb: Beast = world.beasts.get(target_id) if target_id != 0 else null
+		if tb and tb.alive():
+			to = tb.global_position
+	var flat := Vector3(to.x - from.x, 0, to.z - from.z)
+	if flat.length() > 45.0:
+		to = from + flat.normalized() * 45.0
+	to.y = world.island.height_at(to.x, to.z) + 1.5
+	var mat := FxLib.bill_mat("glow", Color(0.55, 0.9, 1.0), 3.0)
+	for k in 4:
+		var q := MeshInstance3D.new()
+		var qm := QuadMesh.new()
+		qm.size = Vector2(0.55, 0.55)
+		q.mesh = qm
+		q.material_override = mat
+		q.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		world.fx.add_child(q)
+		var a := from + Vector3(randf_range(-0.6, 0.6), 1.0, randf_range(-0.6, 0.6))
+		q.global_position = a
+		var mid := (a + to) * 0.5 + Vector3(randf_range(-6, 6), randf_range(3.0, 6.0), randf_range(-6, 6))
+		var dur := randf_range(4.5, 6.0)
+		var tw := q.create_tween()
+		tw.tween_method(func(s: float):
+			if is_instance_valid(q):
+				var p1 := a.lerp(mid, s)
+				var p2 := mid.lerp(to, s)
+				q.global_position = p1.lerp(p2, s) + Vector3(0, sin(s * 18.0 + k) * 0.25, 0), 0.0, 1.0, dur).set_delay(k * 0.18)
+		tw.tween_property(q, "scale", Vector3.ONE * 0.01, 1.2)
+		tw.tween_callback(q.queue_free)
+
+
 func compass_marks() -> Array:
 	var out: Array = []
 	if world.dungeon and world.dungeon.inside:
@@ -714,7 +905,7 @@ func compass_marks() -> Array:
 	return out
 
 
-## 画面上的◆标记：队友在吸收魂环（去护法）
+## 画面上的◆标记：队友在吸收灵环（去护法）
 func marker() -> Variant:
 	if not channel.is_empty() and int(channel["peer"]) != Net.my_id:
 		return (channel["pos"] as Vector3) + Vector3(0, 2.5, 0)
@@ -783,7 +974,7 @@ func _build_ui() -> void:
 	tv.add_child(_t_clue)
 	_t_hp = UiKit.bar(Color(1.0, 0.42, 0.28), 230, 3)
 	tv.add_child(_t_hp)
-	# 吸收魂环 / 护法
+	# 吸收灵环 / 护法
 	_c_card = _card(UiKit.JADE)
 	_c_card.visible = false
 	_box.add_child(_c_card)
@@ -814,7 +1005,11 @@ func _update_ui(tb: Beast) -> void:
 		var d := _flat(tb.global_position, me)
 		var near := d < Data.HUNT_REVEAL
 		var dots := "●".repeat(_track) + "○".repeat(3 - _track)
-		if near:
+		if weak:
+			_t_clue.text = "虚弱 · %d 米 · 用引魂索（G）捆住就能活捉" % int(d)
+		elif tb.napping or tb.has_node("Zzz"):
+			_t_clue.text = "在巢穴里睡着了 · %d 米 · 悄悄摸过去偷袭（×2.5）" % int(d)
+		elif near:
 			_t_clue.text = "%d 米" % int(d)
 		elif _lock_t > 0.0:
 			_t_clue.text = "已锁定 · %d 米（%d 秒）" % [int(d), ceili(_lock_t)]
@@ -831,6 +1026,6 @@ func _update_ui(tb: Beast) -> void:
 	_c_card.visible = not channel.is_empty()
 	if _c_card.visible:
 		var peer := int(channel["peer"])
-		_c_name.text = "%s吸收%s魂环" % ["你在" if peer == Net.my_id else world.peer_name(peer) + " ", Data.age_name(int(channel["age"]))]
+		_c_name.text = "%s吸收%s灵环" % ["你在" if peer == Net.my_id else world.peer_name(peer) + " ", Data.age_name(int(channel["age"]))]
 		_c_bar.value = float(channel["t"]) / maxf(float(channel["dur"]), 0.1)
 		_c_time.text = "%d / %d 秒" % [int(channel["t"]), int(channel["dur"])]

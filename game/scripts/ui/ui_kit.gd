@@ -3,7 +3,7 @@ extends RefCounted
 ## 界面的统一样式（参考 Apex / 命运2 / Valorant 的做法）：
 ##   打开的面板铺满全屏，背后的游戏画面虚化压暗（毛玻璃）；直角细边，不用粗黑描边；
 ##   标题上面一行小字做"眉题"；分页用下划线；数值用属性条，少写长句。
-##   颜色：金色 = 主操作 / 魂环 / 金魂币，青色 = 信息强调，红色 = 危险，其余都是白和灰。
+##   颜色：金色 = 主操作 / 灵环 / 灵石，青色 = 信息强调，红色 = 危险，其余都是白和灰。
 ##   字体：标题思源黑体 Black，正文 Medium，数字 Barlow Condensed。
 
 const BG := Color(0.03, 0.04, 0.06, 0.92)
@@ -62,7 +62,7 @@ static func glass_style(alpha := 0.5, mx := 12, my := 8) -> StyleBoxFlat:
 	return _flat(Color(GLASS.r, GLASS.g, GLASS.b, alpha), mx, my, 2)
 
 
-## 列表里的一行（商店、魂环）：左边一条彩色竖线
+## 列表里的一行（商店、灵环）：左边一条彩色竖线
 static func row_style(border := Color(0, 0, 0, 0)) -> StyleBoxFlat:
 	var st := _flat(ROW, 18, 12, 2)
 	if border.a > 0.0:
@@ -115,7 +115,7 @@ static func title(text: String, size := 48, color := MOON) -> Label:
 	return l
 
 
-## 大数字（弹药、金魂币）：窄体
+## 大数字（弹药、灵石）：窄体
 static func num(text: String, size := 40, color := MOON, outline := 4) -> Label:
 	var l := label(text, size, color, outline)
 	l.add_theme_font_override("font", Data.font_num)
@@ -161,7 +161,7 @@ static func section(text: String, color := MIST, outline := 0) -> HBoxContainer:
 	return h
 
 
-## 小标签（"在身上"、"魂力 60"）
+## 小标签（"在身上"、"灵力 60"）
 static func chip(text: String, color := MIST, size := 13, filled := false) -> PanelContainer:
 	var p := PanelContainer.new()
 	var st := _flat(Color(color.r, color.g, color.b, 0.9 if filled else 0.12), 8, 2, 2)
@@ -298,14 +298,14 @@ static func icon(name: String, size := 24.0, color := MOON) -> TextureRect:
 	return t
 
 
-## 魂技的图标名（按魂技类型）
+## 神通的图标名（按神通类型）
 static func skill_icon(sid: String) -> String:
 	var t := str(Data.SKILLS.get(sid, {}).get("type", "buff"))
 	t = {"blink": "dash", "grapple": "pull", "giant": "shield", "fly": "leap", "invis": "buff", "summon": "soul", "orbit": "launch", "chain": "beam", "blackhole": "pull", "domain": "mark", "empower": "buff"}.get(t, t)
 	return t if ResourceLoader.exists(ICONS + t + ".svg") else "buff"
 
 
-## 魂环颜色的小圆环
+## 灵环颜色的小圆环
 static func ring_dot(age: int, size := 18.0) -> Control:
 	var c := Control.new()
 	c.custom_minimum_size = Vector2(size, size)
@@ -420,7 +420,7 @@ static func menu_item(text: String, main := false, size := 30) -> Button:
 	return b
 
 
-## 可以点的卡片（魂技二选一、渡船目的地）：整块是一个按钮，鼠标移上去边框变成 accent 色
+## 可以点的卡片（神通二选一、渡船目的地）：整块是一个按钮，鼠标移上去边框变成 accent 色
 static func card_button(accent: Color) -> Button:
 	var b := Button.new()
 	var n := card_style(Color(accent.r, accent.g, accent.b, 0.6), Color(0.05, 0.06, 0.085, 0.92))

@@ -92,7 +92,7 @@ func _register_inputs() -> void:
 		var side := InputEventMouseButton.new()
 		side.button_index = b
 		InputMap.action_add_event("lure", side)
-	# 另一个侧键放第一个魂技
+	# 另一个侧键放第一个神通
 	var side2 := InputEventMouseButton.new()
 	side2.button_index = MOUSE_BUTTON_XBUTTON2
 	InputMap.action_add_event("skill_1", side2)
@@ -173,4 +173,4 @@ func vertical_fov(hfov_deg: float) -> float:
 
 
 func display_name() -> String:
-	return player_name if player_name.strip_edges() != "" else "魂师"
+	return player_name if player_name.strip_edges() != "" else "修士"

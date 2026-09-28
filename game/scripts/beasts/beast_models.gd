@@ -1,7 +1,7 @@
 class_name BeastModels
 extends RefCounted
-## 魂兽的模型。大部分用 Quaternius 的 CC0 带动画模型（assets/models/creatures），
-## 按 Data.BEASTS 里的 model / fit / size / tint 缩放、上色；没有模型的（鬼藤）用几何体拼。
+## 灵兽的模型。大部分用 Quaternius 的 CC0 带动画模型（assets/models/creatures），
+## 按 Data.BEASTS 里的 model / fit / size / tint 缩放、上色；没有模型的（噬灵藤）用几何体拼。
 ##
 ## 模型朝向：-Z 是头的方向。原点在身体中心（也是刚体的重心）。
 ## tools/fetch_models.py 下载模型，measure.json 是每个模型量出来的尺寸（宽 w、高 h、长 l、底 bottom、中心 cx/cz）
@@ -305,14 +305,14 @@ static func _sphere_shape(r: float) -> SphereShape3D:
 	return sh
 
 
-## 魂环：水平漂在魂兽身上，颜色表示年份
+## 灵环：水平漂在灵兽身上，颜色表示年份
 static func aura(age: int, species: String) -> Node3D:
 	var s: float = Data.AGES[age]["scale"]
 	var bs := body_size(species)
 	var r := clampf(maxf(bs.x, bs.z) * 0.42, 0.5, 1.6)
 	var c: Color = Data.AGES[age]["color"]
 	var energy := 1.4 if age == 0 else (2.2 if age == 1 else 3.0)
-	# 魂环：一圈亮环 + 柔光的贴图（FxLib），万年是黑环外面一圈暗红光
+	# 灵环：一圈亮环 + 柔光的贴图（FxLib），万年是黑环外面一圈暗红光
 	var n := FxLib.soul_ring(c, Data.AGES[age]["glow"], r * s, energy)
 	n.name = "Aura"
 	if age >= 2:
@@ -324,7 +324,7 @@ static func aura(age: int, species: String) -> Node3D:
 	return n
 
 
-# ------------------------------------------------------------------ 柔骨兔
+# ------------------------------------------------------------------ 玉兔
 
 static func _rabbit(root: Node3D) -> void:
 	var white := U.mat(Color(0.97, 0.95, 0.93), 0.9)
@@ -351,11 +351,11 @@ static func _rabbit(root: Node3D) -> void:
 	for side in [-1.0, 1.0]:
 		U.part(root, U.sphere(0.09, 8, 6), white, Vector3(0.14 * side, -0.2, 0.12), Vector3.ZERO, Vector3(0.8, 0.6, 1.4))
 		U.part(root, U.sphere(0.06, 8, 6), white, Vector3(0.12 * side, -0.2, -0.2))
-	# 小舞的粉色蝴蝶结
+	# 粉色蝴蝶结
 	U.part(head, U.sphere(0.05, 8, 4), pink, Vector3(0.12, 0.15, 0.02), Vector3.ZERO, Vector3(1.4, 0.8, 0.6))
 
 
-# ------------------------------------------------------------------ 鬼藤
+# ------------------------------------------------------------------ 噬灵藤
 
 static func _vine(root: Node3D) -> void:
 	var dark := U.mat(Color(0.12, 0.34, 0.17), 0.8)
@@ -390,7 +390,7 @@ static func _vine(root: Node3D) -> void:
 		U.part(head, U.cyl(0.0, 0.04, 0.22, 5), mid, Vector3(0.09 * side, 0.18, 0.05), Vector3(-0.6, 0, 0.3 * side))
 
 
-# ------------------------------------------------------------------ 风铃鸟
+# ------------------------------------------------------------------ 青鸾
 
 static func _bird(root: Node3D) -> void:
 	var teal := U.mat(Color(0.36, 0.82, 0.76), 0.7)
@@ -450,7 +450,7 @@ static func _moth(root: Node3D) -> void:
 		U.part(w, U.sphere(0.035, 6, 4), edge, Vector3(0.36 * side, 0.005, -0.08))
 
 
-# ------------------------------------------------------------------ 疾风魔狼
+# ------------------------------------------------------------------ 追风狼
 
 static func _leg(parent: Node3D, name: String, pos: Vector3, mat: Material, r: float, length: float) -> Node3D:
 	var pivot := Node3D.new()
@@ -492,7 +492,7 @@ static func _wolf(root: Node3D) -> void:
 	U.part(root, U.torus(0.34, 0.37, 24, 4), wind, Vector3(0, 0, -0.1), Vector3(PI / 2, 0, 0), Vector3.ONE, false)
 
 
-# ------------------------------------------------------------------ 铁甲犀
+# ------------------------------------------------------------------ 铁甲兕
 
 static func _rhino(root: Node3D) -> void:
 	var hide := U.mat(Color(0.42, 0.4, 0.38), 0.95)
@@ -519,7 +519,7 @@ static func _rhino(root: Node3D) -> void:
 		_leg(root, "Leg%d" % k, Vector3(0.32 * side, -0.3, zz), hide, 0.14, 0.55)
 
 
-# ------------------------------------------------------------------ 金刚猿
+# ------------------------------------------------------------------ 山魈
 
 static func _ape(root: Node3D) -> void:
 	var fur := U.mat(Color(0.25, 0.17, 0.12), 0.95)
@@ -546,7 +546,7 @@ static func _ape(root: Node3D) -> void:
 		_leg(root, "Leg%d" % k, Vector3(0.22 * side, -0.35, 0.05), fur, 0.14, 0.5)
 
 
-# ------------------------------------------------------------------ 曼陀罗蛇
+# ------------------------------------------------------------------ 碧鳞蛇
 
 static func _snake(root: Node3D) -> void:
 	var skin := U.mat(Color(0.3, 0.12, 0.35), 0.5)
@@ -575,7 +575,7 @@ static func _snake(root: Node3D) -> void:
 	U.part(head, U.sphere(0.24, 12, 8), skin, Vector3.ZERO, Vector3.ZERO, Vector3(1.1, 0.7, 1.4))
 	U.part(head, U.sphere(0.04, 6, 4), eye, Vector3(0.13, 0.08, -0.15))
 	U.part(head, U.sphere(0.04, 6, 4), eye, Vector3(-0.13, 0.08, -0.15))
-	# 曼陀罗花冠
+	# 碧鳞花冠
 	for k in 5:
 		var a := TAU * k / 5.0
 		U.part(head, U.cyl(0.0, 0.06, 0.18, 4), mark, Vector3(cos(a) * 0.14, 0.18, 0.08 + sin(a) * 0.1), Vector3(-0.6, a, 0))

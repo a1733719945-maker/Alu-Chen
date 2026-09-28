@@ -141,7 +141,7 @@ func _build() -> void:
 	_text_row = HBoxContainer.new()
 	tools.add_child(_text_row)
 	_text_edit = LineEdit.new()
-	_text_edit.text = "唐门"
+	_text_edit.text = "千机阁"
 	_text_edit.max_length = 12
 	_text_edit.placeholder_text = "要写的字"
 	_text_edit.custom_minimum_size.x = 220

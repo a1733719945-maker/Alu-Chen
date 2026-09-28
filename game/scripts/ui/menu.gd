@@ -1,12 +1,13 @@
 class_name MainMenu
 extends Control
-## 主菜单：取名、选武魂、单人 / 建房间 / 加入房间、存档位。
-## 样子（参考 Valorant / Apex 的主界面）：左边一列大字菜单，右边是选中武魂的立绘和九个武魂头像，底下三个存档位。
+## 主菜单：取名、选灵相、单人 / 建房间 / 加入房间、存档位。
+## 样子（参考 Valorant / Apex 的主界面）：左边一列大字菜单，右边是选中灵相的立绘和九个灵相头像，底下三个存档位。
 
 signal solo
 signal host_room
 signal join_room(code: String)
 signal quit
+signal prologue
 
 var _name: LineEdit
 var _code: LineEdit
@@ -33,7 +34,7 @@ func _ready() -> void:
 	bg.color = Color(0.025, 0.03, 0.05)
 	add_child(bg)
 	UiKit.fill(bg)
-	# 右边：选中武魂的立绘，往左、往下渐渐融进背景
+	# 右边：选中灵相的立绘，往左、往下渐渐融进背景
 	_wuhun_art = TextureRect.new()
 	_wuhun_art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_wuhun_art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
@@ -80,9 +81,9 @@ func _ready() -> void:
 	left.add_theme_constant_override("separation", 4)
 	UiKit.place(left, Vector4(0, 0, 0, 1), Vector4(84, 70, 600, -230))
 	_main.add_child(left)
-	left.add_child(UiKit.kicker("斗罗大陆", UiKit.GOLD, 18))
-	left.add_child(UiKit.title("猎魂", 96, Color.WHITE))
-	var sub := UiKit.label("挑一只魂兽，追着踪迹猎它，吸收它的魂环 · 秘境里和朋友一起刷 · 最多 8 人联机", 16, UiKit.MIST)
+	left.add_child(UiKit.kicker("苍墟", UiKit.GOLD, 18))
+	left.add_child(UiKit.title("猎灵", 96, Color.WHITE))
+	var sub := UiKit.label("天门崩碎三万年。猎灵、炼环、破境，夺回五块天枢碎片——飞升。最多 8 人联机", 16, UiKit.MIST)
 	left.add_child(sub)
 	var sp := Control.new()
 	sp.custom_minimum_size.y = 30
@@ -107,6 +108,9 @@ func _ready() -> void:
 	_code.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_code.text_submitted.connect(func(t): join_room.emit(t))
 	jrow.add_child(_code)
+	var b_pro := UiKit.menu_item("序章", false, 32)
+	b_pro.pressed.connect(func(): prologue.emit())
+	left.add_child(b_pro)
 	var b_set := UiKit.menu_item("设置", false, 32)
 	b_set.pressed.connect(func(): _main.visible = false; _settings.visible = true)
 	left.add_child(b_set)
@@ -156,12 +160,12 @@ func _ready() -> void:
 	_reset_btn = UiKit.button("清空这个存档", 13)
 	_reset_btn.pressed.connect(_on_reset)
 	info.add_child(_reset_btn)
-	# 成神以后：转生（换武魂从 1 级再来，永久变强，魂兽也更凶）
+	# 飞升以后：轮回（转世重修：换灵相从 1 级再来，永久变强，灵主吞的是更高一重天的碎片）
 	_rebirth_btn = UiKit.button("", 15, true)
 	_rebirth_btn.pressed.connect(_on_rebirth)
 	saves.add_child(_rebirth_btn)
 
-	# ---- 右：名字和武魂
+	# ---- 右：名字和灵相
 	var right := VBoxContainer.new()
 	right.add_theme_constant_override("separation", 10)
 	UiKit.place(right, Vector4(1, 0, 1, 1), Vector4(-560, 84, -84, -150))
@@ -178,7 +182,7 @@ func _ready() -> void:
 	var gap := Control.new()
 	gap.custom_minimum_size.y = 6
 	right.add_child(gap)
-	right.add_child(UiKit.section("武魂", UiKit.MIST))
+	right.add_child(UiKit.section("灵相", UiKit.MIST))
 	var grid := GridContainer.new()
 	grid.columns = 3
 	grid.add_theme_constant_override("h_separation", 8)
@@ -201,7 +205,7 @@ func _ready() -> void:
 	right.add_child(_skills_hint)
 
 	# ---- 底：按键说明和版本
-	var help := UiKit.label("WASD 移动 · 空格 跳 · 左键 射击 · 右键 瞄准 · G 引魂索 · Q / E / F 魂技 · F 交互 · L 猎魂榜 · M 地图 · K 武魂 · Esc 暂停（里面有全部按键）", 13, UiKit.DIM)
+	var help := UiKit.label("WASD 移动 · 空格 跳 · 左键 射击 · 右键 瞄准 · G 引魂索 · Q / E / F 神通 · F 交互 · L 猎灵榜 · M 地图 · K 灵相 · Esc 暂停（里面有全部按键）", 13, UiKit.DIM)
 	UiKit.place(help, Vector4(0, 1, 1, 1), Vector4(84, -38, -300, -14))
 	_main.add_child(help)
 	var ver := UiKit.label("版本 %s · 第十一版" % ProjectSettings.get_setting("application/config/version", "0"), 13, UiKit.DIM)
@@ -222,7 +226,7 @@ func _ready() -> void:
 	_pick_wuhun(Settings.wuhun, true)
 
 
-## 武魂头像：图 + 底下名字，选中的金边
+## 灵相头像：图 + 底下名字，选中的金边
 func _wuhun_tile(i: int) -> Button:
 	var w: Dictionary = Data.WUHUN[i]
 	var b := Button.new()
@@ -280,20 +284,20 @@ func _pick_wuhun(i: int, silent := false) -> void:
 	_wuhun_kind.text = str(w["kind"])
 	for k in _wuhun_btns.size():
 		_tile_style(_wuhun_btns[k], k == i)
-	var lines := ["魂技不固定：吸收哪种魂兽的魂环，就领悟哪种魂技——游戏里按 L 打开猎魂榜，每只魂兽会给什么魂技都写着。", "同一种魂兽总给同一个魂技；魂兽年份越高，魂技越强。", "Q / E / F 三个键各放一个魂技，在 K 武魂面板里自己选装哪个。"]
+	var lines := ["神通不固定：吸收哪种灵兽的灵环，就领悟哪种神通——游戏里按 L 打开猎灵榜，每只灵兽会给什么神通都写着。", "同一种灵兽总给同一个神通；灵兽年份越高，神通越强。", "Q / E / F 三个键各放一个神通，在 K 灵相面板里自己选装哪个。"]
 	if not Profile.rings.is_empty():
-		lines.append("（已经有的魂技不会因为换武魂而改变）")
+		lines.append("（已经有的神通不会因为换灵相而改变）")
 	_skills_hint.text = "\n".join(lines)
 
 
 func _on_rebirth() -> void:
 	if not _rebirth_armed:
 		_rebirth_armed = true
-		_rebirth_btn.text = "确定转生？再点一次（等级、魂环、暗器、魂骨清零）"
+		_rebirth_btn.text = "确定轮回？再点一次（等级、灵环、暗器、灵骨清零）"
 		return
 	_rebirth_armed = false
 	if Profile.do_rebirth():
-		set_status("转生成功！第%d世：伤害、体力 +%d%%，魂兽也凶了 %d%%。可以换一个武魂，领悟全新的魂技" % [Profile.rebirth + 1, Profile.rebirth * 25, Profile.rebirth * 30])
+		set_status("轮回成功！第%d世 · 第%d重天：伤害、体力 +%d%%，灵兽也凶了 %d%%。可以换一个灵相，领悟全新的神通" % [Profile.rebirth + 1, Profile.rebirth + 1, Profile.rebirth * 25, Profile.rebirth * 30])
 	_refresh_save()
 	_pick_wuhun(Settings.wuhun, true)
 
@@ -301,7 +305,7 @@ func _on_rebirth() -> void:
 func _refresh_save() -> void:
 	if _rebirth_btn:
 		_rebirth_btn.visible = Profile.god
-		_rebirth_btn.text = "转生 · 开始第 %d 世（永久更强，魂兽更凶）" % (Profile.rebirth + 2)
+		_rebirth_btn.text = "轮回 · 第 %d 世 · 第 %d 重天（永久更强，灵主更凶）" % [Profile.rebirth + 2, Profile.rebirth + 2]
 	for i in _slot_btns.size():
 		var b: Button = _slot_btns[i]
 		var on := Profile.slot == i + 1
@@ -322,12 +326,12 @@ func _refresh_save() -> void:
 		b.add_theme_color_override("font_color", UiKit.GOLD if on else UiKit.MIST)
 		b.add_theme_color_override("font_hover_color", UiKit.GOLD if on else Color.WHITE)
 	if Profile.level <= 1 and Profile.money == 0 and Profile.rings.is_empty() and Profile.chapter == 1:
-		_save_info.text = "新存档：从第一章 · 湖心岛开始"
+		_save_info.text = "新存档：从第一章 · 镜湖开始"
 		_reset_btn.visible = false
 		return
 	_reset_btn.visible = true
 	var ch: String = Data.CHAPTERS[Profile.chapter]["name"] if Data.CHAPTERS.has(Profile.chapter) else ""
-	_save_info.text = "%s · %s · %d 个魂环 · 金魂币 %d" % [ch, Profile.title(), Profile.rings.size(), Profile.money]
+	_save_info.text = "%s · %s · %d 个灵环 · 灵石 %d" % [ch, Profile.title(), Profile.rings.size(), Profile.money]
 
 
 func _on_reset() -> void:

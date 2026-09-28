@@ -1,7 +1,7 @@
 class_name MapView
 extends Control
 ## 地图：右上角的小地图（跟着自己走），按 M 打开的大地图（整张图）。
-## 标出：自己（箭头）、队友、暗器铺、收购箱、祭坛、渡船、Boss、精英魂兽、魂环、任务目标；大地图还写栖息地名字。
+## 标出：自己（箭头）、队友、暗器铺、收购箱、祭坛、渡船、Boss、精英灵兽、灵环、任务目标；大地图还写栖息地名字。
 ## 地形图用 Island.heights 画一张图：水按深浅、陆地按高低上色。北（-Z）朝上。
 
 var world: Node
@@ -17,7 +17,7 @@ func _ready() -> void:
 
 func _build_texture() -> void:
 	var isl: Island = world.island
-	var n := Island.SIZE
+	var n: int = isl.size
 	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
 	var biome := str(isl.map_id)
 	var low := Color(0.36, 0.5, 0.28)
@@ -49,8 +49,8 @@ func _build_texture() -> void:
 	for p in isl.paths:
 		for k in p.size():
 			var q: Vector2 = p[k]
-			var x := int(q.x) + Island.HALF
-			var y := int(q.y) + Island.HALF
+			var x := int(q.x) + isl.half
+			var y := int(q.y) + isl.half
 			if x >= 0 and y >= 0 and x < n and y < n:
 				img.set_pixel(x, y, img.get_pixel(x, y).lightened(0.3))
 	_tex = ImageTexture.create_from_image(img)
@@ -74,15 +74,16 @@ func _draw() -> void:
 	var scale: float
 	var center: Vector2
 	if big:
-		scale = minf(size.x, size.y) / float(Island.SIZE)
+		scale = minf(size.x, size.y) / float(world.island.size)
 		center = Vector2.ZERO
 		draw_rect(Rect2(Vector2.ZERO, size), Color(0.02, 0.05, 0.09, 0.92))
 	else:
 		scale = _zoom
 		center = mp
 	# 地形
-	var tl := size * 0.5 + (Vector2(-Island.HALF, -Island.HALF) - center) * scale
-	var rect := Rect2(tl, Vector2(Island.SIZE, Island.SIZE) * scale)
+	var hf: int = world.island.half
+	var tl := size * 0.5 + (Vector2(-hf, -hf) - center) * scale
+	var rect := Rect2(tl, Vector2(world.island.size, world.island.size) * scale)
 	if not big:
 		draw_rect(Rect2(Vector2.ZERO, size), Color(0.05, 0.15, 0.28))
 	draw_texture_rect(_tex, rect, false)
@@ -94,32 +95,44 @@ func _draw() -> void:
 			if Data.HABITATS.has(type):
 				var c: Vector2 = h["center"]
 				var at := _to_px(Vector3(c.x, 0, c.y), center, scale)
-				draw_string_outline(font, at + Vector2(-50, 0), str(Data.HABITATS[type]["name"]), HORIZONTAL_ALIGNMENT_CENTER, 100, 14, 4, Color(0, 0, 0, 0.45))
-				draw_string(font, at + Vector2(-50, 0), str(Data.HABITATS[type]["name"]), HORIZONTAL_ALIGNMENT_CENTER, 100, 14, Color(1, 1, 1, 0.8))
+				var nm := str(h.get("label", Data.HABITATS[type]["name"]))
+				draw_string_outline(font, at + Vector2(-60, 0), nm, HORIZONTAL_ALIGNMENT_CENTER, 120, 14, 4, Color(0, 0, 0, 0.45))
+				draw_string(font, at + Vector2(-60, 0), nm, HORIZONTAL_ALIGNMENT_CENTER, 120, 14, Color(1, 1, 1, 0.8))
 	# 地点
-	_poi(world.builder.shop_door, "铺", Color(1.0, 0.8, 0.3), center, scale, font, "唐门暗器铺")
-	if world.loot:
+	if world.island.hunting:
+		# 猎场：营地、找到过的宝藏（没找到的不标）
+		_poi(world.builder.camp_pos, "营", Color(1.0, 0.8, 0.3), center, scale, font, "营地（补给）")
+		if world.trip:
+			for tp in world.trip.found_list():
+				_dot(tp, Color(1.0, 0.85, 0.35), 3.5, center, scale)
+			# 灵兽王守着的大宝箱（王倒下了变成"箱"）
+			for gm in world.trip.guard_marks():
+				_poi(gm[0], str(gm[1]), gm[2], center, scale, font, str(gm[3]) if big else "")
+	else:
+		_poi(world.builder.shop_door, "铺", Color(1.0, 0.8, 0.3), center, scale, font, "千机阁暗器铺")
+	if world.loot and not world.island.hunting:
 		_poi(world.loot.box_pos, "收", Color(1.0, 0.65, 0.25), center, scale, font, "收购箱")
-	_poi(world.island.altar_pos, "坛", Color(1.0, 0.4, 0.35), center, scale, font, "祭坛")
-	if int(Data.CHAPTERS[world.chapter].get("next", 0)) > 0:
+	if not world.island.hunting:
+		_poi(world.island.altar_pos, "坛", Color(1.0, 0.4, 0.35), center, scale, font, "祭坛")
+	if int(Data.CHAPTERS[world.chapter].get("next", 0)) > 0 and not world.island.hunting:
 		_poi(world.builder.boat_pos, "船", Color(0.6, 0.85, 1.0), center, scale, font, "渡船")
 	for rid in world.rings:
 		_dot(world.rings[rid]["pos"], Data.age_color(int(world.rings[rid]["age"])), 5.0, center, scale)
 	for b: Beast in world.beasts.values():
-		# 猎魂榜的猎物不标在地图上（要跟着踪迹找）
-		if b.alive() and b.temper == "elite" and b.hunt_role == "":
+		# 猎灵榜的猎物不标在地图上（要跟着踪迹找）；猎场里守宝的王按守宝点标（上面）
+		if b.alive() and b.temper == "elite" and b.hunt_role == "" and not world.island.hunting:
 			_poi(b.global_position, "王", Color(1.0, 0.55, 0.15), center, scale, font, b.display_name() if big else "")
 	if world.dungeon:
 		for p in world.dungeon.portals:
 			var t := int(p["tier"])
 			_poi(p["pos"], "秘", Data.AGES[world.dungeon.tier_age(t)]["glow"], center, scale, font, world.dungeon.tier_name(t) if big else "")
-	if world.builder.board_pos != Vector3.ZERO:
-		_poi(world.builder.board_pos, "榜", Color(1.0, 0.78, 0.5), center, scale, font, "猎魂榜" if big else "")
+	if world.builder.board_pos != Vector3.ZERO and not world.island.hunting:
+		_poi(world.builder.board_pos, "榜", Color(1.0, 0.78, 0.5), center, scale, font, "猎灵榜" if big else "")
 	if world.nests:
 		for nid in world.nests.nests:
 			var ne: Dictionary = world.nests.nests[nid]
 			if ne["alive"]:
-				_poi(ne["pos"], "巢", Color(0.8, 0.45, 1.0), center, scale, font, "魂兽巢穴")
+				_poi(ne["pos"], "巢", Color(0.8, 0.45, 1.0), center, scale, font, "灵兽巢穴")
 	if world.boss and not world.boss.dead:
 		_poi(world.boss.center(), "主", Color(1.0, 0.25, 0.3), center, scale, font, "Boss")
 	var qt: Variant = world.hud._quest_target()
@@ -155,7 +168,9 @@ func _draw() -> void:
 		draw_string(font, Vector2(size.x - 110, 28), "M 关闭", HORIZONTAL_ALIGNMENT_LEFT, -1, 15, UiKit.MIST)
 		draw_rect(Rect2(Vector2(0, size.y - 40), Vector2(size.x, 40)), Color(0.02, 0.03, 0.05, 0.75))
 		var x := 18.0
-		for it in [["铺", "暗器铺", Color(1.0, 0.8, 0.3)], ["收", "收购箱", Color(1.0, 0.65, 0.25)], ["坛", "祭坛", Color(1.0, 0.4, 0.35)], ["船", "渡船", Color(0.6, 0.85, 1.0)], ["王", "魂兽王", Color(1.0, 0.55, 0.15)], ["巢", "巢穴", Color(0.8, 0.45, 1.0)], ["主", "Boss", Color(1.0, 0.25, 0.3)]]:
+		var legend: Array = [["营", "营地（补给 · 旗子）", Color(1.0, 0.8, 0.3)], ["守", "守宝的灵兽王", Color(1.0, 0.55, 0.15)], ["箱", "大宝箱（能开了）", Color(1.0, 0.85, 0.35)]] if world.island.hunting else \
+			[["铺", "暗器铺", Color(1.0, 0.8, 0.3)], ["收", "收购箱", Color(1.0, 0.65, 0.25)], ["坛", "祭坛", Color(1.0, 0.4, 0.35)], ["船", "渡船", Color(0.6, 0.85, 1.0)], ["王", "灵兽王", Color(1.0, 0.55, 0.15)], ["巢", "巢穴", Color(0.8, 0.45, 1.0)], ["主", "Boss", Color(1.0, 0.25, 0.3)]]
+		for it in legend:
 			var q := Vector2(x + 9, size.y - 20)
 			draw_circle(q, 9.0, (it[2] as Color).darkened(0.35))
 			draw_arc(q, 9.0, 0.0, TAU, 20, Color(1, 1, 1, 0.5), 1.0, true)

@@ -1,7 +1,7 @@
 class_name Lure
 extends Node3D
-## 引魂索：按住 G（或鼠标中键）蓄力、松开甩出去；魂兽咬住时再按 G 把它拽上天。
-## 千年魂兽要按住 G 拉扯几秒，拉力太大（红色）要松一下，不然索会断。
+## 引魂索：按住 G（或鼠标中键）蓄力、松开甩出去；灵兽咬住时再按 G 把它拽上天。
+## 千年灵兽要按住 G 拉扯几秒，拉力太大（红色）要松一下，不然索会断。
 ##
 ## 本地玩家：自己算状态。其他玩家：只按同步过来的 state/pos 显示。
 
@@ -103,7 +103,7 @@ func update_local(dt: float, pressed: bool, just_pressed: bool, just_released: b
 				_fly(dt)
 		S.WAITING:
 			if just_pressed:
-				# 索头钉在地上 / 树上（不是魂兽的地方）：再按一下就把自己拉过去（飞索）
+				# 索头钉在地上 / 树上（不是灵兽的地方）：再按一下就把自己拉过去（飞索）
 				if habitat == "" and _on_ground and not remote and world.player.global_position.distance_to(pos) > 3.0:
 					world.player.grapple_to(pos + Vector3(0, 0.6, 0))
 					Sfx.play("skill_dash", -4.0, 0.05, 1.2)
@@ -120,7 +120,7 @@ func update_local(dt: float, pressed: bool, just_pressed: bool, just_released: b
 					reel_progress = 0.0
 					reel_tension = 0.25
 					_struggle_timer = 0.5
-					hint.emit("千年魂兽！按住 G 拉，拉力变红就松一下", Color(0.75, 0.5, 1.0))
+					hint.emit("%s灵兽！按住 G 拉，拉力变红就松一下" % Data.age_name(age), Data.age_color(age))
 					Sfx.play("yank", -4.0, 0.05, 0.8)
 				else:
 					_yank()
@@ -170,7 +170,7 @@ func _fly(dt: float) -> void:
 		if not hit.is_empty():
 			var col: Object = hit["collider"]
 			if col is Beast:
-				# 钩住魂兽：小魂兽拽上天，魂兽王要捆魂（World.host_hook）
+				# 钩住灵兽：小灵兽拽上天，灵兽王要捆魂（World.host_hook）
 				if (col as Beast).alive() and not remote:
 					if Net.is_host():
 						world.host_hook((col as Beast).id, Net.my_id)
@@ -182,7 +182,7 @@ func _fly(dt: float) -> void:
 				_start_return()
 				return
 			if col is Node and (col as Node).has_meta("critter"):
-				# 钩中天上飞的：拽下来变成魂兽
+				# 钩中天上飞的：拽下来变成灵兽
 				pos = hit["position"]
 				if not remote:
 					world.critter_hit(int((col as Node).get_meta("critter")), pos)
@@ -215,7 +215,7 @@ func _land(p: Vector3, water: bool) -> void:
 		world.fx.dirt_puff(p)
 		Sfx.play_at("thud", p, -6.0)
 	if habitat == "":
-		hint.emit("索头钉住了！再按 G 飞过去（这里没有魂兽，钓魂兽要抛到水里或魂兽的窝附近）", Color(0.9, 0.9, 0.9))
+		hint.emit("索头钉住了！再按 G 飞过去（这里没有灵兽，钓灵兽要抛到水里或灵兽的窝附近）", Color(0.9, 0.9, 0.9))
 	else:
 		_schedule_bite()
 
@@ -236,15 +236,15 @@ func _schedule_bite() -> void:
 		Profile.items["gold_bites"] = Profile.item_count("gold_bites") - 1
 		Profile.mark_dirty()
 	else:
-		# 鱼饵决定钓上来什么：青草饵基本只有十年，魂晶饵千年多……
+		# 鱼饵决定钓上来什么：青草饵基本只有十年，灵晶饵千年多……
 		bait = world.player.current_bait() if not remote else "grass"
 		age = Data.roll_age_bait(rng, world.chapter, bait)
-		# 卡在瓶颈、年份不够：魂环会"感应"同年份的魂兽，钓到它的机会大很多（不然第六环要的万年魂兽根本找不到）
+		# 卡在瓶颈、年份不够：灵环会"感应"同年份的灵兽，钓到它的机会大很多（不然第六环要的万年灵兽根本找不到）
 		if not remote and Profile.at_bottleneck() and Profile.rings.size() < Data.MAX_RINGS:
-			var need := int(Data.RING_MIN_AGE[Profile.rings.size()])
+			var need := int(Data.RING_MIN_AGE[Profile.next_ring_index()])
 			if age < need and rng.randf() < 0.3:
 				age = need
-				hint.emit("魂环感应：%s魂兽咬钩了！" % Data.age_name(need), Data.AGES[need]["glow"])
+				hint.emit("灵环感应：%s灵兽咬钩了！" % Data.age_name(need), Data.AGES[need]["glow"])
 
 
 func _bite() -> void:

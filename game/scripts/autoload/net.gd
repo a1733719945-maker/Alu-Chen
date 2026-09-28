@@ -2,7 +2,7 @@ extends Node
 ## 联机层：通过中继服务器（server/server.js）和房间里的其他玩家收发消息。
 ##
 ## 所有玩家都连到同一台中继服务器，服务器负责把包转给对方。
-## 房主（id = 1）的电脑负责算魂兽和金魂币；其他人只算自己的移动和射击。
+## 房主（id = 1）的电脑负责算灵兽和灵石；其他人只算自己的移动和射击。
 ## 单人模式下 mode = OFFLINE，自己就是房主，send() 什么都不做。
 
 signal connected(room_code: String)
@@ -47,7 +47,7 @@ func peer_name(id: int) -> String:
 		return Settings.display_name()
 	if peers.has(id):
 		return peers[id]["name"]
-	return "魂师%d" % id
+	return "修士%d" % id
 
 
 func start_offline() -> void:

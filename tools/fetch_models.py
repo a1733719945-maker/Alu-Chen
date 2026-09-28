@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""下载魂兽和 Boss 的 3D 模型（带动画）。
+"""下载灵兽和 Boss 的 3D 模型（带动画）。
 
 全部来自 Quaternius（https://quaternius.com），CC0 协议：免费商用、不用署名。
 原文件放在他的 Google Drive 公开文件夹里，这里按 包 → 子文件夹 → 文件名 找到再下载。

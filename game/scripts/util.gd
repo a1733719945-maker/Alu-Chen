@@ -3,7 +3,7 @@ extends RefCounted
 ## 小工具：材质缓存、常用网格。
 
 const LAYER_WORLD := 1        # 地形、树、石头
-const LAYER_BEAST := 2        # 魂兽
+const LAYER_BEAST := 2        # 灵兽
 const LAYER_PLAYER := 4       # 本地玩家
 
 static var _mats := {}
@@ -26,7 +26,7 @@ static func mat(color: Color, rough := 0.85, emission := 0.0, metallic := 0.0) -
 	return m
 
 
-## 发光且不受光照的材质（弹道、魂环、特效）
+## 发光且不受光照的材质（弹道、灵环、特效）
 static func glow(color: Color, energy := 2.0, transparent := false) -> StandardMaterial3D:
 	var key := "glow|%s|%.2f|%s" % [color.to_html(), energy, transparent]
 	if _mats.has(key):

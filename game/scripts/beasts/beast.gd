@@ -1,6 +1,6 @@
 class_name Beast
 extends RigidBody3D
-## 一只被引魂索拽出来的魂兽。
+## 一只被引魂索拽出来的灵兽。
 ##
 ## 房主电脑上：真正的物理刚体，被打中会被推飞（空中连击就靠这个）。
 ## 客人电脑上：proxy = true，冻结成运动学刚体，按房主发来的位置插值移动，
@@ -8,18 +8,18 @@ extends RigidBody3D
 ##
 ## 落地后的行为（motion）：
 ##   hop 跳着逃回洞 / slither 爬回水里 / fly 飞走 / flutter 飘走
-##   run 魔狼：先扑向最近的玩家咬一口，再逃回狼穴
-##   charge 铁甲犀：冲撞最近的玩家，撞到后逃回泥潭
-##   throw 金刚猿：朝玩家扔石头，然后逃回树林
+##   run 恶狼：先扑向最近的玩家咬一口，再逃回狼穴
+##   charge 铁甲兕：冲撞最近的玩家，撞到后逃回泥潭
+##   throw 山魈：朝玩家扔石头，然后逃回树林
 ##
 ## 性格（temper，房主拽出来时随机，见 Data.TEMPERS）：
 ##   flee 胆小：按上面的方式逃；fierce 凶暴：一直追着最近的玩家打，不逃；
-##   sly 狡猾：落地装死，你走近或者过几秒突然窜回去；bone 魂骨兽：金光闪闪跑得快，打死必掉魂骨
+##   sly 狡猾：落地装死，你走近或者过几秒突然窜回去；bone 灵骨兽：金光闪闪跑得快，打死必掉灵骨
 
 enum State { AIR, GROUND, FLEE, GONE }
 
 const ESCAPE_AFTER := 24.0
-const FIERCE_GIVE_UP := 90.0     # 凶暴的魂兽最多缠人这么久
+const FIERCE_GIVE_UP := 90.0     # 凶暴的灵兽最多缠人这么久
 # 仇恨范围（第十版，用户说"我复活了，隔着整个岛也要过来打我"）：
 # 凶暴的只盯 32 米内的人；已经在打的人 / 刚打过它的人，跑出 55 米才放弃
 const AGGRO_RANGE := 32.0
@@ -36,7 +36,7 @@ const G_FALL := 1.6
 const APEX_BAND := 1.2     # 竖直速度在 ±这个值（米/秒）以内算“最高点附近”
 const G_DEAD := 1.6
 const LIFT_FADE := 0.35    # 空中每多挨一枪，往上推的力就小一截
-const MAX_GUN_UP := 3.0    # 枪最多把魂兽往上推到这个速度（米/秒），技能不受限
+const MAX_GUN_UP := 3.0    # 枪最多把灵兽往上推到这个速度（米/秒），技能不受限
 const DEAD_MAX := 2.6      # 尸体最多留这么久
 
 var id := 0
@@ -61,7 +61,7 @@ var hop_timer := 0.0
 var escape_target := Vector3.ZERO
 var fly_dir := Vector3.ZERO
 var spawn_pos := Vector3.ZERO
-var attacked := false            # 魔狼 / 犀牛 / 猿猴 已经攻击过了
+var attacked := false            # 恶狼 / 犀牛 / 猿猴 已经攻击过了
 var attack_t := 0.0
 var target_peer := 0
 var temper := "flee"
@@ -73,7 +73,7 @@ var _water_t := 0.0
 var _no_target_t := 0.0
 var _play_dead := 0.0
 var _temper_fx: Node3D
-var size_k := 1.0                # 精英魂兽大一圈
+var size_k := 1.0                # 精英灵兽大一圈
 var affixes: Array = []          # 词缀（Data.AFFIXES）
 var reward_k := 1.0              # 鱼饵带来的奖励倍数（房主）
 var _since_hit := 99.0
@@ -81,15 +81,19 @@ var _thunder_cd := 0.0
 var _frenzy_on := false
 var _aggro_t := 0.0              # 精英：挨打后追人的时间
 var _foe := 0                    # 正在打的人（仇恨范围放宽到 AGGRO_KEEP）
-var focus_peer := 0              # 房主指定只打这个人（护法时围攻吸收魂环的人）
-var aggro_k := 1.0               # 仇恨范围倍数（秘境里的魂兽看得更远）
+var focus_peer := 0              # 房主指定只打这个人（护法时围攻吸收灵环的人）
+var aggro_k := 1.0               # 仇恨范围倍数（秘境里的灵兽看得更远）
 var dmg_mult := 1.0              # 伤害倍数（秘境小怪轻一点）
-var hunt_role := ""              # target 猎魂榜的猎物 / dgboss 秘境之主 / dg 秘境里的魂兽（HUD 不当普通的王显示）
+var hunt_role := ""              # target 猎灵榜的猎物 / dgboss 秘境之主 / dg 秘境里的灵兽（HUD 不当普通的王显示）
 var speed_cap := 0.0             # 追人最快多少米/秒（0 = 不限）
 var home_speed := 5.0            # 精英走回"老家"的速度（猎物在岛上慢慢逛）
+# 猎场的猎物：重伤了逃回巢穴（nest_pos）睡觉回血，睡着的时候偷袭伤害 ×2.5；两成血以下"虚弱"，一瘸一拐，能用引魂索活捉
+var nest_pos := Vector3.INF
+var napping := false
+var weak := false
 var avoid_c := Vector3.ZERO      # 不进去的区域，里面的人不打（现在没用上）
 var avoid_r := 0.0
-var _roam := false               # 陆地魂兽跑回老家以后就在附近转悠，不会凭空消失
+var _roam := false               # 陆地灵兽跑回老家以后就在附近转悠，不会凭空消失
 var _roam_to := Vector3.ZERO
 var _roam_t := 0.0
 var _far_t := 0.0
@@ -97,7 +101,7 @@ var _sk_cd := 3.0                # 独门本事的冷却（Data.BEAST_SKILLS）
 var _sk_wind := 0.0              # 前摇剩余时间
 var _sk_at := Vector3.ZERO       # 前摇开始时瞄准的位置
 var enrage_t := 0.0              # 被狼嚎鼓舞：更快更狠
-# 魂兽王（temper = "elite"）
+# 灵兽王（temper = "elite"）
 var _phase2 := false             # 半血以下暴怒
 var _king_cd := 4.0              # 王的大招（震地、扑杀、咆哮）
 var _king_wind := 0.0
@@ -109,7 +113,7 @@ var _rest_t := 0.0
 var ropes := {}                  # 房主：谁的引魂索拽着它 peer -> 时间
 var bind_cd := 0.0
 
-# 魂技效果（房主算）
+# 神通效果（房主算）
 var root_t := 0.0
 var root_pos := Vector3.ZERO
 var mark_t := 0.0
@@ -205,6 +209,8 @@ func _spd() -> float:
 		k *= 1.45
 	if enrage_t > 0.0:
 		k *= 1.35
+	if weak:
+		k *= 0.6
 	return k
 
 
@@ -293,7 +299,7 @@ func bind(dur: float) -> void:
 	_sk_wind = 0.0
 
 
-## 性格的样子：凶暴的眼睛发红光，魂骨兽全身金光、往上飘金色光点
+## 性格的样子：凶暴的眼睛发红光，灵骨兽全身金光、往上飘金色光点
 func _build_temper_fx() -> void:
 	if temper == "flee" or temper == "sly":
 		return
@@ -369,7 +375,7 @@ static func _now() -> float:
 	return Time.get_ticks_msec() / 1000.0
 
 
-## 身体护甲（铁甲犀）：打头不减伤；被"破甲"后也不减
+## 身体护甲（铁甲兕）：打头不减伤；被"破甲"后也不减
 func armor_factor(headshot: bool) -> float:
 	var a: float = float(Data.BEASTS[species].get("armor", 0.0))
 	if "armor" in affixes:
@@ -381,9 +387,9 @@ func armor_factor(headshot: bool) -> float:
 
 # ------------------------------------------------------------------ 房主：被打中
 
-## impulse 是世界坐标下的冲量，local_point 是命中点相对魂兽的位置（魂兽本地坐标）
+## impulse 是世界坐标下的冲量，local_point 是命中点相对灵兽的位置（灵兽本地坐标）
 ## 返回实际伤害
-## launch = true 是技能把魂兽挑上天，不受“越打越推不动”的限制
+## launch = true 是技能把灵兽挑上天，不受“越打越推不动”的限制
 func take_hit(dmg: float, impulse: Vector3, local_point: Vector3, headshot: bool, shooter: int, dist: float, launch := false) -> float:
 	if state == State.GONE:
 		return 0.0
@@ -396,12 +402,20 @@ func take_hit(dmg: float, impulse: Vector3, local_point: Vector3, headshot: bool
 	_since_hit = 0.0
 	last_dist = dist
 	var real := dmg * armor_factor(headshot) * (mark_mult if mark_t > 0.0 else 1.0)
+	if napping:
+		# 偷袭睡着的猎物
+		real *= 2.5
+		napping = false
+		_retreat = false
+		_rested = true
+		_aggro_t = 15.0
+		world.king_sleep(self, false, shooter)
 	hp -= real
 	damagers[shooter] = float(damagers.get(shooter, 0.0)) + real
 	if root_t <= 0.0:
 		var imp := impulse / (2.0 if Data.BEASTS[species].get("heavy", false) else 1.0)
 		if imp.y > 0.0 and not launch:
-			# 空中连击：每一枪往上推的力越来越小，而且最多推到 MAX_GUN_UP，魂兽最后一定会掉下来
+			# 空中连击：每一枪往上推的力越来越小，而且最多推到 MAX_GUN_UP，灵兽最后一定会掉下来
 			imp.y /= 1.0 + air_hits * LIFT_FADE
 			imp.y = minf(imp.y, maxf(MAX_GUN_UP - linear_velocity.y, 0.0) * mass)
 		apply_impulse(imp, global_basis * local_point)
@@ -413,7 +427,7 @@ func take_hit(dmg: float, impulse: Vector3, local_point: Vector3, headshot: bool
 	return real
 
 
-## 魂技：炸上天
+## 神通：炸上天
 func skill_launch(dmg: float, up: float, from: Vector3, shooter: int) -> float:
 	var away := global_position - from
 	away.y = 0
@@ -436,14 +450,14 @@ func _physics_process(delta: float) -> void:
 	_update_effects(delta)
 	if state == State.GONE:
 		return
-	# 追人时撞上圆石头，会被物理挤到地形下面，然后一直往下掉（魂兽凭空消失）：拉回地面上
+	# 追人时撞上圆石头，会被物理挤到地形下面，然后一直往下掉（灵兽凭空消失）：拉回地面上
 	var gh: float = world.island.height_at(global_position.x, global_position.z)
 	if global_position.y < gh - 1.2:
 		global_position.y = gh + 0.4
 		linear_velocity.y = maxf(linear_velocity.y, 0.0)
 
 	if root_t > 0.0:
-		# 被蓝银草缠住：吊在原地
+		# 被青冥藤缠住：吊在原地
 		linear_velocity = (root_pos - global_position) * 8.0
 		angular_velocity = angular_velocity.lerp(Vector3.ZERO, 1.0 - exp(-8.0 * delta))
 		return
@@ -451,7 +465,7 @@ func _physics_process(delta: float) -> void:
 	var over_water: bool = not world.island.is_land(global_position.x, global_position.z)
 	var swimmer: bool = (temper == "fierce" or temper == "elite" or is_land_beast()) and life > 0.2 and not m in ["fly", "flutter"]
 	if over_water and swimmer and global_position.y < Island.WATER_Y + 0.25 and _swoop_t <= 0.0:
-		# 凶暴的掉进水里也不逃，游过来咬人；陆地魂兽往岸上游。浮在水面上，打得到
+		# 凶暴的掉进水里也不逃，游过来咬人；陆地灵兽往岸上游。浮在水面上，打得到
 		_swim(delta)
 		return
 	elif over_water and global_position.y < Island.WATER_Y - 0.2 and not swimmer and world.island.height_at(global_position.x, global_position.z) < Island.WATER_Y - 1.0:
@@ -465,7 +479,7 @@ func _physics_process(delta: float) -> void:
 	if temper == "elite":
 		pass
 	elif is_land_beast():
-		# 陆地魂兽不会凭空消失；只有周围 110 米都没人、过了 40 秒才悄悄收掉（省性能）
+		# 陆地灵兽不会凭空消失；只有周围 110 米都没人、过了 40 秒才悄悄收掉（省性能）
 		var np: Vector3 = world.nearest_player_pos(global_position)
 		_far_t = _far_t + delta if np.distance_to(global_position) > 110.0 else 0.0
 		if _far_t > 40.0:
@@ -660,7 +674,7 @@ func _update_effects(delta: float) -> void:
 
 func _flee(delta: float, m: String, touching: bool) -> void:
 	if temper == "bone" or temper == "sly":
-		# 魂骨兽、狡猾的：不打人，直接用最快速度跑
+		# 灵骨兽、狡猾的：不打人，直接用最快速度跑
 		if m in ["run", "charge", "throw"]:
 			_run_to_escape(delta, touching, 10.5 if temper == "bone" else 9.0, Data.BEASTS[species]["habitat"])
 			return
@@ -966,8 +980,9 @@ func _elite(delta: float, m: String, touching: bool) -> void:
 		_phase2 = true
 		enrage_t = 9999.0
 		world.king_phase2(self)
-	# 四分之一血：逃回巢穴养伤（只逃一次）——追上去补刀
-	if not _rested and not _retreat and hp < max_hp * 0.25:
+	# 四分之一血：逃回巢穴养伤（只逃一次）——追上去补刀；猎场的猎物三成血就跑，跑回很远的巢穴
+	var flee_at := 0.3 if nest_pos != Vector3.INF else 0.25
+	if not _rested and not _retreat and hp < max_hp * flee_at:
 		_retreat = true
 		_rest_t = 0.0
 		world.king_retreat(self)
@@ -980,7 +995,9 @@ func _elite(delta: float, m: String, touching: bool) -> void:
 	if not tp.is_empty():
 		var tpos: Vector3 = tp["pos"]
 		var near := tpos.distance_to(global_position) < 20.0
-		var leashed := Vector2(tpos.x - home.x, tpos.z - home.z).length() > 45.0
+		# 猎场的猎物追得远（大地图），岛上的灵兽王守着老家
+		var leash := 90.0 if hunt_role == "target" else 45.0
+		var leashed := Vector2(tpos.x - home.x, tpos.z - home.z).length() > leash
 		fight = (near or _aggro_t > 0.0) and not leashed
 	if fight:
 		if _king_tick(delta, tp["pos"], touching):
@@ -1003,10 +1020,11 @@ func _elite(delta: float, m: String, touching: bool) -> void:
 				linear_velocity = Vector3(0, minf(linear_velocity.y, 0.5), 0)
 			angular_velocity = Vector3.ZERO
 	if to.length() < 4.0:
-		hp = minf(hp + max_hp * 0.04 * delta, max_hp)
+		# 回到老家慢慢回血（猎场的猎物回得很慢，不然追丢一会儿就白打了）
+		hp = minf(hp + max_hp * (0.004 if hunt_role == "target" else 0.04) * delta, max_hp)
 
 
-## 魂兽王的大招：震地（脚下红圈）、扑杀（砸到你站的地方）、咆哮（冲击环 + 叫小弟，暴怒后才有）
+## 灵兽王的大招：震地（脚下红圈）、扑杀（砸到你站的地方）、咆哮（冲击环 + 叫小弟，暴怒后才有）
 func _king_tick(delta: float, tpos: Vector3, touching: bool) -> bool:
 	if _king_wind > 0.0:
 		_king_wind -= delta
@@ -1045,15 +1063,18 @@ func _king_tick(delta: float, tpos: Vector3, touching: bool) -> bool:
 
 
 func _king_retreat_tick(delta: float, m: String, touching: bool) -> void:
-	var to := spawn_pos - global_position
+	var goal := nest_pos if nest_pos != Vector3.INF else spawn_pos
+	var to := goal - global_position
 	var flat := Vector3(to.x, 0, to.z)
 	if flat.length() > 4.0:
 		var dir := flat.normalized()
+		# 猎场的猎物受了重伤，跑得没那么快（追得上）
+		var sp := 7.5 if nest_pos == Vector3.INF else 5.2 * _spd()
 		if m in ["fly", "flutter"]:
 			gravity_scale = 0.0
-			linear_velocity = linear_velocity.lerp((to + Vector3.UP * 3.0).limit_length(9.0), 1.0 - exp(-2.5 * delta))
+			linear_velocity = linear_velocity.lerp((to + Vector3.UP * 3.0).limit_length(sp + 1.5), 1.0 - exp(-2.5 * delta))
 		elif touching:
-			linear_velocity = Vector3(dir.x * 7.5, minf(linear_velocity.y, 0.5), dir.z * 7.5)
+			linear_velocity = Vector3(dir.x * sp, minf(linear_velocity.y, 0.5), dir.z * sp)
 			angular_velocity = Vector3.ZERO
 		_face(dir, 0.3)
 		return
@@ -1062,6 +1083,19 @@ func _king_retreat_tick(delta: float, m: String, touching: bool) -> void:
 	if touching:
 		linear_velocity = Vector3(0, minf(linear_velocity.y, 0.5), 0)
 		angular_velocity = Vector3.ZERO
+	if nest_pos != Vector3.INF:
+		# 猎场：在巢穴里睡着了（慢慢回血，走近不会醒，打它才醒——偷袭伤害 ×2.5）
+		if not napping and not _rested:
+			napping = true
+			world.king_sleep(self, true, 0)
+		hp = minf(hp + max_hp * 0.006 * delta, max_hp)
+		if hp >= max_hp * 0.6 and napping:
+			napping = false
+			_retreat = false
+			_rested = true
+			spawn_pos = nest_pos
+			world.king_sleep(self, false, 0)
+		return
 	hp = minf(hp + max_hp * 0.02 * delta, max_hp)
 	if hp >= max_hp * 0.55 or (_rest_t > 1.5 and _since_hit < 0.3):
 		_retreat = false
@@ -1069,8 +1103,8 @@ func _king_retreat_tick(delta: float, m: String, touching: bool) -> void:
 		_aggro_t = 12.0
 
 
-## 凶暴的魂兽在水里：水里的魂兽（鱼、鲨、鬼藤）贴着水面飞快游过来，
-## 离人近了就从水里扑出来咬；陆上的魂兽掉进水里就狗刨着往人那边游，泡太久放弃逃走
+## 凶暴的灵兽在水里：水里的灵兽（鱼、鲨、噬灵藤）贴着水面飞快游过来，
+## 离人近了就从水里扑出来咬；陆上的灵兽掉进水里就狗刨着往人那边游，泡太久放弃逃走
 func _swim(delta: float) -> void:
 	_water_t += delta
 	_atk_cd -= delta
@@ -1090,7 +1124,7 @@ func _swim(delta: float) -> void:
 	gravity_scale = 0.2
 	var tp: Dictionary = _pick_target()
 	if not (temper == "fierce" or temper == "elite"):
-		# 不凶的陆地魂兽掉进水里：往岸上（离人远的方向）游，不会凭空消失
+		# 不凶的陆地灵兽掉进水里：往岸上（离人远的方向）游，不会凭空消失
 		var np2: Vector3 = world.nearest_player_pos(global_position)
 		var aw: Vector3 = global_position - np2
 		aw.y = 0.0

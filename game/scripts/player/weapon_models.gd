@@ -5,7 +5,7 @@ extends RefCounted
 ##   Sight     开镜时眼睛对准的点（照门），开镜会把它移到屏幕正中
 ##   Mag       换弹时拆下来的部分
 ##   ArmL/ArmR 弩臂，开火时往前弹
-##   Lever     机括（诸葛神弩的拉杆、追魂弩的栓），开火后动一下
+##   Lever     机括（连机神弩的拉杆、穿云弩的栓），开火后动一下
 ##   LeftHand  托着暗器的左手（甩引魂索时藏起来）
 ## 朝向：-Z 向前，原点在右手握把。
 
@@ -86,7 +86,7 @@ static func fist(parent: Node3D, m: Dictionary, pos: Vector3, rot: Vector3, side
 	return h
 
 
-## 袖子：深色唐门长袍，手腕一圈金边，里面露一点白色里衣
+## 袖子：深色千机阁长袍，手腕一圈金边，里面露一点白色里衣
 ## elbow：从手腕指向手肘的方向（前臂斜着往下、往外、往后伸出画面，像 CS 里的手臂）
 static func sleeve(parent: Node3D, m: Dictionary, wrist: Vector3, elbow: Vector3) -> Node3D:
 	var s := Node3D.new()
@@ -265,7 +265,7 @@ static func _build(id: String, skin: String, outfit: String, on: Variant, charm:
 			_p(root, U.cyl(0.02, 0.022, 0.24, 12), m["bronze"], Vector3(0, 0.01, -0.34), Vector3(PI / 2, 0, 0))
 			for k in 3:
 				_p(root, U.cyl(0.024, 0.024, 0.012, 12), m["gold"], Vector3(0, 0.01, -0.26 - k * 0.07), Vector3(PI / 2, 0, 0))
-			# 孔雀翎：一排发光的翎羽
+			# 流光翎：一排发光的翎羽
 			for k in 5:
 				var a := (k - 2) * 0.28
 				var f := _p(root, U.box(Vector3(0.006, 0.07, 0.03)), m["feather"], Vector3(sin(a) * 0.03, 0.07, -0.12 + absf(k - 2) * 0.01), Vector3(0, 0, a))
@@ -339,7 +339,7 @@ static func _build(id: String, skin: String, outfit: String, on: Variant, charm:
 				_p(root, U.cyl(0.005, 0.005, 0.16, 6), m["black"], Vector3(0.012 * s, -0.04, -0.2), Vector3(PI / 2, 0, 0))
 			_marker(root, "Eject", Vector3(0.035, 0.03, 0.08))
 		"meihua":
-			# 梅花袖箭：腕上的筒，前面五个箭孔排成一朵梅花，侧面一朵金梅
+			# 寒梅袖箭：腕上的筒，前面五个箭孔排成一朵梅花，侧面一朵金梅
 			_arm_right(root, m, Vector3(0, -0.035, -0.06))
 			_p(root, U.cyl(0.021, 0.024, 0.22, 16), m["lacquer"], Vector3(0.0, 0.025, -0.03), Vector3(PI / 2, 0, 0))
 			for zz in [-0.13, -0.07, 0.07]:
@@ -364,7 +364,7 @@ static func _build(id: String, skin: String, outfit: String, on: Variant, charm:
 				_iron(root, m, Vector3(0, 0.049, -0.125), Vector3(0, 0.049, 0.075), 0.018)
 			_marker(root, "Eject", Vector3(0.015, 0.035, 0.02))
 		"longxu":
-			# 龙须针：细长的射手暗器，枪管前面一个金龙头，两根龙须顺着枪管往后飘
+			# 追星针：细长的射手暗器，枪管前面一个金龙头，两根龙须顺着枪管往后飘
 			_arm_right(root, m, Vector3(0, -0.075, 0.14))
 			_p(root, U.box(Vector3(0.042, 0.052, 0.5)), m["lacquer"], Vector3(0, 0, 0.0))
 			_p(root, U.box(Vector3(0.046, 0.1, 0.15)), m["wood"], Vector3(0, -0.022, 0.29))
@@ -389,7 +389,7 @@ static func _build(id: String, skin: String, outfit: String, on: Variant, charm:
 				_iron(root, m, Vector3(0, 0.055, -0.22), Vector3(0, 0.055, 0.14), 0.022)
 			_marker(root, "Eject", Vector3(0.03, 0.03, 0.05))
 		"zimu":
-			# 子母追魂夺命胆：前面一个鼓鼓的"胆"，三道金箍，旁边挂着三颗发光的子胆；泵动上膛
+			# 子母雷珠：前面一个鼓鼓的"胆"，三道金箍，旁边挂着三颗发光的子胆；泵动上膛
 			_arm_right(root, m, Vector3(0, -0.07, 0.1))
 			_p(root, U.box(Vector3(0.07, 0.08, 0.2)), m["lacquer"], Vector3(0, 0, 0.06))
 			_p(root, U.box(Vector3(0.05, 0.1, 0.12)), m["wood"], Vector3(0, -0.02, 0.2))
@@ -414,7 +414,7 @@ static func _build(id: String, skin: String, outfit: String, on: Variant, charm:
 				_iron(root, m, Vector3(0, 0.1, -0.1), Vector3(0, 0.07, 0.12), 0.02)
 			_marker(root, "Eject", Vector3(0.04, 0.03, 0.05))
 		"hansha":
-			# 含沙射影：粗重的机匣，左边一个大弹鼓，枪管外面一圈六根小管，开火时转起来（Rotor）
+			# 流沙机弩：粗重的机匣，左边一个大弹鼓，枪管外面一圈六根小管，开火时转起来（Rotor）
 			_arm_right(root, m, Vector3(0, -0.085, 0.15))
 			_p(root, U.box(Vector3(0.07, 0.085, 0.3)), m["lacquer"], Vector3(0, 0, 0.06))
 			_p(root, U.box(Vector3(0.05, 0.1, 0.14)), m["wood"], Vector3(0, -0.02, 0.28))
@@ -442,7 +442,7 @@ static func _build(id: String, skin: String, outfit: String, on: Variant, charm:
 				_iron(root, m, Vector3(0, 0.07, -0.08), Vector3(0, 0.07, 0.18), 0.024)
 			_marker(root, "Eject", Vector3(0.04, 0.03, 0.08))
 		"guanyin":
-			# 观音泪：白玉金边的弩身，两片莲瓣做弩臂，最前面悬着一滴发光的泪（Tear，蓄力时越来越亮）
+			# 天心泪：白玉金边的弩身，两片莲瓣做弩臂，最前面悬着一滴发光的泪（Tear，蓄力时越来越亮）
 			_arm_right(root, m, Vector3(0, -0.075, 0.13))
 			_p(root, U.box(Vector3(0.042, 0.055, 0.46)), m["lacquer"], Vector3(0, 0, 0.02))
 			_p(root, U.box(Vector3(0.048, 0.1, 0.12)), m["wood"], Vector3(0, -0.022, 0.24))
@@ -645,7 +645,7 @@ static func _scope(root: Node3D, m: Dictionary, c: Vector3) -> void:
 	_marker(root, "Sight", c + Vector3(0, 0, 0.14))
 
 
-## 光学瞄准镜（孔雀翎，类似 ACOG）：镜筒、前后镜片、金边，镜片里是琥珀色的箭头准星
+## 光学瞄准镜（流光翎，类似 ACOG）：镜筒、前后镜片、金边，镜片里是琥珀色的箭头准星
 static func _acog(root: Node3D, m: Dictionary, c: Vector3) -> void:
 	m = _om(m)
 	_p(root, U.box(Vector3(0.036, 0.022, 0.12)), m["black"], c + Vector3(0, -0.03, 0))
@@ -670,6 +670,7 @@ const UNDER := {"xiujian": Vector3(0, -0.002, -0.12), "meihua": Vector3(0, -0.00
 const REAR := {"baoyu": Vector3(0, -0.01, 0.08), "zhuge": Vector3(0, -0.02, 0.18), "kongque": Vector3(0, -0.02, 0.32), "zhuihun": Vector3(0, -0.02, 0.37),
 	"longxu": Vector3(0, -0.02, 0.365), "zimu": Vector3(0, -0.02, 0.26), "hansha": Vector3(0, -0.02, 0.35), "guanyin": Vector3(0, -0.02, 0.3)}
 ## 挂件挂在哪（暗器朝里的一面，自己看得见）
+# 量不出大小时的后备位置（一般用 _charm 里按暗器大小算的位置）
 const CHARM_AT := {"xiujian": Vector3(-0.022, 0.0, 0.1), "meihua": Vector3(-0.024, 0.0, 0.1), "baoyu": Vector3(-0.052, -0.03, 0.05),
 	"zhuge": Vector3(-0.03, -0.02, 0.12), "longxu": Vector3(-0.024, -0.02, 0.1), "kongque": Vector3(-0.026, -0.03, 0.12),
 	"zimu": Vector3(-0.038, -0.03, 0.1), "hansha": Vector3(-0.038, -0.035, 0.14), "zhuihun": Vector3(-0.028, -0.03, 0.14), "guanyin": Vector3(-0.024, -0.025, 0.1)}
@@ -740,13 +741,23 @@ static func _attachments(root: Node3D, m: Dictionary, id: String, att: Dictionar
 
 ## 挂件：一根短绳吊着一个小东西，节点叫 Charm（ViewModel 让它像摆一样晃）
 static func _charm(root: Node3D, id: String, ch: String) -> void:
+	# 用户：挂件检视的时候都看不到（以前挂在握把后面，第一人称正好在画面下面外头）。
+	# 现在挂在暗器左侧、从枪口往后三分之一多一点的地方（第一人称看得见的那一面），大一半
 	var at: Vector3 = CHARM_AT.get(id, Vector3(-0.03, -0.02, 0.1))
+	var bx := _calc_box(root)
+	if bx.size.x > 0.08:
+		var side := 0.026 if id in Data.SIDEARMS else 0.034
+		at = Vector3(-side, bx.position.y + bx.size.y * 0.6, bx.position.x + bx.size.x * 0.36)
 	var pivot := _marker(root, "Charm", at)
+	# 摆动会改 pivot 的 basis（会把缩放冲掉），缩放放在下面一层
+	var hold := Node3D.new()
+	hold.scale = Vector3.ONE * 1.5
+	pivot.add_child(hold)
 	var cord := U.mat(Color(0.75, 0.1, 0.08), 0.7)
-	_p(pivot, U.cyl(0.0012, 0.0012, 0.035, 4), cord, Vector3(0, -0.0175, 0))
+	_p(hold, U.cyl(0.0012, 0.0012, 0.035, 4), cord, Vector3(0, -0.0175, 0))
 	var p := Node3D.new()
 	p.position = Vector3(0, -0.04, 0)
-	pivot.add_child(p)
+	hold.add_child(p)
 	match ch:
 		"tassel":
 			_p(p, U.sphere(0.006, 8, 6), cord)

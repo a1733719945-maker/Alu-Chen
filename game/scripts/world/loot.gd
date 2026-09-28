@@ -1,9 +1,9 @@
 class_name Loot
 extends Node3D
-## 地上的东西：魂兽掉的素材、魂骨，玩家丢出去的东西，倒地时掉的暗器。
+## 地上的东西：灵兽掉的素材、灵骨，玩家丢出去的东西，倒地时掉的暗器。
 ##
 ## 谁都能捡（走过去自动捡，自己刚丢的 1 秒内不会捡回来）。
-## 按 T 把手上的东西丢出去：丢给队友，或者丢进暗器铺旁边的收购箱换金魂币（How to Fish 那样）。
+## 按 T 把手上的东西丢出去：丢给队友，或者丢进暗器铺旁边的收购箱换灵石（How to Fish 那样）。
 ## 东西在地上放太久，海鸥会飞下来叼走；有人倒地太久没人救，海鸥也会把他叼走（回码头复活）。
 ##
 ## 联机：谁丢的谁广播（gi），捡的时候问房主（gitake），房主确认后广播（gigone），不会两个人捡到同一个。
@@ -60,7 +60,7 @@ func _build_box() -> void:
 		U.part(root, U.box(Vector3(0.1, 1.0, 2.0)), wood, Vector3(0.95 * s, 0.55, 0))
 		U.part(root, U.box(Vector3(2.1, 0.08, 0.14)), gold, Vector3(0, 1.08, 0.98 * s))
 		U.part(root, U.box(Vector3(0.14, 0.08, 2.1)), gold, Vector3(0.98 * s, 1.08, 0))
-	# 箱子里一堆发光的金魂币
+	# 箱子里一堆发光的灵石
 	for i in 14:
 		var a := float(i) * 2.4
 		U.part(root, U.cyl(0.11, 0.11, 0.03, 10), U.glow(Color(1.0, 0.8, 0.3), 1.2), Vector3(cos(a) * 0.12 * (i % 5), 0.16 + (i % 3) * 0.03, sin(a) * 0.12 * (i % 5)), Vector3(randf() * 0.4, 0, randf() * 0.4), Vector3.ONE, false)
@@ -74,7 +74,7 @@ func _build_box() -> void:
 	light.omni_range = 5.0
 	light.position = Vector3(0, 1.5, 0)
 	root.add_child(light)
-	var l := U.label3d("唐门收购箱\n拿着魂骨、道具按 T 丢进来卖", 44, Color(1.0, 0.85, 0.45), 10)
+	var l := U.label3d("千机阁收购箱\n拿着灵骨、道具按 T 丢进来卖", 44, Color(1.0, 0.85, 0.45), 10)
 	l.visibility_range_end = 16.0
 	l.position = Vector3(0, 2.2, 0)
 	l.fixed_size = false
@@ -181,9 +181,11 @@ static func item_model(kind: String, key: String) -> Node3D:
 				U.part(n, U.sphere(0.16, 10, 6), U.mat(Color(0.85, 0.2, 0.25), 0.4, 0.3), Vector3.ZERO, Vector3.ZERO, Vector3(1, 0.7, 1), false)
 				U.part(n, U.torus(0.1, 0.19, 16, 5), U.mat(Color(0.95, 0.75, 0.3), 0.3, 0.0, 0.9), Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
 			else:
-				U.part(n, U.sphere(0.13, 10, 6), U.glow(Color(1.0, 0.35, 0.35), 1.5), Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
+				# 丹药：发光的丹丸，颜色按种类（Data.ITEMS 的 color）
+				var pc: Color = (Data.ITEMS.get(key, {}) as Dictionary).get("color", Color(1.0, 0.35, 0.35))
+				U.part(n, U.sphere(0.13, 10, 6), U.glow(pc, 1.5), Vector3.ZERO, Vector3.ZERO, Vector3.ONE, false)
 		_:
-			# 素材：一块发光的魂晶（颜色按年份）
+			# 素材：一块发光的灵晶（颜色按年份）
 			var cm := U.glow(col, 1.8)
 			var crystal := U.part(n, U.sphere(0.16, 6, 3), cm, Vector3.ZERO, Vector3.ZERO, Vector3(0.8, 1.4, 0.8), false)
 			crystal.name = "Crystal"
@@ -329,7 +331,7 @@ func _on_gone(msg: Array) -> void:
 		if who == Net.my_id:
 			var val := roundi(Data.item_value(kind, key) * n * (1.0 + Profile.bone_bonus("sell")))
 			Profile.add_money(val)
-			world.hud.toast("卖掉 %s  +%d 金魂币" % [nm, val], UiKit.GOLD, 2.5)
+			world.hud.toast("卖掉 %s  +%d 灵石" % [nm, val], UiKit.GOLD, 2.5)
 			world.fx.damage_number(box_pos + Vector3(0, 1.8, 0), val, true)
 		else:
 			world.hud.feed("%s 卖掉了 %s" % [world.peer_name(who), nm], Color(1.0, 0.85, 0.5))
@@ -341,13 +343,13 @@ func _on_gone(msg: Array) -> void:
 	match kind:
 		"mat":
 			Profile.add_mat(key, n)
-			world.hud.toast("捡到 %s（按 T 丢进收购箱能卖 %d 金魂币）" % [nm, Data.item_value(kind, key)], Data.item_color(kind, key), 2.5)
+			world.hud.toast("捡到 %s（按 T 丢进收购箱能卖 %d 灵石）" % [nm, Data.item_value(kind, key)], Data.item_color(kind, key), 2.5)
 		"bone":
 			var had := Profile.bones.size()
 			Profile.add_bone(key)
 			if Profile.bones.size() > had:
 				var on := Profile.is_equipped(key)
-				world.hud.toast("捡到魂骨【%s】%s  %s" % [nm, Data.bone_desc(key), "已装上" if on else "（按 5 拿出来，左键装上）"], UiKit.GOLD, 5.0)
+				world.hud.toast("捡到灵骨【%s】%s  %s" % [nm, Data.bone_desc(key), "已装上" if on else "（按 5 拿出来，左键装上）"], UiKit.GOLD, 5.0)
 				Sfx.play("level_up", -6.0)
 				world.player.on_bones_changed()
 		"item":
@@ -463,7 +465,7 @@ func _start_gull(gid: int, pos: Vector3, cargo: Node3D, target: Node3D, local: b
 	away = away.normalized() if away.length() > 1.0 else Vector3.FORWARD
 	var from := pos + away * 30.0 + Vector3(0, 26.0, 0)
 	g.global_position = from
-	# 海鸥也是魂兽：打得到。打下来它叼的东西 / 人会掉下来
+	# 海鸥也是灵兽：打得到。打下来它叼的东西 / 人会掉下来
 	var sb := StaticBody3D.new()
 	sb.collision_layer = U.LAYER_BEAST
 	sb.collision_mask = 0
@@ -623,7 +625,7 @@ func _on_gull_down(msg: Array) -> void:
 	world.hud.feed("%s 打下了海鸥！" % world.peer_name(killer), Color(0.85, 0.95, 1.0))
 	if killer == Net.my_id:
 		Profile.add_money(25)
-		world.hud.toast("打下了海鸥  +25 金魂币", UiKit.GOLD, 2.0)
+		world.hud.toast("打下了海鸥  +25 灵石", UiKit.GOLD, 2.0)
 
 
 ## 客人刚进来时，房主把地上的东西发过去
@@ -638,7 +640,7 @@ func init_list() -> Array:
 
 # ------------------------------------------------------------------ 海鸥群：固定几只在天上盘旋（像 How to Fish）
 # 地上放久了的东西会被其中一只俯冲叼走，叼着一直在天上飞，打下来东西就掉回地上；
-# 打下来还掉金魂币（越远越多，狙击很爽），40 秒后补一只。
+# 打下来还掉灵石（越远越多，狙击很爽），40 秒后补一只。
 
 const FLOCK_N := 7
 const FLOCK_RESPAWN := 40.0
@@ -797,13 +799,13 @@ func _host_flock_hit(gid: int, from: int) -> void:
 	var msg := [gid, from, pos]
 	Net.send(0, "gulldown", msg)
 	_on_flock_down(msg)
-	# 叼着的东西掉回地上；另外掉一块烤肉
+	# 叼着的东西掉回地上；另外有时掉一颗丹药
 	var land := pos
 	if (g["item"] as Array).size() >= 4:
 		var it: Array = g["item"]
 		spawn(str(it[0]), str(it[1]), int(it[2]), int(it[3]), land, Vector3(randf_range(-1, 1), -1.0, randf_range(-1, 1)))
-	if randf() < 0.5:
-		spawn("item", "meat", 1, 0, land, Vector3(randf_range(-1.5, 1.5), -1.0, randf_range(-1.5, 1.5)))
+	if randf() < 0.35:
+		spawn("item", Data.random_pill(), 1, 0, land, Vector3(randf_range(-1.5, 1.5), -1.0, randf_range(-1.5, 1.5)))
 	_flock_wait = maxf(_flock_wait, FLOCK_RESPAWN)
 
 
@@ -841,5 +843,5 @@ func _on_flock_down(msg: Array) -> void:
 		var money := int(float(Data.CH_MONEY.get(world.chapter, 12.0)) * 1.5 * k)
 		Profile.add_money(money)
 		Profile.count("gulls")
-		world.hud.toast("打下了海鸥 · %d 米%s  +%d 金魂币" % [int(dist), ("  远距离 ×%d" % int(k)) if k > 1.0 else "", money], UiKit.GOLD, 2.5)
+		world.hud.toast("打下了海鸥 · %d 米%s  +%d 灵石" % [int(dist), ("  远距离 ×%d" % int(k)) if k > 1.0 else "", money], UiKit.GOLD, 2.5)
 		Sfx.play("coin", -2.0)

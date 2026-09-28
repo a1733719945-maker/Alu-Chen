@@ -1,8 +1,8 @@
 class_name ShopPanel
 extends ColorRect
-## 唐门暗器铺：买 / 卖暗器、买配件、升级、附魔、买道具和鱼饵、买外观（暗器皮肤、装扮）。
+## 千机阁暗器铺：买 / 卖暗器、买配件、升级、附魔、买道具和鱼饵、买外观（暗器皮肤、装扮）。
 ## 暗器卖了、丢了、送人了都能再买；升级和买过的配件记在存档里，买回来还在。
-## 样子：全屏毛玻璃，上面标题 + 金魂币，下划线分页；暗器是两列卡片，用属性条比较（使命召唤改枪界面那样）。
+## 样子：全屏毛玻璃，上面标题 + 灵石，下划线分页；暗器是两列卡片，用属性条比较（使命召唤改枪界面那样）。
 
 signal closed
 
@@ -27,7 +27,7 @@ func _ready() -> void:
 	v.custom_minimum_size = Vector2(1260, 790)
 	v.add_theme_constant_override("separation", 10)
 	center.add_child(v)
-	var head := UiKit.panel_head("唐门", "暗器铺", "Esc", func(): closed.emit())
+	var head := UiKit.panel_head("千机阁", "暗器铺", "Esc", func(): closed.emit())
 	v.add_child(head)
 	var mr := HBoxContainer.new()
 	mr.add_theme_constant_override("separation", 8)
@@ -93,7 +93,8 @@ func refresh() -> void:
 				_upgrade_block(id)
 		"items":
 			for id in Data.ITEMS:
-				_item_row(id)
+				if not bool(Data.ITEMS[id].get("hidden", false)):
+					_item_row(id)
 		"looks":
 			_looks_tab()
 
@@ -109,7 +110,7 @@ func _row(accent := Color(0, 0, 0, 0)) -> HBoxContainer:
 
 
 func _price_button(price: int, main := true, text := "") -> Button:
-	var b := UiKit.button(text if text != "" else "%d 金魂币" % price, 17, main)
+	var b := UiKit.button(text if text != "" else "%d 灵石" % price, 17, main)
 	b.custom_minimum_size.x = 150
 	b.disabled = Profile.money < price
 	b.size_flags_vertical = Control.SIZE_SHRINK_CENTER
@@ -122,7 +123,7 @@ func _weapons_tab() -> void:
 	var mx := {"dmg": 1.0, "rpm": 1.0, "mag": 1.0, "hs": 1.0}
 	for id in Data.WEAPON_ORDER:
 		var w: Dictionary = Data.WEAPONS[id]
-		# 伤害条按一发算（观音泪按半蓄，不然别的暗器全是短条）
+		# 伤害条按一发算（天心泪按半蓄，不然别的暗器全是短条）
 		mx["dmg"] = maxf(mx["dmg"], float(w["damage"]) * int(w["pellets"]) * (float(w.get("charge_k", 1.0)) * 0.5 if w["mode"] == "charge" else 1.0))
 		mx["rpm"] = maxf(mx["rpm"], float(w["rpm"]))
 		mx["mag"] = maxf(mx["mag"], float(w["mag"]))
@@ -226,7 +227,7 @@ func _weapon_card(id: String, mx: Dictionary) -> Control:
 			if Profile.sell_weapon(id):
 				Sfx.play("sell", -2.0)
 				world.on_sold_weapon(id)
-				world.hud.toast("卖掉了%s，得到 %d 金魂币（想要可以再买）" % [w["name"], sp], UiKit.GOLD)
+				world.hud.toast("卖掉了%s，得到 %d 灵石（想要可以再买）" % [w["name"], sp], UiKit.GOLD)
 			refresh())
 		act.add_child(sb)
 	elif locked:
@@ -243,20 +244,20 @@ func _weapon_card(id: String, mx: Dictionary) -> Control:
 	return card
 
 
-# ------------------------------------------------------------------ 附魔：用魂兽王掉的王魂（一把暗器一个附魔，重新附魔会替换）
+# ------------------------------------------------------------------ 附魔：用灵兽王掉的王魄（一把暗器一个附魔，重新附魔会替换）
 
 var _ench_weapon := ""
 
 
 func _enchant_tab() -> void:
-	_list.add_child(UiKit.section("你的王魂（打地图上的魂兽王「王」，每只必掉）", UiKit.GOLD))
+	_list.add_child(UiKit.section("你的王魄（打地图上的灵兽王「王」，每只必掉）", UiKit.GOLD))
 	var mats := HFlowContainer.new()
 	mats.add_theme_constant_override("h_separation", 8)
 	mats.add_theme_constant_override("v_separation", 6)
 	_list.add_child(mats)
 	for sp in Profile.materials:
 		if int(Profile.materials[sp]) > 0:
-			mats.add_child(UiKit.chip("%s王魂  ×%d" % [Data.BEASTS[sp]["name"], int(Profile.materials[sp])], UiKit.GOLD, 15))
+			mats.add_child(UiKit.chip("%s王魄  ×%d" % [Data.BEASTS[sp]["name"], int(Profile.materials[sp])], UiKit.GOLD, 15))
 	if mats.get_child_count() == 0:
 		mats.add_child(UiKit.label("还没有", 15, UiKit.MIST))
 	if Profile.loadout.is_empty():
@@ -295,8 +296,8 @@ func _enchant_tab() -> void:
 		var req := HBoxContainer.new()
 		req.add_theme_constant_override("separation", 8)
 		v.add_child(req)
-		req.add_child(UiKit.chip("王魂 %d / %d" % [mini(have, need), need], UiKit.GREEN if have >= need else UiKit.RED, 12))
-		req.add_child(UiKit.label("%s 王都行 · 另加 %d 金魂币" % [" / ".join(names), int(e["price"])], 13, UiKit.MIST))
+		req.add_child(UiKit.chip("王魄 %d / %d" % [mini(have, need), need], UiKit.GREEN if have >= need else UiKit.RED, 12))
+		req.add_child(UiKit.label("%s 王都行 · 另加 %d 灵石" % [" / ".join(names), int(e["price"])], 13, UiKit.MIST))
 		if str(Profile.enchant.get(_ench_weapon, "")) == eid:
 			h.add_child(UiKit.chip("已附魔", UiKit.JADE, 15))
 			continue
@@ -521,7 +522,7 @@ func _gun_looks(w: String) -> void:
 	elif sk.has("boss"):
 		acts.add_child(UiKit.chip("打 Boss 解锁", UiKit.DIM, 14))
 	elif sk.has("codex"):
-		acts.add_child(UiKit.chip("集齐猎魂录解锁", UiKit.DIM, 14))
+		acts.add_child(UiKit.chip("集齐猎灵录解锁", UiKit.DIM, 14))
 	else:
 		var bb := _price_button(int(sk["price"]), true, "%d  购买" % int(sk["price"]))
 		bb.pressed.connect(func():
@@ -557,7 +558,7 @@ func _gun_looks(w: String) -> void:
 		cg.add_child(_charm_card(w, cid, charm_now, charm_show))
 	# 熟练度
 	var ml := Profile.mastery_level(w)
-	_list.add_child(UiKit.section("%s 熟练度 %d / %d（用它打死魂兽涨）" % [Data.WEAPONS[w]["name"], ml, Data.MASTERY_MAX], UiKit.MIST))
+	_list.add_child(UiKit.section("%s 熟练度 %d / %d（用它打死灵兽涨）" % [Data.WEAPONS[w]["name"], ml, Data.MASTERY_MAX], UiKit.MIST))
 	var pr := HFlowContainer.new()
 	pr.add_theme_constant_override("h_separation", 8)
 	pr.add_theme_constant_override("v_separation", 6)
@@ -620,9 +621,9 @@ func _skin_card(w: String, sid: String, worn: String) -> Control:
 	elif sk.has("boss"):
 		st = "Boss 解锁"
 	elif sk.has("codex"):
-		st = "猎魂录解锁"
+		st = "猎灵录解锁"
 	else:
-		st = "%d 金魂币" % int(sk["price"])
+		st = "%d 灵石" % int(sk["price"])
 	v.add_child(UiKit.label(st, 13, UiKit.GOLD if sid == worn else (UiKit.JADE if owned else UiKit.DIM)))
 	b.pressed.connect(func():
 		_look_skin = sid
@@ -757,9 +758,9 @@ func _look_card(kind: String, id: String) -> Control:
 	elif d.has("boss"):
 		act.add_child(UiKit.chip("打 Boss 解锁", UiKit.DIM, 13))
 	elif d.has("codex"):
-		act.add_child(UiKit.chip("集齐猎魂录解锁", UiKit.DIM, 13))
+		act.add_child(UiKit.chip("集齐猎灵录解锁", UiKit.DIM, 13))
 	else:
-		var b2 := UiKit.button("%d 金魂币" % int(d["price"]), 15, true)
+		var b2 := UiKit.button("%d 灵石" % int(d["price"]), 15, true)
 		b2.disabled = Profile.money < int(d["price"])
 		b2.pressed.connect(func():
 			if Profile.buy_look(kind, id):

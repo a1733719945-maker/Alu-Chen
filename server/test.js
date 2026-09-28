@@ -50,9 +50,9 @@ function packet(target, text) {
   const a = open('mode=join&v=7&name=%E5%B0%8F%E8%88%9E&room=TEST');
   const w2 = await next(a);
   assert.strictEqual(w2.id, 2);
-  assert.deepStrictEqual(w2.peers, [{ id: 1, name: '唐三' }]);
+  assert.deepStrictEqual(w2.peers, [{ id: 1, name: '青崖' }]);
   const j = await next(host);
-  assert.deepStrictEqual(j, { t: 'join', id: 2, name: '小舞' });
+  assert.deepStrictEqual(j, { t: 'join', id: 2, name: '栖霞' });
 
   const b = open('mode=join&v=7&name=b&room=test');
   const w3 = await next(b);

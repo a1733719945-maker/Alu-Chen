@@ -9,7 +9,7 @@ uniform float fade_start = 35.0;
 uniform float fade_end = 55.0;
 uniform vec3 root_dark : source_color = vec3(0.45, 0.5, 0.4);
 uniform vec3 backlight : source_color = vec3(0.35, 0.42, 0.15);
-uniform vec3 glow : source_color = vec3(0.0);      // 蓝银草：自己发光
+uniform vec3 glow : source_color = vec3(0.0);      // 青冥藤：自己发光
 
 varying float tip;
 

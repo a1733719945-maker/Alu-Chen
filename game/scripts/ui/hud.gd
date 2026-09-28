@@ -1,14 +1,14 @@
 class_name Hud
 extends CanvasLayer
 ## 游戏内界面（参考 Apex / 命运2：紧凑、少字、信息贴着屏幕边，中间留给画面）。
-##   左上：章节目标、狩猎目标（魂兽王：方向箭头、距离、血量）、悬赏
-##   上中：罗盘（方位 + 地点标记）、Boss / 魂兽王血条、提示
-##   右上：小地图、金魂币、击杀信息、成就
-##   左下：状态、等级、体力 / 护盾、魂力、修为、饱食
-##   下中：交互提示、引魂索提示、三个魂技（Q / E / F，冷却转圈）
+##   左上：章节目标、猎灵目标（灵兽王：方向箭头、距离、血量）、悬赏
+##   上中：罗盘（方位 + 地点标记）、Boss / 灵兽王血条、提示
+##   右上：小地图、灵石、击杀信息、成就
+##   左下：状态、等级、体力 / 护盾、灵力、修为、饱食
+##   下中：交互提示、引魂索提示、三个神通（Q / E / F，冷却转圈）
 ##   右下：暗器、弹药、物品栏 1-5
-##   画面上：准星、魂兽头顶的名字和血条、任务目标标记、受伤方向、击杀奖励
-##   面板（全屏毛玻璃）：暂停、暗器铺、武魂（K）、成就（J）、魂技二选一、渡船；地图（M）、魂师榜（Tab）
+##   画面上：准星、灵兽头顶的名字和血条、任务目标标记、受伤方向、击杀奖励
+##   面板（全屏毛玻璃）：暂停、暗器铺、灵相（K）、成就（J）、神通二选一、渡船；地图（M）、修士榜（Tab）
 
 var world: Node
 var crosshair: Crosshair
@@ -231,7 +231,7 @@ void fragment() {
 	return m
 
 
-## 斜切的条（体力、魂力）
+## 斜切的条（体力、灵力）
 func _bar(color: Color, w := 420.0, h := 14.0, slant := false) -> ProgressBar:
 	var b := ProgressBar.new()
 	b.custom_minimum_size = Vector2(w, h)
@@ -255,7 +255,7 @@ func _bar(color: Color, w := 420.0, h := 14.0, slant := false) -> ProgressBar:
 	return b
 
 
-# ------------------------------------------------------------------ 左上：目标、狩猎、悬赏
+# ------------------------------------------------------------------ 左上：目标、猎灵、悬赏
 
 func _build_top_left() -> void:
 	var tl := VBoxContainer.new()
@@ -297,7 +297,7 @@ func _build_top_left() -> void:
 	_kings.add_theme_constant_override("separation", 5)
 	_kings.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	tl.add_child(_kings)
-	# 悬赏不常驻在 HUD 上（字太多），按住 Tab 在魂师榜里看
+	# 悬赏不常驻在 HUD 上（字太多），按住 Tab 在修士榜里看
 	_bounty = VBoxContainer.new()
 	_bounty.add_theme_constant_override("separation", 3)
 	_bounty.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -314,11 +314,11 @@ func update_quest() -> void:
 	_quest_title.text = str(Data.CHAPTERS[ch]["name"])
 	if q.is_empty() or qs.is_empty():
 		_quest_text.text = "这张图的 Boss 已经打赢了"
-		_quest_hint.text = "可以去渡船去下一章，或者继续猎魂兽王"
+		_quest_hint.text = "可以去渡船去下一章，或者继续猎灵兽王"
 		_quest_prog.text = ""
 		_quest_bar.visible = false
 		return
-	# "修炼到 15 级（猎魂兽王最快：…）"：括号里的放到下面一行小字
+	# "修炼到 15 级（猎灵兽王最快：…）"：括号里的放到下面一行小字
 	var t := str(q["text"])
 	var cut := t.find("（")
 	_quest_text.text = t.substr(0, cut) if cut > 0 else t
@@ -350,9 +350,12 @@ func update_quest() -> void:
 		_quest_prog.text = ""
 
 
-## 魂兽王：房主知道全部（包括打死了在等重生的），客人只知道活着的
+## 灵兽王：房主知道全部（包括打死了在等重生的），客人只知道活着的
 func _king_data() -> Array:
 	var out: Array = []
+	# 猎场：猎物有自己的卡，守宝的王标在地图和罗盘上，不再列卡片
+	if world.island.hunting:
+		return out
 	if Net.is_host():
 		for key in world.elites:
 			var e: Dictionary = world.elites[key]
@@ -369,7 +372,7 @@ func _king_data() -> Array:
 	return out
 
 
-## 左上的狩猎目标：一只王一张卡（怪物猎人那样）。活着的：方向箭头、距离、血条、状态；死了的：重生倒计时
+## 左上的猎灵目标：一只王一张卡（怪物猎人那样）。活着的：方向箭头、距离、血条、状态；死了的：重生倒计时
 func _update_kings(dt: float) -> void:
 	_kings_t -= dt
 	_kings.visible = not (world.dungeon and world.dungeon.inside)
@@ -384,7 +387,7 @@ func _update_kings(dt: float) -> void:
 		for c in _kings.get_children():
 			c.queue_free()
 		if not data.is_empty():
-			_kings.add_child(UiKit.section("魂兽王", Color(1.0, 0.62, 0.3), 3))
+			_kings.add_child(UiKit.section("灵兽王", Color(1.0, 0.62, 0.3), 3))
 		for d in data:
 			_king_rows.append(_king_row(d))
 	var me: Vector3 = world.player.global_position
@@ -657,6 +660,19 @@ func _compass_marks() -> Array:
 			if world.remotes[id].global_position.distance_to(world.player.global_position) < 120.0:
 				out.append([world.remotes[id].global_position, "·", Color(0.45, 0.8, 1.0)])
 		return out
+	# 猎场：营地、猎物（锁定了才标）、队友
+	if world.island.hunting:
+		out.append([world.builder.camp_pos, "营", UiKit.GOLD])
+		if world.trip:
+			out.append_array(world.trip.guard_marks())
+		if world.hunt:
+			out.append_array(world.hunt.compass_marks())
+		for id in world.remotes:
+			out.append([world.remotes[id].global_position, "·", Color(0.45, 0.8, 1.0)])
+		var qt0: Variant = _quest_target()
+		if qt0 != null:
+			out.append([qt0, "◆", UiKit.GOLD])
+		return out
 	out.append([world.builder.shop_door, "铺", UiKit.GOLD])
 	out.append([world.island.altar_pos, "坛", Color(1.0, 0.45, 0.4)])
 	if int(Data.CHAPTERS[world.chapter].get("next", 0)) > 0:
@@ -680,7 +696,7 @@ func _compass_marks() -> Array:
 	return out
 
 
-# ------------------------------------------------------------------ 右上：小地图、金魂币、击杀信息
+# ------------------------------------------------------------------ 右上：小地图、灵石、击杀信息
 
 func _build_top_right() -> void:
 	_minimap = MapView.new()
@@ -746,7 +762,7 @@ func achievement(title: String, desc: String, reward: int) -> void:
 	h.add_child(v)
 	v.add_child(UiKit.kicker("成就解锁", UiKit.GOLD, 12))
 	v.add_child(UiKit.bold(title, 19, Color.WHITE))
-	v.add_child(UiKit.label("%s  ·  +%d 金魂币" % [desc, reward], 13, UiKit.MIST))
+	v.add_child(UiKit.label("%s  ·  +%d 灵石" % [desc, reward], 13, UiKit.MIST))
 	# 同时解锁好几个：往下排
 	var n := 0
 	for c in _root.get_children():
@@ -766,7 +782,7 @@ func achievement(title: String, desc: String, reward: int) -> void:
 	tw.tween_callback(p.queue_free)
 
 
-# ------------------------------------------------------------------ 左下：等级、体力、魂力
+# ------------------------------------------------------------------ 左下：等级、体力、灵力
 
 func _build_bottom_left() -> void:
 	var holder := VBoxContainer.new()
@@ -827,7 +843,7 @@ func _build_bottom_left() -> void:
 	_hp_text = UiKit.num("", 22, Color.WHITE, 3)
 	_hp_text.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	hrow.add_child(_hp_text)
-	# 魂力
+	# 灵力
 	var srow := HBoxContainer.new()
 	srow.add_theme_constant_override("separation", 10)
 	srow.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -851,13 +867,15 @@ func _build_bottom_left() -> void:
 	_food = _bar(Color(1.0, 0.62, 0.25), 140, 4, true)
 	_food.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_food_row.add_child(_food)
+	# 饱食度去掉了（换成了丹药），这一行不显示
+	_food_row.visible = false
 
 
-## 状态小标签：武魂附体、定身、减速、封魂技、易伤、瓶颈、引兽香
+## 状态小标签：灵相附体、定身、减速、封神通、易伤、瓶颈、引兽香
 func _update_status(p: Player) -> void:
 	var st: Array = []
 	if Profile.at_bottleneck():
-		st.append(["瓶颈 · 吸收第%s魂环才能升级" % Data.RING_NAMES[mini(Profile.rings.size(), Data.RING_NAMES.size() - 1)], UiKit.GOLD])
+		st.append(["瓶颈 · 吸收第%s灵环才能升级" % Data.RING_NAMES[mini(Profile.next_ring_index(), Data.RING_NAMES.size() - 1)], UiKit.GOLD])
 	if not p.empower.is_empty():
 		st.append(["%s %d" % [Data.SKILLS[p.empower["sid"]]["name"], ceili(float(p.empower["t"]))], UiKit.GOLD])
 	if p.root_t > 0.0:
@@ -865,12 +883,19 @@ func _update_status(p: Player) -> void:
 	if p.slow_t > 0.0:
 		st.append(["减速 %.1f" % p.slow_t, UiKit.JADE])
 	if p.silence_t > 0.0:
-		st.append(["封魂技 %.1f" % p.silence_t, Color(0.75, 0.55, 1.0)])
+		st.append(["封神通 %.1f" % p.silence_t, Color(0.75, 0.55, 1.0)])
 	if p.vuln_t > 0.0:
 		st.append(["易伤 %.1f" % p.vuln_t, UiKit.RED])
 	var gold := Profile.item_count("gold_bites")
 	if gold > 0:
 		st.append(["引兽香 %d" % gold, UiKit.GREEN])
+	# 丹药 / 神通的增益（剩几秒）
+	var bn := {"dmg": ["破境 · 伤害", Color(1.0, 0.3, 0.8)], "speed": ["疾风", Color(0.45, 1.0, 0.6)], "dr": ["金刚 · 减伤", Color(1.0, 0.8, 0.3)]}
+	for k in bn:
+		if p.buffs.has(k):
+			st.append(["%s %d" % [bn[k][0], ceili(float(p.buffs[k][1]))], bn[k][1]])
+	if p._giant_t > 0.0:
+		st.append(["巨灵 %d" % ceili(p._giant_t), Color(1.0, 0.55, 0.2)])
 	var sig := str(st)
 	if sig == _status_sig:
 		return
@@ -881,7 +906,7 @@ func _update_status(p: Player) -> void:
 		_status.add_child(UiKit.chip(str(s[0]), s[1], 13))
 
 
-# ------------------------------------------------------------------ 下中：交互、引魂索、魂技
+# ------------------------------------------------------------------ 下中：交互、引魂索、神通
 
 func _build_bottom_center() -> void:
 	var bc := VBoxContainer.new()
@@ -910,7 +935,7 @@ func _build_bottom_center() -> void:
 	_prompt = UiKit.label("", 15, UiKit.MOON, 3)
 	_prompt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	bc.add_child(_prompt)
-	# 魂技：三个方块，冷却时从上往下转一圈变亮
+	# 神通：三个方块，冷却时从上往下转一圈变亮
 	var row := HBoxContainer.new()
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
 	row.add_theme_constant_override("separation", 14)
@@ -949,7 +974,7 @@ func _build_bottom_center() -> void:
 		var nm := UiKit.bold("", 13, Color.WHITE, 3)
 		nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		nm.custom_minimum_size.x = 110
-		nm.visible = false   # 字少一点：魂技名放的时候上面会喊出来
+		nm.visible = false   # 字少一点：神通名放的时候上面会喊出来
 		v.add_child(nm)
 		box["icon"] = icon
 		box["over"] = over
@@ -963,7 +988,7 @@ func _build_bottom_center() -> void:
 	_root.add_child(_callout)
 
 
-## 魂技格子上层：冷却的暗色扇形（顺时针退掉）、边框（魂环颜色）、刚好冷却完闪一下
+## 神通格子上层：冷却的暗色扇形（顺时针退掉）、边框（灵环颜色）、刚好冷却完闪一下
 func _draw_skill_over(c: Control, box: Dictionary) -> void:
 	var s := c.size
 	var ctr := s * 0.5
@@ -1012,9 +1037,9 @@ func _update_skill_slot(p: Player, dt: float) -> void:
 				box["cd"] = 0.0
 				cdl.text = ""
 				if spare:
-					nm.text = "按 K 装魂技"
+					nm.text = "按 K 装神通"
 				elif nr < Data.MAX_RINGS:
-					nm.text = "%d 级 · 第%s魂环" % [(nr + 1) * 10, Data.RING_NAMES[nr]]
+					nm.text = "%d 级 · 第%s灵环" % [(nr + 1) * 10, Data.RING_NAMES[nr]]
 				else:
 					nm.text = ""
 				nm.add_theme_color_override("font_color", UiKit.DIM)
@@ -1063,7 +1088,7 @@ func _set_interact(text: String) -> void:
 	h.add_theme_constant_override("separation", 10)
 	h.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	p.add_child(h)
-	# "按 F 打开唐门暗器铺" → [F] 打开唐门暗器铺
+	# "按 F 打开千机阁暗器铺" → [F] 打开千机阁暗器铺
 	var rx := RegEx.create_from_string("^按(住)? ?([A-Z0-9]) (.*)$")
 	var m := rx.search(text)
 	if m:
@@ -1096,9 +1121,9 @@ func _update_lure_ui(p: Player) -> void:
 			_prompt.add_theme_font_size_override("font_size", 17)
 			_prompt.modulate = Color(1, 1, 1, 0.85)
 			if lure.habitat == "":
-				_prompt.text = "这里没有魂兽 · G 收回"
+				_prompt.text = "这里没有灵兽 · G 收回"
 			else:
-				_prompt.text = "等魂兽咬住…（%s）· G 收回" % Data.HABITATS[lure.habitat]["name"]
+				_prompt.text = "等灵兽咬住…（%s）· G 收回" % Data.HABITATS[lure.habitat]["name"]
 		Lure.S.BITE:
 			_prompt.text = "咬住了！按 G 拽！"
 			_prompt.add_theme_font_size_override("font_size", 30)
@@ -1163,7 +1188,7 @@ func _build_bottom_right() -> void:
 	br.add_child(_hotbar)
 
 
-## 物品栏：1 主暗器 2 袖箭 3 佛怒唐莲 4 回血丹 5 魂骨，当前的高亮
+## 物品栏：1 主暗器 2 袖箭 3 九转雷莲 4 回血丹 5 灵骨，当前的高亮
 func _update_hotbar(p: Player) -> void:
 	var slots: Array = []
 	for i in 5:
@@ -1174,7 +1199,7 @@ func _update_hotbar(p: Player) -> void:
 				if p.primaries().size() > 1:
 					nm += "…"
 			1:
-				# 副手：拿着的那把；没拿着就显示上次用的（按 2 在袖箭和梅花袖箭之间换）
+				# 副手：拿着的那把；没拿着就显示上次用的（按 2 在袖箭和寒梅袖箭之间换）
 				var ss: Array = p.sidearms()
 				if ss.is_empty():
 					nm = "空手"
@@ -1182,15 +1207,13 @@ func _update_hotbar(p: Player) -> void:
 					var sid := p.gun.id if (p.slot == 1 and p.gun.id in ss) else (p._side_pick if p._side_pick in ss else str(ss[0]))
 					nm = str(Data.WEAPONS[sid]["name"]) + ("…" if ss.size() > 1 else "")
 			2:
-				nm = "唐莲 %d" % Profile.item_count("grenade") if Profile.item_count("grenade") > 0 else ""
+				nm = "雷莲 %d" % Profile.item_count("grenade") if Profile.item_count("grenade") > 0 else ""
 			3:
-				# 4 号位：手上拿的是烤肉就显示烤肉
-				var k4 := str(p._slot4)
-				if Profile.item_count(k4) <= 0:
-					k4 = "pill" if Profile.item_count("pill") > 0 else "meat"
-				nm = ("%s %d" % ["烤肉" if k4 == "meat" else "回血丹", Profile.item_count(k4)]) if Profile.item_count(k4) > 0 else ""
+				# 4 号位：现在拿的丹药和个数（有好几种就加个"…"，再按 4 换）
+				var k4 := p.cur_pill()
+				nm = ("%s %d%s" % [Data.ITEMS[k4]["name"], Profile.item_count(k4), "…" if p.owned_pills().size() > 1 else ""]) if Profile.item_count(k4) > 0 else ""
 			4:
-				nm = "魂骨 %d" % p.spare_bones().size() if not p.spare_bones().is_empty() else ""
+				nm = "灵骨 %d" % p.spare_bones().size() if not p.spare_bones().is_empty() else ""
 		slots.append(nm)
 	var sig := "%d|%s" % [p.slot, "|".join(slots)]
 	if sig != _hot_sig:
@@ -1223,7 +1246,7 @@ func _update_hotbar(p: Player) -> void:
 		_ammo_max.text = ""
 		match p.slot:
 			2:
-				_weapon.text = "佛怒唐莲"
+				_weapon.text = "九转雷莲"
 				_ammo.text = "×%d" % Profile.item_count("grenade")
 				_reload.text = "左键扔出去炸 · T 丢给队友"
 			3:
@@ -1327,7 +1350,7 @@ func kill_popup(money: int, xp: int, tags: Array, _species: String, _age: int) -
 	xl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	row.add_child(xl)
 
-	# 字少一点：魂兽名字、爆头 / 空中击杀这些标签都不写了，只有连杀才提一句
+	# 字少一点：灵兽名字、爆头 / 空中击杀这些标签都不写了，只有连杀才提一句
 	for t in tags:
 		var ts := str(t)
 		if "连杀" in ts or ts.begins_with("双杀"):
@@ -1382,25 +1405,28 @@ func level_up(level: int) -> void:
 
 
 func quest_done(text: String, reward: int) -> void:
-	toast("✔ %s%s" % [text, ("    +%d 金魂币" % reward) if reward > 0 else ""], Color(0.6, 1.0, 0.7), 4.0)
+	toast("✔ %s%s" % [text, ("    +%d 灵石" % reward) if reward > 0 else ""], Color(0.6, 1.0, 0.7), 4.0)
 	update_quest()
 
 
-func boss_defeated(name: String, money: int, bone: String) -> void:
-	var sub := "+%d 金魂币" % money
+## shard：这是第几块天枢碎片（0 = 不写）；shards：一共夺回了几块
+func boss_defeated(name: String, money: int, bone: String, ring_age := 2, shard := 0, shards := 0) -> void:
+	var sub := "+%d 灵石" % money
 	if bone != "":
-		sub += "    获得魂骨【%s】：%s" % [Data.bone_name(bone), Data.bone_desc(bone)]
-	sub += "\n地上掉落了千年魂环"
-	_show_banner("击败 %s" % name, sub, Color(1.0, 0.85, 0.4), 7.0)
+		sub += "    获得灵骨【%s】：%s" % [Data.bone_name(bone), Data.bone_desc(bone)]
+	sub += "\n地上掉落了%s灵环" % Data.age_name(ring_age)
+	if shard > 0:
+		sub += "\n夺回天枢碎片 · 其%s（%d / 5）%s" % [["一", "二", "三", "四", "五"][clampi(shard - 1, 0, 4)], shards, "——五块齐了，修到真仙圆满，天门就会重开" if shards >= 5 else ""]
+	_show_banner("击败 %s" % name, sub, Color(1.0, 0.85, 0.4), 8.0)
 
 
 func skill_callout(slot: int, sid: String) -> void:
-	_callout.text = "第%s魂技 · %s" % [Data.RING_NAMES[slot], Data.SKILLS[sid]["name"]]
+	_callout.text = "第%s神通 · %s" % [Data.RING_NAMES[slot], Data.SKILLS[sid]["name"]]
 	_callout_t = 1.4
 
 
 func absorb_start(age: int, _species: String) -> void:
-	_absorb.text = "正在吸收%s魂环……" % Data.age_name(age)
+	_absorb.text = "正在吸收%s灵环……" % Data.age_name(age)
 	_absorb.add_theme_color_override("font_color", Data.AGES[age]["glow"] if age > 0 else Color.WHITE)
 	_absorb_t = 3.0
 
@@ -1434,7 +1460,7 @@ func blind(dur: float, c: Color) -> void:
 	tw.tween_callback(r.queue_free)
 
 
-## 全屏闪一下（魂环突破）
+## 全屏闪一下（灵环突破）
 func flash(c: Color) -> void:
 	var r := ColorRect.new()
 	r.color = Color(c.r, c.g, c.b, 0.55)
@@ -1446,7 +1472,7 @@ func flash(c: Color) -> void:
 	tw.tween_callback(r.queue_free)
 
 
-# ------------------------------------------------------------------ 猎魂连击、武魂真身
+# ------------------------------------------------------------------ 猎灵连击、灵相真身
 
 var _combo_box: Control
 var _combo_rank: Label
@@ -1484,14 +1510,14 @@ func _build_combo() -> void:
 	v.add_child(_combo_mult)
 	_combo_bar = UiKit.bar(Color.WHITE, 150, 3)
 	v.add_child(_combo_bar)
-	# 武魂真身充能条：魂技格子上面
+	# 灵相真身充能条：神通格子上面
 	_tb_box = HBoxContainer.new()
 	_tb_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_tb_box.alignment = BoxContainer.ALIGNMENT_CENTER
 	_tb_box.add_theme_constant_override("separation", 8)
 	UiKit.place(_tb_box, Vector4(0.5, 1, 0.5, 1), Vector4(-180, -130, 180, -108))
 	_root.add_child(_tb_box)
-	var tl := UiKit.kicker("武魂真身", UiKit.GOLD, 12)
+	var tl := UiKit.kicker("灵相真身", UiKit.GOLD, 12)
 	UiKit._text_style(tl, 3)
 	tl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_tb_box.add_child(tl)
@@ -1500,7 +1526,7 @@ func _build_combo() -> void:
 	_tb_box.add_child(_tb_bar)
 	_tb_key = UiKit.keycap("Z", 12)
 	_tb_box.add_child(_tb_key)
-	# 变身时屏幕四边一圈武魂颜色的光
+	# 变身时屏幕四边一圈灵相颜色的光
 	_tb_edge = ColorRect.new()
 	_tb_edge.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var m := ShaderMaterial.new()
@@ -1538,7 +1564,7 @@ func _update_combo(dt: float) -> void:
 		_combo_hits.text = "连击 %d" % c.hits
 		_combo_mult.text = ("奖励 ×%.2f" % c.mult()) if c.mult() > 1.0 else ""
 		_combo_bar.value = c.decay_left()
-	# 武魂真身（第十版关掉了）
+	# 灵相真身（第十版关掉了）
 	_tb_box.visible = Combo.TRUE_BODY
 	if not Combo.TRUE_BODY:
 		return
@@ -1681,10 +1707,10 @@ func _build_intro() -> void:
 	v.add_child(line)
 
 
-func boss_intro(name: String) -> void:
+func boss_intro(name: String, lore := "") -> void:
 	var parts := name.split(" · ")
 	_intro_title.text = parts[parts.size() - 1]
-	_intro_sub.text = parts[0] if parts.size() > 1 else "千年魂兽"
+	_intro_sub.text = (parts[0] if parts.size() > 1 else "灵兽") + (("  ——  " + lore) if lore != "" else "")
 	_intro.visible = true
 	_intro.modulate.a = 0.0
 	_intro_title.scale = Vector2.ONE * 1.25
@@ -1697,7 +1723,7 @@ func boss_intro(name: String) -> void:
 	tw.tween_callback(func(): _intro.visible = false)
 
 
-# ------------------------------------------------------------------ 魂师榜（Tab）
+# ------------------------------------------------------------------ 修士榜（Tab）
 
 func _build_scores() -> void:
 	_scores = PanelContainer.new()
@@ -1714,11 +1740,11 @@ func _build_scores() -> void:
 func _fill_scores() -> void:
 	for c in _scores_list.get_children():
 		c.queue_free()
-	_scores_list.add_child(UiKit.header(("房间 %s" % Net.room_code) if Net.is_online() else "单人", "魂师榜", UiKit.MOON, 34))
+	_scores_list.add_child(UiKit.header(("房间 %s" % Net.room_code) if Net.is_online() else "单人", "修士榜", UiKit.MOON, 34))
 	var sp := Control.new()
 	sp.custom_minimum_size.y = 8
 	_scores_list.add_child(sp)
-	var cols := [["魂师", 300], ["等级", 90], ["击杀", 90], ["赚取", 120]]
+	var cols := [["修士", 300], ["等级", 90], ["击杀", 90], ["赚取", 120]]
 	var header := HBoxContainer.new()
 	for t in cols:
 		var l := UiKit.kicker(str(t[0]), UiKit.MIST, 13)
@@ -1771,7 +1797,7 @@ func _build_pause() -> void:
 	left.add_theme_constant_override("separation", 6)
 	UiKit.place(left, Vector4(0, 0.5, 0, 0.5), Vector4(110, -300, 560, 320))
 	_pause_menu.add_child(left)
-	left.add_child(UiKit.header("暂停", "斗罗大陆 · 猎魂", UiKit.MOON, 46))
+	left.add_child(UiKit.header("暂停", "苍墟 · 猎灵", UiKit.MOON, 46))
 	_pause_code = UiKit.label("", 17, UiKit.MIST)
 	_pause_code.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	left.add_child(_pause_code)
@@ -1780,7 +1806,7 @@ func _build_pause() -> void:
 	left.add_child(sp)
 	var items := [
 		["继续游戏", true, func(): world.set_paused(false)],
-		["武魂与魂环", false, func(): world.set_paused(false); toggle_wuhun()],
+		["灵相与灵环", false, func(): world.set_paused(false); toggle_wuhun()],
 		["成就", false, func(): world.set_paused(false); toggle_achievements()],
 		["设置", false, func(): _pause_menu.visible = false; _settings.visible = true],
 		["返回主菜单", false, func(): world.leave()],
@@ -1806,15 +1832,15 @@ func _build_pause() -> void:
 		["左键", "射击 / 出拳"], ["右键", "瞄准"],
 		["R", "换弹"], ["1-5", "物品栏（滚轮也行）"],
 		["G", "引魂索（中键也行）"], ["B", "换鱼饵"],
-		["Q E F", "三个魂技"], ["F", "交互 · 按住救队友"],
+		["Q E F", "三个神通"], ["F", "交互 · 按住救队友"],
 		["T", "丢出手上的东西"], ["H", "回血丹"],
 		["X", "收起暗器（跑得快）"], ["V", "检视暗器"],
-		["K", "武魂和魂骨"], ["J", "成就"],
-		["M", "地图"], ["Tab", "魂师榜"],
-		["L", "猎魂榜（挑魂兽去猎）"],
+		["K", "灵相和灵骨"], ["J", "成就"],
+		["M", "地图"], ["Tab", "修士榜"],
+		["L", "猎灵榜（挑灵兽去猎）"],
 	]
 	if Combo.TRUE_BODY:
-		keys.append(["Z", "武魂真身（连击充满）"])
+		keys.append(["Z", "灵相真身（连击充满）"])
 	for k in keys:
 		grid.add_child(UiKit.key_hint(str(k[0]), str(k[1]), 15, Color(0.85, 0.88, 0.92)))
 	var sc := CenterContainer.new()
@@ -1839,7 +1865,7 @@ func show_pause(on: bool) -> void:
 		_pause_code.add_theme_color_override("font_color", UiKit.MIST)
 
 
-# ------------------------------------------------------------------ 面板：暗器铺、武魂、成就、魂技二选一、渡船
+# ------------------------------------------------------------------ 面板：暗器铺、灵相、成就、神通二选一、渡船
 
 func open_shop() -> void:
 	_shop.open()
@@ -1970,7 +1996,7 @@ func _ach_rank(a: Dictionary) -> float:
 
 func close_panels() -> void:
 	if _choice and is_instance_valid(_choice):
-		return   # 魂技必须选一个
+		return   # 神通必须选一个
 	if _ach_panel and is_instance_valid(_ach_panel):
 		toggle_achievements()
 		return
@@ -1985,7 +2011,7 @@ func close_panels() -> void:
 	world.set_ui_open(false)
 
 
-## 吸收完魂环：从两个魂技里选一个（两张大卡，整张都能点）
+## 吸收完灵环：从两个神通里选一个（两张大卡，整张都能点）
 func choose_skill(age: int, species: String) -> void:
 	var slot := Profile.rings.size()
 	var tree: Array = Data.SKILL_TREE[Data.wuhun_id(Settings.wuhun)]
@@ -1998,10 +2024,10 @@ func choose_skill(age: int, species: String) -> void:
 	var v: VBoxContainer = fs[1]
 	v.add_theme_constant_override("separation", 10)
 	var ring_c: Color = Data.AGES[age]["glow"]
-	var k := UiKit.kicker("第%s魂环 · %s · %s" % [Data.RING_NAMES[slot], Data.age_name(age), Data.BEASTS.get(species, {"name": "魂兽"})["name"]], ring_c, 16)
+	var k := UiKit.kicker("第%s灵环 · %s · %s" % [Data.RING_NAMES[slot], Data.age_name(age), Data.BEASTS.get(species, {"name": "灵兽"})["name"]], ring_c, 16)
 	k.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(k)
-	var t := UiKit.title("领悟魂技", 52, Color.WHITE)
+	var t := UiKit.title("领悟神通", 52, Color.WHITE)
 	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	v.add_child(t)
 	var sub := UiKit.label("二选一，选了就不能换 · 选好以后在 K 面板里把它装到 Q / E / F", 17, UiKit.MIST)
@@ -2040,7 +2066,7 @@ func choose_skill(age: int, species: String) -> void:
 		chips.add_theme_constant_override("separation", 8)
 		chips.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		cv.add_child(chips)
-		chips.add_child(UiKit.chip("魂力 %d" % int(s["cost"]), Color(0.55, 0.72, 1.0), 13))
+		chips.add_child(UiKit.chip("灵力 %d" % int(s["cost"]), Color(0.55, 0.72, 1.0), 13))
 		chips.add_child(UiKit.chip("冷却 %d 秒" % int(s["cd"]), UiKit.MIST, 13))
 		if bool(s.get("shen", false)):
 			chips.add_child(UiKit.chip("神技", UiKit.GOLD, 13))
@@ -2098,7 +2124,7 @@ func open_boat_picker(dests: Array) -> void:
 	world.set_ui_open(true)
 
 
-## 猎魂榜（L）：这座岛能猎的魂兽，每只写明它的魂环给你哪个魂技；每只有两个年份可选（年份高的更难打、魂技更强）
+## 猎灵榜（L）：这座岛能猎的灵兽，每只写明它的灵环给你哪个神通；每只有两个年份可选（年份高的更难打、神通更强）
 var _board: Control
 
 
@@ -2106,6 +2132,11 @@ func toggle_board() -> void:
 	if _board and is_instance_valid(_board):
 		_close_board()
 	elif not world.ui_open:
+		# 猎场里 L 是"回岛"（猎完了才行）
+		if world.island.hunting:
+			if world.trip:
+				world.trip.key_return()
+			return
 		open_board()
 
 
@@ -2115,23 +2146,24 @@ func open_board() -> void:
 	var fs := _fullscreen(1260, 0)
 	_board = fs[0]
 	var v: VBoxContainer = fs[1]
-	_panel_head(v, "猎魂榜", "挑一只魂兽去猎", "L / Esc", _close_board)
-	var nr := Profile.rings.size()
+	_panel_head(v, "猎灵榜", "挑一只灵兽，全队去猎场猎它", "L / Esc", _close_board)
+	var nr := Profile.next_ring_index()
 	var tip := ""
-	if nr >= Data.MAX_RINGS:
-		tip = "十个魂环都齐了：猎到的魂环会炼成修为"
+	if Profile.rings.size() >= Data.MAX_RINGS:
+		tip = "十个灵环都齐了：猎到的灵环会炼成修为"
+	elif Profile.ring_hole >= 0:
+		tip = "第%s灵环散掉了：猎一只补上（至少%s）。卡片上写的就是你会领悟的神通" % [Data.RING_NAMES[nr], Data.age_name(int(Data.RING_MIN_AGE[nr]))]
 	elif Profile.at_bottleneck():
-		tip = "你卡在 %d 级瓶颈：要吸收第%s魂环（至少%s）。卡片上写的就是你会领悟的魂技——想要哪个就猎哪只" % [Profile.level, Data.RING_NAMES[nr], Data.age_name(int(Data.RING_MIN_AGE[nr]))]
+		tip = "你卡在 %d 级瓶颈：要吸收第%s灵环（至少%s）。卡片上写的就是你会领悟的神通——想要哪个就猎哪只" % [Profile.level, Data.RING_NAMES[nr], Data.age_name(int(Data.RING_MIN_AGE[nr]))]
 	else:
-		tip = "第%s魂环要到 %d 级才能吸收（去秘境刷修为）。现在猎到的魂环会炼成修为；卡片上是到时候你会领悟的魂技" % [Data.RING_NAMES[nr], (nr + 1) * 10]
+		tip = "第%s灵环要到 %d 级才能吸收（去秘境刷修为）。现在猎到的灵环会炼成修为；卡片上是到时候你会领悟的神通" % [Data.RING_NAMES[nr], (nr + 1) * 10]
 	var tl := UiKit.label(tip, 17, Color(0.9, 0.92, 0.96))
 	tl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	tl.custom_minimum_size.x = 1200
 	v.add_child(tl)
 	var hunt: Hunt = world.hunt
 	var cur: Beast = world.beasts.get(hunt.target_id) if hunt.target_id != 0 else null
-	if cur and cur.alive():
-		v.add_child(UiKit.label("现在的猎物：%s（再挑一只就换掉它）" % cur.display_name(), 16, Color(1.0, 0.75, 0.45)))
+	v.add_child(UiKit.label("猎场比岛大四倍：跟着爪痕、脚印、吼声找它 · 重伤了会逃回巢穴睡觉（偷袭 ×2.5）· 虚弱了用引魂索活捉（报酬 ×1.5）· 限时 25 分钟，全队倒下 3 次失败", 15, Color(1.0, 0.75, 0.45)))
 	var grid := HFlowContainer.new()
 	grid.add_theme_constant_override("h_separation", 14)
 	grid.add_theme_constant_override("v_separation", 14)
@@ -2154,8 +2186,9 @@ func open_board() -> void:
 		var hab := UiKit.chip(str(Data.HABITATS.get(str(bd["habitat"]), {"name": ""})["name"]), UiKit.MIST, 12)
 		hab.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		head.add_child(hab)
+		# 这一章的年份和再高一档（最高十万年；百万年只有第五章三层秘境的秘境之主）
 		var ages: Array = [base]
-		if base < 3:
+		if base < 4:
 			ages.append(base + 1)
 		for age in ages:
 			var sid := hunt.skill_preview(str(sp), int(age))
@@ -2183,7 +2216,7 @@ func open_board() -> void:
 			d.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			d.custom_minimum_size.x = 350
 			bv.add_child(d)
-			var go := UiKit.button("去猎%s%s王" % [Data.age_name(int(age)), bd["name"]], 16, int(age) == base)
+			var go := UiKit.button("去猎场猎%s%s王" % [Data.age_name(int(age)), bd["name"]], 16, int(age) == base)
 			var sp2 := str(sp)
 			var a2 := int(age)
 			go.pressed.connect(func():
@@ -2208,7 +2241,7 @@ func _close_boat_picker() -> void:
 	world.set_ui_open(false)
 
 
-# ------------------------------------------------------------------ 旧的魂技轮盘已经不用了（玩家脚本还会问一下）
+# ------------------------------------------------------------------ 旧的神通轮盘已经不用了（玩家脚本还会问一下）
 
 func wheel_open() -> bool:
 	return false
@@ -2235,7 +2268,7 @@ func _process(dt: float) -> void:
 	_room.text = ("房间 %s · %d 人" % [Net.room_code, Net.peers.size() + 1]) if Net.is_online() else ""
 	_fps.text = ("%d FPS" % Engine.get_frames_per_second()) if Settings.show_fps else ""
 
-	# 体力 / 魂力 / 修为
+	# 体力 / 灵力 / 修为
 	var mhp := Profile.max_hp()
 	_hp.value = p.hp / mhp
 	var hp_fill: StyleBoxFlat = _hp.get_theme_stylebox("fill")
@@ -2244,15 +2277,12 @@ func _process(dt: float) -> void:
 	_hp_text.text = "%d%s" % [ceili(p.hp), ("+%d" % ceili(p.shield)) if p.shield > 0.0 else ""]
 	_soul.value = p.soul / Profile.max_soul()
 	_soul_text.text = "%d" % int(p.soul)
-	_food.value = Profile.food / Data.FOOD_MAX
-	var hungry := Profile.food < 25.0
-	_food_row.modulate = (Color(1, 0.4, 0.35) if int(Time.get_ticks_msec() / 400) % 2 == 0 else Color.WHITE) if hungry else Color(1, 1, 1, 0.75)
 	_xp.value = float(Profile.xp) / float(Data.xp_to_next(Profile.level))
 	_title.text = "%s · %s" % [Data.titles(Profile.level), Settings.display_name()]
 	_badge.queue_redraw()
 	_update_status(p)
 
-	# 魂技
+	# 神通
 	if Profile.rings.size() != _skills_n:
 		_refresh_skills()
 	_update_skill_slot(p, dt)
@@ -2301,7 +2331,7 @@ func _process(dt: float) -> void:
 	_update_kings(dt)
 	_update_combo(dt)
 
-	# Boss / 正在打的魂兽王：顶上的血条
+	# Boss / 正在打的灵兽王：顶上的血条
 	var bk := -1.0
 	if world.boss:
 		bk = world.boss.hp / world.boss.max_hp
@@ -2311,7 +2341,7 @@ func _process(dt: float) -> void:
 			if not _boss_box.visible:
 				_boss_box.visible = true
 				_boss_trail = kb.hp / kb.max_hp
-			_boss_kick.text = "魂兽王"
+			_boss_kick.text = "灵兽王"
 			_boss_name.text = kb.display_name()
 			_boss_state.text = "逃回巢穴了" if kb._retreat else ("捆住了" if kb.root_t > 0.0 else ("暴怒" if kb._phase2 else ""))
 			_boss_state.add_theme_color_override("font_color", UiKit.JADE if kb._retreat else (UiKit.GREEN if kb.root_t > 0.0 else UiKit.RED))
@@ -2350,7 +2380,7 @@ func _process(dt: float) -> void:
 			_fill_scores()
 
 
-# ------------------------------------------------------------------ 受伤方向、任务目标标记、魂兽头顶的名字和血条
+# ------------------------------------------------------------------ 受伤方向、任务目标标记、灵兽头顶的名字和血条
 
 ## 受伤方向：准星外面一圈红色的弧
 func _draw_hurt() -> void:
@@ -2371,7 +2401,10 @@ func _quest_target() -> Variant:
 		var hm: Variant = world.hunt.marker()
 		if hm != null:
 			return hm
-	var inside: bool = world.dungeon != null and world.dungeon.inside
+	# 猎场里不标主线任务（只标能吸收的灵环）
+	var inside: bool = (world.dungeon != null and world.dungeon.inside) or world.island.hunting
+	if world.island.hunting:
+		q = {}
 	match "" if inside else str(q.get("target", "")):
 		"dungeon":
 			if not world.dungeon.portals.is_empty():
@@ -2389,7 +2422,7 @@ func _quest_target() -> Variant:
 		var hc: Vector3 = world.island.habitat_center(hb)
 		if hc.distance_to(world.player.global_position) > 12.0:
 			return hc + Vector3(0, 2.5, 0)
-	# 地上有能吸收的魂环：标出来
+	# 地上有能吸收的灵环：标出来
 	var best: Variant = null
 	for rid in world.rings:
 		var r: Dictionary = world.rings[rid]
@@ -2432,7 +2465,7 @@ func _draw_marker() -> void:
 	_marker.draw_string(font, clamped + Vector2(-w * 0.5, s + 18), t, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, col)
 
 
-## 魂兽头顶：名字（年份颜色）、血条、性格 / 词缀 / 状态小字。近的、挨过打的、魂兽王才显示
+## 灵兽头顶：名字（年份颜色）、血条、性格 / 词缀 / 状态小字。近的、挨过打的、灵兽王才显示
 func _draw_plates() -> void:
 	var p: Player = world.player
 	if not p or p.scoped:
@@ -2447,7 +2480,7 @@ func _draw_plates() -> void:
 		var top: Vector3 = b._hp_label.global_position
 		var d := me.distance_to(top)
 		var hurt := b.hp < b.max_hp - 0.5
-		# 字少一点：魂兽王一直显示；普通魂兽只有准星对着它、或者挨过打又离得近才显示
+		# 字少一点：灵兽王一直显示；普通灵兽只有准星对着它、或者挨过打又离得近才显示
 		var max_d := 75.0 if elite else (60.0 if hurt else 45.0)
 		if d > max_d or cam.is_position_behind(top):
 			continue

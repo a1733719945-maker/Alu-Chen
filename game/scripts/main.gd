@@ -53,6 +53,11 @@ func _show_menu(status := "", error := false) -> void:
 	menu.host_room.connect(start_host)
 	menu.join_room.connect(start_join)
 	menu.quit.connect(func(): get_tree().quit())
+	menu.prologue.connect(func():
+		menu.visible = false
+		await play_prologue()
+		if menu:
+			menu.visible = true)
 	if status != "":
 		menu.set_status(status, error)
 
@@ -82,6 +87,11 @@ func start_join(code: String) -> void:
 
 func _on_connected(_code: String) -> void:
 	if Net.is_host():
+		# 这个存档第一次进游戏：先看序章（天倾、五大灵主、栖霞村、怎么玩）
+		if int(Profile.stats.get("prologue", 0)) == 0 and not Data.autotest:
+			Profile.stats["prologue"] = 1
+			Profile.mark_dirty()
+			await play_prologue()
 		_start_world(Profile.chapter, false)
 		if Net.is_online():
 			world.hud.toast("已进入房间 %s。按 Esc 可以看到房间码，发给朋友就能加入" % Net.room_code, Color(1, 0.9, 0.6), 7.0)
@@ -93,6 +103,17 @@ func _on_connected(_code: String) -> void:
 		Net.send(0, "hello", [Settings.display_name(), Settings.wuhun, true, Profile.level, _ring_summary()])
 
 
+## 序章（Remotion 画的，48 秒）：主菜单"序章"也能重看
+func play_prologue() -> void:
+	var v := Voyage.new()
+	v.video = "res://assets/cutscene/prologue.ogv"
+	v.length = 50.0
+	v.music = "event"
+	add_child(v)
+	await v.finished
+	Sfx.play_music("explore")
+
+
 func _ring_summary() -> Array:
 	var out := []
 	for r in Profile.rings:
@@ -100,7 +121,8 @@ func _ring_summary() -> Array:
 	return out
 
 
-func _start_world(chapter: int, announce: bool) -> void:
+## hunt：去这一章的猎场（空 = 岛上）
+func _start_world(chapter: int, announce: bool, hunt := {}) -> void:
 	if menu:
 		menu.queue_free()
 		menu = null
@@ -109,13 +131,56 @@ func _start_world(chapter: int, announce: bool) -> void:
 		world = null
 	if not Data.CHAPTERS.has(chapter):
 		chapter = 1
-	world = World.new(chapter)
+	world = World.new(chapter, hunt)
 	world.name = "World"
 	add_child(world)
 	world.leave_requested.connect(leave)
 	world.travel_requested.connect(_travel)
+	world.map_requested.connect(_change_map)
 	if announce and Net.is_online():
 		Net.send(0, "hello", world.hello_payload(true))
+
+
+## 去猎场 / 从猎场回岛：同一章换一张图（不播开船动画）
+func _change_map(chapter: int, hunt: Dictionary) -> void:
+	if Data.autotest:
+		_start_world(chapter, true, hunt)
+		return
+	# 建猎场要几秒：先盖一层"正在前往"，画出来了再建（不然画面停在旧图上像卡死了）
+	_sailing = true
+	_queue.clear()
+	if world:
+		world.process_mode = Node.PROCESS_MODE_DISABLED
+	# 去猎场：先播一小段"猎场"过场（猎物的名字叠在上面），再盖"正在前往"建图
+	if not hunt.is_empty():
+		var sp := str(hunt.get("species", ""))
+		var hv := Voyage.new()
+		hv.video = "res://assets/cutscene/hunt.ogv"
+		hv.length = 4.0
+		hv.title = "猎场 · %s%s王" % [Data.age_name(int(hunt.get("age", 0))), Data.BEASTS[sp]["name"]] if Data.BEASTS.has(sp) else "猎场 · 灵兽王"
+		add_child(hv)
+		await hv.finished
+	var layer := CanvasLayer.new()
+	layer.layer = 100
+	add_child(layer)
+	var bg := ColorRect.new()
+	bg.color = Color(0.02, 0.03, 0.05, 0.94)
+	UiKit.fill(bg)
+	layer.add_child(bg)
+	var l := UiKit.title("正在前往猎场……" if not hunt.is_empty() else "正在回岛……", 40, UiKit.GOLD)
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	UiKit.fill(l)
+	layer.add_child(l)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	_start_world(chapter, true, hunt)
+	layer.queue_free()
+	_sailing = false
+	var q := _queue.duplicate()
+	_queue.clear()
+	for m in q:
+		world.on_message(m[0], m[1], m[2])
 
 
 func _travel(chapter: int) -> void:
@@ -131,6 +196,8 @@ func _travel(chapter: int) -> void:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	var v := Voyage.new()
 	v.title = "前往 · %s" % Data.CHAPTERS[chapter]["name"]
+	v.length = 8.0
+	v.captions = [[1.4, 7.4, str(Data.CHAPTERS[chapter].get("story", ""))]]
 	add_child(v)
 	await v.finished
 	_sailing = false
@@ -149,7 +216,8 @@ func _on_message(from: int, type: String, data: Variant) -> void:
 		_queue.append([from, type, data])
 		if type == "init":
 			_waiting_init = false
-			_start_world(int(data[0]), false)
+			var d0: Array = data
+			_start_world(int(d0[0]), false, d0[8] if d0.size() > 8 and d0[8] is Dictionary else {})
 			var q := _queue.duplicate()
 			_queue.clear()
 			for m in q:

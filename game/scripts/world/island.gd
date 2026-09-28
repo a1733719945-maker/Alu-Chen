@@ -1,17 +1,18 @@
 class_name Island
 extends RefCounted
-## 地图的地形数据：高度、魂兽栖息地、码头、暗器铺、祭坛、船的位置。
+## 地图的地形数据：高度、灵兽栖息地、码头、暗器铺、祭坛、船的位置。
 ## 用固定种子生成，所以每个玩家电脑上的地图一模一样（联机时碰撞必须一致）。
 ##
 ## 五张地图（map_id）：
-##   island     第一章 湖心岛：湖中间一个岛，北边小山上有祭坛，湖主从北边湖里出来
-##   forest     第二章 落日森林：四周是山，中间有沼泽，古树林里召唤 Boss
-##   deepforest 第三章 星斗大森林：更大更密的夜晚森林
-##   snow       第四章 极北之地：湖中间的雪岛，冰湖
-##   sea        第五章 海神岛：大海中间的岛，海水越深魂兽越强
+##   island     第一章 镜湖：湖中间一个岛，北边小山上有祭坛，镜湖之主从北边湖里出来
+##   forest     第二章 落霞林：四周是山，中间有沼泽，古树林里召唤 Boss
+##   deepforest 第三章 苍梧林海：更大更密的夜晚森林
+##   snow       第四章 朔北冰原：湖中间的雪岛，冰湖
+##   sea        第五章 归墟：大海中间的岛，海水越深灵兽越强
 
-const SIZE := 321                 # 网格顶点数，间距 1 米，地图 320×320 米
+const SIZE := 321                 # 岛的网格顶点数，间距 1 米，地图 320×320 米（猎场更大，见 size）
 const HALF := (SIZE - 1) / 2
+const HUNT_SIZE := 641            # 猎场 640×640 米（岛的四倍面积）
 const WATER_Y := 0.0
 
 ## style：island（岛，Boss 在北边水里）/ forest（四周环山，Boss 在中间空地）
@@ -37,10 +38,22 @@ const MAPS := {
 		"water": "reef", "depths": [[3.0, "reef"], [7.0, "deep"], [999.0, "abyss"]],
 		"habitats": [["beach", Vector2(60, 58), 20.0, 1.3], ["cliff", Vector2(-62, -44), 16.0, 9.0]]},
 }
-## 这些栖息地由几个“洞口”组成（兔子洞、狼穴……），抛到洞口附近才有魂兽
+## 这些栖息地由几个“洞口”组成（兔子洞、狼穴……），抛到洞口附近才有灵兽
 const POINT_HABITATS := ["burrow", "den", "nest", "snowden", "icecave", "roost"]
 
 var map_id := "island"
+var size := SIZE                       # 网格顶点数（岛 321，猎场 641）
+var half := HALF
+# 猎场（第十二版补丁：用户说岛太小、没有探索感）：猎灵榜挑了灵兽，全队去一张专门的大地图猎它
+var hunting := false
+var hunt_species := ""
+var hills: Array = []                  # 猎场的山头 [中心 Vector2, 高, 宽]
+var ridges: Array = []                 # 猎场的山脊 [起点, 终点, 高, 宽]
+var treasures: Array = []              # 猎场里藏着的宝藏（山顶、水边、角落）Vector3
+var guard_spots: Array = []            # 猎场里灵兽王守着的大宝箱 {"pos": Vector3, "type": 栖息地}
+var nest := Vector3.ZERO               # 猎物的巢穴（受重伤逃回这里睡觉）
+var home := Vector3.ZERO               # 猎物一开始在哪一带
+var rim_r := 270.0                     # 猎场外圈山脚的半径
 var map_seed := 20260925
 var style := "island"
 var cfg: Dictionary
@@ -69,10 +82,17 @@ var _shore := FastNoiseLite.new()
 var _detail := FastNoiseLite.new()
 
 
-func _init(p_map := "island") -> void:
+## hunt_seed != 0：这一章的猎场（地形、植被跟这一章一样，但大得多），hunt_species 是要猎的灵兽
+func _init(p_map := "island", hunt_seed := 0, p_hunt_species := "") -> void:
 	map_id = p_map if MAPS.has(p_map) else "island"
 	cfg = MAPS[map_id]
 	map_seed = int(cfg["seed"])
+	if hunt_seed != 0:
+		hunting = true
+		hunt_species = p_hunt_species
+		map_seed = hunt_seed
+		size = HUNT_SIZE
+		half = (size - 1) / 2
 	style = str(cfg["style"])
 	base_radius = float(cfg["radius"])
 	hill = cfg["hill"]
@@ -91,6 +111,11 @@ func _init(p_map := "island") -> void:
 	_shore.frequency = 0.9
 	_detail.seed = map_seed + 2
 	_detail.frequency = 0.08
+	if hunting:
+		_define_hunt()
+		_generate()
+		_place_hunt_landmarks()
+		return
 	_define_habitats()
 	_generate()
 	_place_landmarks()
@@ -121,7 +146,7 @@ func _raw_height(x: float, z: float) -> float:
 	var rim: float = cfg["rim"]
 	if rim > 0.0:
 		land += smoothstep(R - 45.0, R - 10.0, r) * rim * (1.0 if z < 60.0 else 0.2)
-	# 海神岛：靠海的一圈地势低，是大片沙滩
+	# 归墟：靠海的一圈地势低，是大片沙滩
 	if map_id == "sea":
 		land = lerpf(land * 0.4 + 0.7, land, smoothstep(R - 30.0, R - 70.0, r))
 	for h in habitats:
@@ -133,7 +158,7 @@ func _raw_height(x: float, z: float) -> float:
 		var k := smoothstep(h["radius"] + 10.0, h["radius"] - 2.0, d)
 		land = lerpf(land, h["flat"] + _detail.get_noise_2d(x, z) * 0.25, k)
 	for p in ponds:
-		# 水塘（碧磷沼、毒沼）：岸边是一大片缓坡浅滩，走着就能上岸，不会掉进去爬不出来
+		# 水塘（碧眼沼、毒沼）：岸边是一大片缓坡浅滩，走着就能上岸，不会掉进去爬不出来
 		var d := Vector2(x, z).distance_to(p["center"])
 		var k := smoothstep(p["radius"] + 9.0, p["radius"] - 5.0, d)
 		var bed := -float(p["depth"]) * smoothstep(p["radius"] + 1.0, p["radius"] - 7.0, d)
@@ -148,16 +173,212 @@ func _raw_height(x: float, z: float) -> float:
 
 
 func _generate() -> void:
-	heights.resize(SIZE * SIZE)
-	for j in SIZE:
-		var z := float(j - HALF)
-		for i in SIZE:
-			var x := float(i - HALF)
-			heights[i + j * SIZE] = _raw_height(x, z)
+	heights.resize(size * size)
+	for j in size:
+		var z := float(j - half)
+		for i in size:
+			var x := float(i - half)
+			heights[i + j * size] = _hunt_height(x, z) if hunting else _raw_height(x, z)
+
+
+# ------------------------------------------------------------------ 猎场
+
+## 猎场的布局：几片栖息地（猎物的老窝、巢穴、这一章别的灵兽的地盘）、山头、山脊、水塘、营地
+func _define_hunt() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = map_seed
+	rim_r = 262.0
+	# 这一章陆地上的栖息地类型（猎物自己的那种一定有，还有它的巢穴）
+	var types: Array = []
+	var flats := {}
+	for h in cfg["habitats"]:
+		var t := str(h[0])
+		if t != "clearing" and not t in types:
+			types.append(t)
+			flats[t] = float(h[3])
+	var own := str(Data.BEASTS.get(hunt_species, {"habitat": ""})["habitat"])
+	if own == "" or not Data.HABITATS.has(own) or is_water_habitat(own):
+		own = str(types[0]) if not types.is_empty() else "meadow"
+	var plan: Array = [[own, "home"], [own, "nest"]]
+	for t in types:
+		if t != own:
+			plan.append([t, ""])
+	# 多出来的区域：再来一片自己的地盘和一片别的，地图才不空
+	plan.append([own, ""])
+	if types.size() > 1:
+		plan.append([types[rng.randi() % types.size()], ""])
+	# 营地在南边；老窝在北边远处，巢穴在另一头（受伤了要跑很远，追着打）
+	var camp := Vector2(0, rim_r - 30.0)
+	var placed: Array = []
+	for e in plan:
+		var best := Vector2.ZERO
+		var bs := -INF
+		for tries in 40:
+			var a := rng.randf() * TAU
+			var r := rng.randf_range(80.0, rim_r - 55.0)
+			var c := Vector2(cos(a), sin(a)) * r
+			var s := 0.0
+			var md := INF
+			for q in placed:
+				md = minf(md, c.distance_to(q))
+			md = minf(md, c.distance_to(camp) * 0.9)
+			s = minf(md, 120.0)
+			if e[1] == "home":
+				s += -c.y * 0.4 + c.distance_to(camp) * 0.3
+			elif e[1] == "nest" and not placed.is_empty():
+				s += c.distance_to(placed[0]) * 0.5
+			s += rng.randf() * 10.0
+			if s > bs:
+				bs = s
+				best = c
+		placed.append(best)
+		var radius := rng.randf_range(24.0, 32.0)
+		var nm := str(Data.HABITATS[e[0]]["name"]) if Data.HABITATS.has(e[0]) else "荒野"
+		if e[1] == "nest":
+			nm = "%s巢穴" % str(Data.BEASTS.get(hunt_species, {"name": "灵兽"})["name"])
+		# 海崖这种台地保持原来的高度，别的区域高低随机一点
+		var flat: float = float(flats[e[0]]) if str(e[0]) == "cliff" else rng.randf_range(2.2, 4.5)
+		habitats.append({"type": e[0], "center": best, "radius": radius, "flat": flat, "points": [], "label": nm, "role": e[1]})
+	# 山头、山脊：地势起伏，站到高处才看得远
+	for k in rng.randi_range(7, 10):
+		var c2 := Vector2.from_angle(rng.randf() * TAU) * rng.randf_range(40.0, rim_r - 40.0)
+		var ok := c2.distance_to(camp) > 60.0
+		for h in habitats:
+			if c2.distance_to(h["center"]) < float(h["radius"]) + 30.0:
+				ok = false
+		if ok:
+			hills.append([c2, rng.randf_range(8.0, 24.0), rng.randf_range(22.0, 40.0)])
+	for k in 3:
+		var a0 := Vector2.from_angle(rng.randf() * TAU) * rng.randf_range(60.0, 200.0)
+		var a1 := a0 + Vector2.from_angle(rng.randf() * TAU) * rng.randf_range(70.0, 140.0)
+		ridges.append([a0, a1, rng.randf_range(6.0, 12.0), rng.randf_range(10.0, 16.0)])
+	# 水塘
+	var pond_n := 4 if map_id == "sea" else 3
+	for k in pond_n:
+		for tries in 20:
+			var c3 := Vector2.from_angle(rng.randf() * TAU) * rng.randf_range(50.0, rim_r - 60.0)
+			var ok2 := c3.distance_to(camp) > 50.0
+			for h in habitats:
+				if c3.distance_to(h["center"]) < float(h["radius"]) + 25.0:
+					ok2 = false
+			if ok2:
+				ponds.append({"center": c3, "radius": rng.randf_range(14.0, 24.0), "depth": rng.randf_range(2.5, 4.0)})
+				break
+
+
+## 猎场的高度：起伏的地面 + 山头 + 山脊 + 压平的栖息地 + 水塘，外面一圈高山围住
+func _hunt_height(x: float, z: float) -> float:
+	var p := Vector2(x, z)
+	var r := p.length()
+	var amp: float = float(cfg["amp"]) + 3.0
+	var land := 2.0 + (_noise.get_noise_2d(x, z) * 0.5 + 0.5) * amp + _detail.get_noise_2d(x, z) * 0.4
+	for h in hills:
+		var d := p.distance_to(h[0])
+		land += float(h[1]) * exp(-d * d / (2.0 * float(h[2]) * float(h[2])))
+	for g in ridges:
+		var q := Geometry2D.get_closest_point_to_segment(p, g[0], g[1])
+		var d2 := p.distance_to(q)
+		land += float(g[2]) * exp(-d2 * d2 / (2.0 * float(g[3]) * float(g[3]))) * (0.7 + 0.3 * _detail.get_noise_2d(x * 0.5, z * 0.5))
+	for h in habitats:
+		var d3 := p.distance_to(h["center"])
+		var k := smoothstep(float(h["radius"]) + 14.0, float(h["radius"]) - 2.0, d3)
+		land = lerpf(land, float(h["flat"]) + _detail.get_noise_2d(x, z) * 0.3, k)
+	# 营地一小块平地
+	land = lerpf(land, 2.4, smoothstep(26.0, 12.0, p.distance_to(Vector2(0, rim_r - 30.0))))
+	for pd in ponds:
+		var d4 := p.distance_to(pd["center"])
+		var kk := smoothstep(float(pd["radius"]) + 9.0, float(pd["radius"]) - 5.0, d4)
+		var bed := -float(pd["depth"]) * smoothstep(float(pd["radius"]) + 1.0, float(pd["radius"]) - 7.0, d4)
+		land = lerpf(land, bed + _detail.get_noise_2d(x, z) * 0.3, kk)
+	# 外圈的山：走到边上是山壁，爬不出去
+	var edge := rim_r + _shore.get_noise_2d(cos(atan2(z, x)) * 1.6, sin(atan2(z, x)) * 1.6) * 14.0
+	land += smoothstep(edge - 20.0, edge + 30.0, r) * (38.0 + _noise.get_noise_2d(x * 0.6, z * 0.6) * 14.0)
+	return land
+
+
+func _place_hunt_landmarks() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = map_seed + 7
+	var camp := Vector2(0, rim_r - 30.0)
+	spawn = Vector3(camp.x, height_at(camp.x, camp.y) + 0.1, camp.y)
+	spawn_yaw = 0.0
+	# 岛上才有的东西（码头、暗器铺、祭坛、Boss）放到营地 / 很远的地方，不会用到
+	dock_start = spawn + Vector3(0, 0, 8)
+	dock_end = dock_start
+	dock_y = spawn.y
+	shop_pos = spawn + Vector3(-8, 0, 3)
+	altar_pos = Vector3(9999, 0, 9999)
+	boss_pos = Vector3(9999, 0, 9999)
+	for h in habitats:
+		var pts: Array = []
+		if h["type"] in POINT_HABITATS:
+			var n := 7
+			for k in n:
+				var a := TAU * k / n + rng.randf_range(-0.3, 0.3)
+				var d := rng.randf_range(5.0, h["radius"] - 4.0)
+				var c: Vector2 = h["center"] + Vector2(cos(a), sin(a)) * d
+				pts.append(ground_point(c.x, c.y))
+		else:
+			pts.append(ground_point(h["center"].x, h["center"].y))
+		h["points"] = pts
+		match str(h.get("role", "")):
+			"home":
+				home = ground_point(h["center"].x, h["center"].y)
+			"nest":
+				nest = ground_point(h["center"].x, h["center"].y)
+	# 宝藏：山顶、水塘边、山脊上、区域边上
+	for hl in hills:
+		if treasures.size() >= 6:
+			break
+		var c: Vector2 = hl[0]
+		treasures.append(ground_point(c.x, c.y))
+	for pd in ponds:
+		var c2: Vector2 = pd["center"] + Vector2.from_angle(rng.randf() * TAU) * (float(pd["radius"]) + 6.0)
+		if is_land(c2.x, c2.y):
+			treasures.append(ground_point(c2.x, c2.y))
+	for g in ridges:
+		var c3: Vector2 = (g[0] as Vector2).lerp(g[1], 0.5)
+		if c3.length() < rim_r - 30.0:
+			treasures.append(ground_point(c3.x, c3.y))
+	while treasures.size() < 14:
+		var c4 := Vector2.from_angle(rng.randf() * TAU) * rng.randf_range(60.0, rim_r - 35.0)
+		if is_land(c4.x, c4.y) and c4.distance_to(camp) > 50.0:
+			treasures.append(ground_point(c4.x, c4.y))
+	# 灵兽王守着的大宝箱：别的灵兽的地盘里（不在猎物的老窝和巢穴），离营地远的先挑，最多 3 个
+	# （和猎物同一种的地盘不要，免得守宝的王和猎物长得一样）
+	var zs: Array = habitats.filter(func(h): return str(h.get("role", "")) == "" and not is_water_habitat(str(h["type"])) and Data.HABITATS.has(str(h["type"])) \
+		and str(Data.HABITATS[str(h["type"])]["beast"]) != hunt_species)
+	zs.sort_custom(func(a, b): return (a["center"] as Vector2).distance_to(camp) > (b["center"] as Vector2).distance_to(camp))
+	for h in zs:
+		if guard_spots.size() >= 3:
+			break
+		var c6: Vector2 = h["center"]
+		if is_land(c6.x, c6.y):
+			guard_spots.append({"pos": ground_point(c6.x, c6.y), "type": str(h["type"])})
+	# 小路：营地通往各个区域（中间一个路口），路弯弯曲曲
+	var hub := camp + Vector2(0, -60)
+	paths.append(PackedVector2Array([camp, hub]))
+	for h in habitats:
+		var c5: Vector2 = h["center"]
+		var to := (hub - c5).normalized()
+		var mid := hub.lerp(c5, 0.5) + Vector2(-to.y, to.x) * 18.0
+		paths.append(PackedVector2Array([hub, mid, c5 + to * (float(h["radius"]) * 0.6)]))
+
+
+## 一片区域的名字（猎场地图上、罗盘上用）
+func zone_name(p: Vector3) -> String:
+	var best := ""
+	var bd := INF
+	for h in habitats:
+		var d := Vector2(p.x, p.z).distance_to(h["center"])
+		if d < bd:
+			bd = d
+			best = str(h.get("label", Data.HABITATS.get(str(h["type"]), {"name": "荒野"})["name"]))
+	return best if bd < 90.0 else "荒野"
 
 
 ## 地图外面另搭的平台（秘境的场地）：[{"c": Vector2, "r2": 半径平方, "y": 高度}]。在里面 height_at 直接返回平台高度，
-## 所以魂兽、红圈、脚印、落地这些用到地面高度的东西在秘境里照常用
+## 所以灵兽、红圈、脚印、落地这些用到地面高度的东西在秘境里照常用
 var floors: Array = []
 
 
@@ -171,16 +392,16 @@ func height_at(x: float, z: float) -> float:
 		var c: Vector2 = f["c"]
 		if (x - c.x) * (x - c.x) + (z - c.y) * (z - c.y) < float(f["r2"]):
 			return float(f["y"])
-	var fx := clampf(x + HALF, 0.0, SIZE - 1.001)
-	var fz := clampf(z + HALF, 0.0, SIZE - 1.001)
+	var fx := clampf(x + half, 0.0, size - 1.001)
+	var fz := clampf(z + half, 0.0, size - 1.001)
 	var i := int(fx)
 	var j := int(fz)
 	var tx := fx - i
 	var tz := fz - j
-	var h00 := heights[i + j * SIZE]
-	var h10 := heights[i + 1 + j * SIZE]
-	var h01 := heights[i + (j + 1) * SIZE]
-	var h11 := heights[i + 1 + (j + 1) * SIZE]
+	var h00 := heights[i + j * size]
+	var h10 := heights[i + 1 + j * size]
+	var h01 := heights[i + (j + 1) * size]
+	var h11 := heights[i + 1 + (j + 1) * size]
 	return lerpf(lerpf(h00, h10, tx), lerpf(h01, h11, tx), tz)
 
 
@@ -192,6 +413,15 @@ func slope_at(x: float, z: float) -> float:
 
 func is_land(x: float, z: float) -> bool:
 	return height_at(x, z) > WATER_Y + 0.25
+
+
+## 这个点在不在额外加的平台上（秘境场地）——野外刷怪、摆东西要避开
+func on_floor(x: float, z: float) -> bool:
+	for f in floors:
+		var c: Vector2 = f["c"]
+		if (x - c.x) * (x - c.x) + (z - c.y) * (z - c.y) < float(f["r2"]) + 400.0:
+			return true
+	return false
 
 
 func ground_point(x: float, z: float) -> Vector3:
@@ -280,7 +510,7 @@ func path_distance(x: float, z: float) -> float:
 	return best
 
 
-## 水里某一点属于哪种水域（海神岛按深浅分）
+## 水里某一点属于哪种水域（归墟按深浅分）
 func water_type_at(x: float, z: float) -> String:
 	if not cfg.has("depths"):
 		return water_habitat
@@ -337,7 +567,7 @@ func habitat_center(type: String) -> Vector3:
 	return spawn
 
 
-## 魂兽落地后逃往的地方
+## 灵兽落地后逃往的地方
 func escape_point(type: String, from: Vector3) -> Vector3:
 	if is_water_habitat(type):
 		# 找最近的水：先看池塘，再往外找湖

@@ -1,6 +1,6 @@
 class_name Player
 extends CharacterBody3D
-## 本地玩家：第一人称移动、看、开枪、甩引魂索、放魂技、用道具。
+## 本地玩家：第一人称移动、看、开枪、甩引魂索、放神通、用道具。
 ##
 ## 手感：
 ##   移动 —— 地面加速度大、摩擦快，停得住；空中能小幅转向
@@ -15,7 +15,7 @@ signal hurt(amount: float, from_dir: Vector3)
 signal died
 
 const EYE_HEIGHT := 1.62
-const WHEEL_HOLD := 0.2          # 按住 Q 超过这么久弹出魂技轮盘
+const WHEEL_HOLD := 0.2          # 按住 Q 超过这么久弹出神通轮盘
 const CROUCH_EYE := 1.12
 const WALK_SPEED := 5.6
 const SPRINT_SPEED := 8.6
@@ -30,7 +30,7 @@ const JUMP_BUFFER := 0.12
 const FIRE_BUFFER := 0.09
 const REGEN_DELAY := 6.0
 const REGEN_RATE := 5.0
-const BREATH := 10.0             # 水下憋气秒数（魂骨能加）
+const BREATH := 10.0             # 水下憋气秒数（灵骨能加）
 const SWIM_SPEED := 3.4
 const DROWN_DPS := 12.0
 
@@ -55,22 +55,22 @@ var sprint_k := 0.0
 var crouch_k := 0.0
 var swimming := false
 
-# 体力 / 护盾 / 魂力 / 增益
+# 体力 / 护盾 / 灵力 / 增益
 var hp := 100.0
 var shield := 0.0
 var shield_t := 0.0
 var soul := 60.0
 var dead := false
-var busy_t := 0.0                # 吸收魂环时不能开枪
-var channeling := false          # 猎魂远征：正在吸收魂环（站着不能动，能开枪，队友护法）
+var busy_t := 0.0                # 吸收灵环时不能开枪
+var channeling := false          # 猎灵远征：正在吸收灵环（站着不能动，能开枪，队友护法）
 var buffs := {}                  # stat -> [amount, 剩余秒]
-# 魂兽招式带来的负面状态（Data.BEAST_SKILLS）
+# 灵兽招式带来的负面状态（Data.BEAST_SKILLS）
 var root_t := 0.0                # 定身（连按空格挣脱）
 var slow_t := 0.0
 var slow_k := 0.0
 var vuln_t := 0.0                # 受到伤害 +30%
-var silence_t := 0.0             # 放不了魂技
-var empower := {}                # 武魂附体（魂技 empower）：{sid, kind, frac, t}
+var silence_t := 0.0             # 放不了神通
+var empower := {}                # 灵相附体（神通 empower）：{sid, kind, frac, t}
 var _since_hurt := 99.0
 
 var _coyote := 0.0
@@ -92,10 +92,10 @@ var _breath := 4.0               # 狙击屏息剩余秒数
 var _breath_tired := 0.0
 var _strafe := 0.0
 
-# 水、倒地、魂技位移、魂骨
+# 水、倒地、神通位移、灵骨
 var under := false               # 眼睛在水下
 var air := BREATH                # 剩余憋气
-var invuln_t := 0.0              # 复活保护（魂兽和 Boss 不打）
+var invuln_t := 0.0              # 复活保护（灵兽和 Boss 不打）
 var carried := false             # 被海鸥叼着
 var giant_k := 0.0               # 变大了多少（0 = 正常，0.5 = 1.5 倍）
 var _giant_target := 0.0
@@ -111,13 +111,13 @@ var _cs: CollisionShape3D
 # 暗器：倒地掉在地上的（lost）、从地上捡来的队友的（borrowed：id -> 主人）
 var lost_guns: Array = []
 var borrowed := {}
-# 物品栏（数字键）：1 主暗器（再按 1 换别的主暗器）/ 2 袖箭 / 3 佛怒唐莲 / 4 回血丹 / 5 没装上的魂骨
-const SLOT_NAMES := ["主暗器", "袖箭", "佛怒唐莲", "回血丹 / 烤肉", "魂骨"]
+# 物品栏（数字键）：1 主暗器（再按 1 换别的主暗器）/ 2 袖箭 / 3 九转雷莲 / 4 丹药（再按 4 换下一种）/ 5 没装上的灵骨
+const SLOT_NAMES := ["主暗器", "袖箭", "九转雷莲", "丹药", "灵骨"]
 var slot := 1
 var _last_gun_slot := 1
 var _spare_idx := 0
 var _primary_pick := ""          # 上次拿的主暗器
-var _slot4 := "pill"             # 4 号位现在拿的是回血丹还是烤肉
+var _slot4 := "pill"             # 4 号位现在拿的是哪种丹药（Data.PILL_ORDER）
 var _starve_t := 0.0
 var _climb_t := 0.0
 var _ctrl_t := -1.0              # Ctrl 按下多久（轻点 = 翻滚，按住 = 蹲）
@@ -241,7 +241,7 @@ func damage_mult() -> float:
 	return (1.0 + buff("dmg")) * (1.0 + giant_k * 0.2) * Data.level_damage(Profile.level) * Profile.rebirth_power()
 
 
-## 魂兽和 Boss 不打你：刚复活、隐身、被海鸥叼着
+## 灵兽和 Boss 不打你：刚复活、隐身、被海鸥叼着
 func untargetable() -> bool:
 	return invuln_t > 0.0 or buffs.has("invis") or carried
 
@@ -286,10 +286,18 @@ func defense() -> float:
 	return Data.level_armor(Profile.level) + buff("dr") + Profile.bone_bonus("dr")
 
 
-func take_damage(amount: float, from_pos: Vector3) -> void:
-	if dead or amount <= 0.0 or invuln_t > 0.0:
+## tick = true：毒池、中毒、溺水、漩涡这种一跳一跳的（不算极限闪避）
+func take_damage(amount: float, from_pos: Vector3, tick := false) -> void:
+	if dead or amount <= 0.0:
 		return
-	# 减伤：魂力护体（等级）+ 魂技（金刚变、浴火、防御增幅）+ 魂骨，最多减 80%
+	if invuln_t > 0.0:
+		# 翻滚的无敌时间里躲过了一下真的攻击：极限闪避
+		if _roll_t > 0.0 and not tick:
+			_perfect_dodge()
+		return
+	if world and world.boss and not world.boss.dead:
+		world.boss_nohit = false
+	# 减伤：灵力护体（等级）+ 神通（金刚变、浴火、防御增幅）+ 灵骨，最多减 80%
 	amount *= 1.0 - clampf(defense(), 0.0, 0.8)
 	if vuln_t > 0.0:
 		amount *= 1.3
@@ -308,6 +316,25 @@ func take_damage(amount: float, from_pos: Vector3) -> void:
 		hp = 0.0
 		dead = true
 		died.emit()
+
+
+## 极限闪避（学鬼泣）：翻滚刚好躲过攻击——4 秒伤害 +30%、灵力回一截、画面一闪
+var _pd_cd := 0.0
+
+
+func _perfect_dodge() -> void:
+	var now := Time.get_ticks_msec() / 1000.0
+	if now < _pd_cd:
+		return
+	_pd_cd = now + 1.2
+	add_buff("dmg", 0.3, 4.0)
+	soul = minf(soul + Profile.max_soul() * 0.15, Profile.max_soul())
+	Profile.count("perfect_dodges")
+	world.hud.flash(Color(0.45, 0.85, 1.0, 0.35))
+	world.hud._show_banner("极限闪避", "伤害 +30%（4 秒）", Color(0.55, 0.9, 1.0), 1.0)
+	world.fx._air_ring(global_position + Vector3.UP * 0.2, Color(0.5, 0.9, 1.0), 0.6, 3.5, 0.45, 0.6, "ring", 3.0)
+	world.fx._sparks(global_position + Vector3.UP, Vector3.UP, Color(0.6, 0.95, 1.0), 20, 8.0, 0.5, 0.06, -4.0, 180.0)
+	Sfx.play("skill_dash", -2.0, 0.0, 1.5)
 
 
 func revive() -> void:
@@ -356,7 +383,7 @@ func on_bones_changed() -> void:
 # ------------------------------------------------------------------ 暗器掉落 / 捡起
 
 ## 倒地时手里的暗器掉在地上（空手不掉）：这把就不是你的了，谁捡到归谁，也可以自己捡回来
-## 第十一版关掉了：玩家的两个存档因为这个把暗器全丢光了，封号斗罗只能空手打（"打不动""一来就死"）
+## 第十一版关掉了：玩家的两个存档因为这个把暗器全丢光了，渡劫修士只能空手打（"打不动""一来就死"）
 func drop_guns_on_death() -> Array:
 	return []
 
@@ -381,7 +408,7 @@ func pick_gun(id: String, owner: int) -> void:
 			switch_weapon(i)
 
 
-# ------------------------------------------------------------------ 魂技位移
+# ------------------------------------------------------------------ 神通位移
 
 func start_giant(scale_to: float, dur: float) -> void:
 	_giant_target = maxf(scale_to - 1.0, 0.0)
@@ -424,7 +451,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		var d: Vector2 = event.screen_relative
 		if world.hud.wheel_open():
-			# 魂技轮盘打开时鼠标用来选魂技，不转视角
+			# 神通轮盘打开时鼠标用来选神通，不转视角
 			world.hud.wheel_mouse(d)
 			return
 		var sens := 0.022 * Settings.sensitivity * _ads_sens_factor()
@@ -556,7 +583,7 @@ func _physics_process(dt: float) -> void:
 
 	_climb_t = maxf(_climb_t - dt, 0.0)
 	if _grapple_t > 0.0:
-		# 蓝银飞索：直线拉过去
+		# 青冥飞索：直线拉过去
 		_grapple_t -= dt
 		var to := _grapple_to - global_position - Vector3(0, 0.8, 0)
 		velocity = to.normalized() * 26.0
@@ -630,7 +657,7 @@ func _physics_process(dt: float) -> void:
 		# 刚从水里爬上岸：还顶着岸就继续往上
 		if _climb_t > 0.0 and is_on_wall() and wish.length() > 0.1 and wish.dot(get_wall_normal()) < -0.2:
 			velocity.y = maxf(velocity.y, 5.0)
-		# 魂骨：滑翔
+		# 灵骨：滑翔
 		if jump_held and velocity.y < -2.0 and Profile.bone_bonus("glide") > 0.0:
 			velocity.y = move_toward(velocity.y, -2.0, 60.0 * dt)
 			hv = hv.move_toward(wish * max_speed * 1.25, AIR_ACCEL * 1.5 * dt)
@@ -643,7 +670,8 @@ func _physics_process(dt: float) -> void:
 	# 地图边界（秘境场地在地图外面 900 米，不算——以前在秘境里往东走会被这里挡住，像卡脚）
 	var out := Vector3(global_position.x, 0, global_position.z)
 	var in_dg: bool = world.dungeon != null and world.dungeon.inside
-	if out.length() > 150.0 and not in_dg and hv.dot(out.normalized()) > 0.0:
+	var edge: float = world.island.rim_r + 30.0 if world.island.hunting else 150.0
+	if out.length() > edge and not in_dg and hv.dot(out.normalized()) > 0.0:
 		hv -= out.normalized() * hv.dot(out.normalized())
 	if _grapple_t <= 0.0:
 		velocity.x = hv.x
@@ -659,7 +687,7 @@ func _physics_process(dt: float) -> void:
 		_coyote = 0.0
 		Sfx.play("jump", -10.0, 0.08)
 	elif jump_pressed and _air_jumps > 0 and not is_on_floor() and not swimming and fly_t <= 0.0 and _coyote <= 0.0:
-		# 魂骨：二段跳
+		# 灵骨：二段跳
 		_air_jumps -= 1
 		_jump_buf = 0.0
 		velocity.y = jv * 0.9
@@ -688,7 +716,7 @@ func _physics_process(dt: float) -> void:
 	_cur_pos = global_position
 
 
-# ------------------------------------------------------------------ 每帧：相机、开枪、引魂索、魂技
+# ------------------------------------------------------------------ 每帧：相机、开枪、引魂索、神通
 
 func _process(dt: float) -> void:
 	_update_stats(dt)
@@ -720,7 +748,7 @@ func _process(dt: float) -> void:
 		if Input.is_action_just_pressed("bait"):
 			cycle_bait()
 	if input_enabled and not dead and Input.is_action_just_pressed("interact"):
-		# F：旁边有真的能交互的（店、祭坛、渡船、能吸收的魂环、救人）就交互，没有就放第三个魂技
+		# F：旁边有真的能交互的（店、祭坛、渡船、能吸收的灵环、救人）就交互，没有就放第三个神通
 		var it: Dictionary = world.nearest_interactable()
 		if bool(it.get("act", false)):
 			world.interact()
@@ -731,7 +759,7 @@ func _process(dt: float) -> void:
 		_q_t = -1.0
 
 
-## 魂技：Q / E / F 三个魂技槽（K 武魂面板里选装哪三个），按哪个放哪个，清清楚楚
+## 神通：Q / E / F 三个神通槽（K 灵相面板里选装哪三个），按哪个放哪个，清清楚楚
 func _skill_input(_dt: float) -> void:
 	if Input.is_action_just_pressed("skill_1"):
 		world.skills.cast_slot(0)
@@ -779,7 +807,7 @@ func _update_stats(dt: float) -> void:
 				_drown_t = 0.5
 				var inv := invuln_t
 				invuln_t = 0.0
-				take_damage(DROWN_DPS * 0.5, global_position + Vector3.UP)
+				take_damage(DROWN_DPS * 0.5, global_position + Vector3.UP, true)
 				invuln_t = inv
 	else:
 		air = minf(air + dt * 4.0, max_air())
@@ -796,12 +824,12 @@ func _update_stats(dt: float) -> void:
 		return
 	var max_hp := Profile.max_hp()
 	var regen := buff("regen") + (5.0 if buffs.has("all") else 0.0) + Profile.bone_bonus("regen")
-	_update_food(dt)
+	# （饱食度去掉了：用户说吃肉没什么作用，换成了各种丹药）
 	_update_poison(dt)
-	if _since_hurt > REGEN_DELAY and Profile.food > 25.0:
+	if _since_hurt > REGEN_DELAY:
 		regen += REGEN_RATE
 	hp = minf(hp + regen * dt, max_hp)
-	var soul_rate := 5.0 * (1.0 + buff("soul")) * (0.5 if Profile.food < 25.0 else 1.0)
+	var soul_rate := 5.0 * (1.0 + buff("soul"))
 	soul = minf(soul + soul_rate * dt, Profile.max_soul())
 	# 屏息
 	var holding := scoped and Input.is_action_pressed("sprint")
@@ -911,7 +939,7 @@ func _update_weapons(dt: float) -> void:
 		_cycle_slot(-1)
 
 	if slot >= 2:
-		# 手上拿的是道具：左键使用（扔唐莲 / 吃药 / 装魂骨）
+		# 手上拿的是道具：左键使用（扔雷莲 / 吃药 / 装灵骨）
 		if not slot_ready(slot):
 			select_slot(_last_gun_slot)
 		elif Input.is_action_just_pressed("fire") and switch_t <= 0.0:
@@ -962,7 +990,7 @@ func _update_weapons(dt: float) -> void:
 			_fire()
 
 
-## 观音泪：按住左键蓄力，松开出手（蓄满了一箭穿透一路上所有魂兽）
+## 天心泪：按住左键蓄力，松开出手（蓄满了一箭穿透一路上所有灵兽）
 func _charge_input(dt: float) -> void:
 	var held := Input.is_action_pressed("fire")
 	if held and switch_t <= 0.0 and gun.ammo > 0 and not gun.reloading and gun.fire_cd <= 0.0:
@@ -996,9 +1024,9 @@ func switch_weapon(i: int) -> void:
 	gun = guns[i]
 	slot = 1 if _is_side(gun.id) else 0
 	_last_gun_slot = slot
-	switch_t = 0.3
 	ads = 0.0
-	viewmodel.set_weapon(gun.id)
+	# 收枪 + 掏枪的时间由手里的动作定（副手快、重的慢，第一次掏带机括的还要拉栓）
+	switch_t = viewmodel.set_weapon(gun.id)
 	Sfx.play("switch", -8.0)
 	weapon_changed.emit(gun)
 	ammo_changed.emit(gun)
@@ -1015,7 +1043,7 @@ func primaries() -> Array:
 	return out
 
 
-## 出拳：左右手轮流，打中前面 3 米内的魂兽（能把小魂兽揍飞），伤害跟等级涨
+## 出拳：左右手轮流，打中前面 3 米内的灵兽（能把小灵兽揍飞），伤害跟等级涨
 var _punch_side := 1.0
 var _holster_from := "xiujian"
 
@@ -1030,7 +1058,7 @@ func _melee() -> void:
 	var dir := aim_dir()
 	var hit: Dictionary = world.raycast(origin, origin + dir * float(d["range"]), U.LAYER_WORLD | U.LAYER_BEAST, [get_rid()])
 	if hit.is_empty():
-		# 没正中：看看前面一点有没有魂兽（拳头判定宽一点）
+		# 没正中：看看前面一点有没有灵兽（拳头判定宽一点）
 		for b: Beast in world.beasts.values():
 			if b.alive() and b.global_position.distance_to(origin + dir * 1.8) < 1.6:
 				hit = {"collider": b, "position": b.global_position, "normal": -dir, "shape": 0}
@@ -1062,10 +1090,25 @@ func slot_ready(i: int) -> bool:
 		2:
 			return Profile.item_count("grenade") > 0
 		3:
-			return Profile.item_count("pill") > 0 or Profile.item_count("meat") > 0
+			return not owned_pills().is_empty()
 		4:
 			return not spare_bones().is_empty()
 	return false
+
+
+## 身上有的丹药（按 Data.PILL_ORDER 的顺序）
+func owned_pills() -> Array:
+	return Data.PILL_ORDER.filter(func(id): return Profile.item_count(str(id)) > 0)
+
+
+## 4 号位现在拿的丹药：没有了就换成下一种有的
+func cur_pill() -> String:
+	if Profile.item_count(_slot4) > 0:
+		return _slot4
+	var ps := owned_pills()
+	if not ps.is_empty():
+		_slot4 = str(ps[0])
+	return _slot4
 
 
 func _gun_index(id: String) -> int:
@@ -1077,7 +1120,7 @@ func _gun_index(id: String) -> int:
 
 func select_slot(i: int) -> void:
 	if not slot_ready(i):
-		var why := ["还没有主暗器，去暗器铺买", "", "没有佛怒唐莲了", "没有回血丹了", "没有多余的魂骨（捡到的魂骨会先自动装上）"]
+		var why := ["还没有主暗器，去暗器铺买", "", "没有九转雷莲了", "没有丹药了（暗器铺有卖：回血丹、回魂丹、疾风丹……）", "没有多余的灵骨（捡到的灵骨会先自动装上）"]
 		if str(why[i]) != "":
 			world.hud.toast(str(why[i]), Color(0.9, 0.9, 0.9), 1.6)
 		return
@@ -1092,7 +1135,7 @@ func select_slot(i: int) -> void:
 				var want := _primary_pick if _primary_pick in ps else str(ps[0])
 				switch_weapon(_gun_index(want))
 		1:
-			# 副手（袖箭、梅花袖箭）：已经拿着副手再按 2 换下一把
+			# 副手（袖箭、寒梅袖箭）：已经拿着副手再按 2 换下一把
 			var ss := sidearms()
 			if ss.is_empty():
 				switch_weapon(_gun_index("fist"))
@@ -1104,8 +1147,12 @@ func select_slot(i: int) -> void:
 		_:
 			if i == 4 and slot == 4:
 				_spare_idx = (_spare_idx + 1) % maxi(spare_bones().size(), 1)
-			elif i == 3 and slot == 3 and Profile.item_count("pill") > 0 and Profile.item_count("meat") > 0:
-				_slot4 = "meat" if _slot4 == "pill" else "pill"
+			elif i == 3 and slot == 3 and owned_pills().size() > 1:
+				# 已经拿着丹药再按 4：换下一种有的
+				var ps := owned_pills()
+				_slot4 = str(ps[(ps.find(cur_pill()) + 1) % ps.size()])
+				var pd: Dictionary = Data.ITEMS[_slot4]
+				world.hud.toast("%s ×%d：%s" % [pd["name"], Profile.item_count(_slot4), pd["desc"]], pd.get("color", Color.WHITE), 2.2)
 			elif slot == i:
 				return
 			if slot < 2:
@@ -1143,9 +1190,7 @@ func _show_slot_item() -> void:
 		2:
 			viewmodel.show_item("item", "grenade")
 		3:
-			if Profile.item_count(_slot4) <= 0:
-				_slot4 = "meat" if _slot4 == "pill" else "pill"
-			viewmodel.show_item("item", _slot4)
+			viewmodel.show_item("item", cur_pill())
 		4:
 			viewmodel.show_item("bone", spare_bone())
 
@@ -1161,7 +1206,7 @@ func _cycle_slot(step: int) -> void:
 			return
 
 
-## 饱食度：一直在掉（跑步掉得快）；低于 25 不自然回血、魂力回得慢；饿到 0 开始掉血
+## 饱食度：一直在掉（跑步掉得快）；低于 25 不自然回血、灵力回得慢；饿到 0 开始掉血
 func _update_poison(dt: float) -> void:
 	if _poison_t <= 0.0 or dead:
 		return
@@ -1169,32 +1214,11 @@ func _update_poison(dt: float) -> void:
 	_poison_tick -= dt
 	if _poison_tick <= 0.0:
 		_poison_tick = 0.5
-		take_damage(_poison_dps * 0.5, global_position + Vector3.UP)
+		take_damage(_poison_dps * 0.5, global_position + Vector3.UP, true)
 		world.fx.impact_beast(global_position + Vector3(0, 1.2, 0), Vector3.UP, Color(0.5, 1.0, 0.3), false)
 
 
-func _update_food(dt: float) -> void:
-	if Data.autotest:
-		return
-	Profile.food = maxf(Profile.food - Data.FOOD_DRAIN * dt * (1.6 if sprint_k > 0.5 else 1.0), 0.0)
-	var lvl := 2 if Profile.food <= 0.0 else (1 if Profile.food < 25.0 else 0)
-	if lvl > _food_warn:
-		if lvl == 1:
-			world.hud.toast("饿了：不会自己回血，魂力回得慢。按 4 拿出烤肉吃（打死魂兽常掉，暗器铺也有卖）", Color(1.0, 0.7, 0.35), 5.0)
-		else:
-			world.hud.toast("饿坏了，开始掉血！快吃东西", Color(1.0, 0.4, 0.3), 4.0)
-	_food_warn = lvl
-	if Profile.food <= 0.0:
-		_starve_t -= dt
-		if _starve_t <= 0.0:
-			_starve_t = 1.0
-			var inv := invuln_t
-			invuln_t = 0.0
-			take_damage(2.0, global_position + Vector3.UP)
-			invuln_t = inv
-
-
-## 中毒：一段时间内持续掉血（第二章落日森林的魂兽带毒）
+## 中毒：一段时间内持续掉血（第二章落霞林的灵兽带毒）
 func poison(dps: float, dur: float) -> void:
 	if _poison_t <= 0.0:
 		world.hud.toast("中毒了！持续掉血（回血丹能解）", Color(0.6, 1.0, 0.4), 2.0)
@@ -1202,16 +1226,36 @@ func poison(dps: float, dur: float) -> void:
 	_poison_t = maxf(_poison_t, dur)
 
 
-func eat_meat() -> void:
-	if Profile.food >= Data.FOOD_MAX - 1.0 and hp >= Profile.max_hp() - 1.0:
-		world.hud.toast("吃不下了", Color(0.9, 0.9, 0.9), 1.2)
+## 吃丹药（4 号位左键）。回血丹走 _use_pill；别的：回灵力，或者一段时间的增益（加速 / 减伤 / 破境加伤 / 变大）
+func eat_pill(id: String) -> void:
+	if id == "pill":
+		_use_pill()
 		return
-	if not Profile.use_item("meat"):
+	var d: Dictionary = Data.ITEMS.get(id, {})
+	if d.is_empty():
 		return
-	Profile.food = minf(Profile.food + Data.MEAT_FOOD, Data.FOOD_MAX)
-	heal(10.0)
-	Sfx.play("pickup", -2.0, 0.05, 0.7)
-	world.hud.toast("吃了烤魂兽肉  饱食 %d" % roundi(Profile.food), Color(1.0, 0.8, 0.5), 1.5)
+	if id == "soul_pill" and soul >= Profile.max_soul() - 1.0:
+		world.hud.toast("灵力是满的", Color(0.9, 0.9, 0.9), 1.2)
+		return
+	if not Profile.use_item(id):
+		return
+	match id:
+		"soul_pill":
+			soul = minf(soul + Profile.max_soul() * 0.6, Profile.max_soul())
+		"haste_pill":
+			add_buff("speed", 0.35, 20.0)
+		"guard_pill":
+			add_buff("dr", 0.4, 20.0)
+		"rage_pill":
+			add_buff("dmg", 0.4, 20.0)
+			add_buff("soul", 1.0, 20.0)
+			world.hud.flash(Color(1.0, 0.3, 0.8, 0.3))
+		"giant_pill":
+			start_giant(1.6, 15.0)
+	var col: Color = d.get("color", Color.WHITE)
+	Sfx.play("heal", -4.0, 0.0, 1.25)
+	world.fx.aura_burst(global_position + Vector3(0, 0.8, 0), col, 1.6)
+	world.hud.toast("吃了%s：%s" % [d["name"], d["desc"]], col, 2.5)
 
 
 ## 鱼饵：B 换下一种（有的才换得到，青草饵不要钱）
@@ -1236,7 +1280,7 @@ func cycle_bait() -> void:
 			world.hud.toast("鱼饵：%s" % bait_text(), Color(0.8, 1.0, 0.8), 1.8)
 			Sfx.play("ui_click", -6.0)
 			return
-	world.hud.toast("只有青草饵。去暗器铺买血腥饵、魂晶饵、金骨饵", Color(0.9, 0.9, 0.9), 2.5)
+	world.hud.toast("只有青草饵。去暗器铺买血腥饵、灵晶饵、金骨饵", Color(0.9, 0.9, 0.9), 2.5)
 
 
 func bait_text() -> String:
@@ -1252,10 +1296,7 @@ func _use_slot_item() -> void:
 		2:
 			_throw_grenade()
 		3:
-			if _slot4 == "meat":
-				eat_meat()
-			else:
-				_use_pill()
+			eat_pill(cur_pill())
 		4:
 			var e := spare_bone()
 			if e == "":
@@ -1388,7 +1429,7 @@ func _fire() -> void:
 
 func _throw_grenade() -> void:
 	if not Profile.use_item("grenade"):
-		world.hud.toast("没有佛怒唐莲了，去暗器铺买", Color(1, 0.7, 0.5))
+		world.hud.toast("没有九转雷莲了，去暗器铺买", Color(1, 0.7, 0.5))
 		return
 	viewmodel.throw_anim()
 	var dir := aim_dir()

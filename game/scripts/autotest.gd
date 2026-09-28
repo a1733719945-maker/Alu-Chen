@@ -9,8 +9,8 @@ extends Node
 ##
 ## 单人测试把整个流程走一遍：
 ##   第一章四种栖息地 + 千年拉扯 → 暗器铺买暗器、升级 → 全自动压枪（后坐和回正）→ 狙击开镜、拉栓
-##   → 到 10 级瓶颈、吸收魂环、选魂技、放魂技 → 祭坛召唤湖主、用暗器打它、打死、拿魂骨
-##   → 坐船去第二章 → 落日森林里抓狼、蛇、犀牛
+##   → 到 10 级瓶颈、吸收灵环、选神通、放神通 → 祭坛召唤镜湖之主、用暗器打它、打死、拿灵骨
+##   → 坐船去第二章 → 落霞林里抓狼、蛇、犀牛
 ## 测试用单独的存档文件，不会动玩家自己的存档。
 
 var main: Node
@@ -57,9 +57,10 @@ func _ready() -> void:
 			_plan = ["phys", "hunt:burrow,meadow,flowers,water,reel", "shop", "recoil", "sniper", "ring", "boss", "boat", "hunt:den,swamp,mud", "boss", "boat",
 				"hunt:glade,roost,thicket,nest,bog", "boss", "boat",
 				"hunt:snowden,frostgrove,icefield,icecave,icelake", "boss", "boat",
-				"hunt:beach,cliff,reef,deep,abyss", "boss", "dungeon", "huntrun", "done"]
-			# 新暗器测试放在第一章买完暗器后面（要第一章的草地摆靶子；第五章海神岛没有草地）
+				"hunt:beach,cliff,reef,deep,abyss", "boss", "dungeon", "huntrun", "huntfail", "done"]
+			# 新暗器测试放在第一章买完暗器后面（要第一章的草地摆靶子；第五章归墟没有草地）
 			_plan.insert(_plan.find("shop") + 1, "guns2")
+			_plan.insert(_plan.find("guns2") + 1, "pills")
 		"shots":
 			_shots = true
 			_shots_dir = str(args.get("out", "user://shots"))
@@ -86,7 +87,7 @@ func _ready() -> void:
 			_plan = ["vm"]
 		"host":
 			Settings.server_url = str(args.get("server", "ws://127.0.0.1:18931"))
-			# --dg=1：测猎魂榜和秘境的联机（配 --autotest=client --dg=1）
+			# --dg=1：测猎灵榜和秘境的联机（配 --autotest=client --dg=1）
 
 			main.start_host(str(args.get("room", "TEST")))
 			_plan = ["dghost"] if args.has("dg") else ["host"]
@@ -254,12 +255,22 @@ func _process(dt: float) -> void:
 			_run_aggro()
 		"huntrun":
 			_run_huntrun()
+		"huntfail":
+			_run_huntfail()
 		"migrate":
 			_run_migrate()
 		"bot":
 			_run_bot()
 		"guns2":
 			_run_guns2()
+		"pills":
+			_run_pills()
+		"bossarts":
+			_run_bossarts()
+		"mateshot":
+			_run_mateshot()
+		"cineshot":
+			_run_cineshot()
 		"gunshots":
 			_run_gunshots()
 		"dgwatch":
@@ -288,7 +299,7 @@ func _process(dt: float) -> void:
 				await _shot("zoo")
 				_pass("模型预览完成")
 		"done":
-			_pass("全部流程通过：等级 %d，魂环 %d，金魂币 %d，章节 %d" % [Profile.level, Profile.rings.size(), Profile.money, Profile.chapter])
+			_pass("全部流程通过：等级 %d，灵环 %d，灵石 %d，章节 %d" % [Profile.level, Profile.rings.size(), Profile.money, Profile.chapter])
 
 
 func _ready_world() -> World:
@@ -305,7 +316,7 @@ func _switch_to(p: Player, id: String) -> void:
 			return
 
 
-# ------------------------------------------------------------------ 界面截图：魂技栏和魂技轮盘
+# ------------------------------------------------------------------ 界面截图：神通栏和神通轮盘
 
 func _run_hudshot() -> void:
 	var w := _ready_world()
@@ -341,7 +352,7 @@ func _run_hudshot() -> void:
 
 # ------------------------------------------------------------------ 物理：抛起来、空中连击、死了摔下来
 
-## 1) 拽出来的魂兽：飞多高、多久落地
+## 1) 拽出来的灵兽：飞多高、多久落地
 ## 2) 空中一直用全自动打（只推不扣血）：最后一定会掉下来
 ## 3) 在最高点打死：尸体摔到地上再消失
 func _run_phys() -> void:
@@ -378,7 +389,7 @@ func _run_phys() -> void:
 					if _check(last.y - ground < 1.5 and fall_t > 0.5, "物理测试：尸体没掉到地上"):
 						_next_phase()
 					return
-				_fail("物理测试：魂兽不见了（case %d）" % case)
+				_fail("物理测试：灵兽不见了（case %d）" % case)
 				return
 			if b.alive():
 				_mem["phys_top"] = maxf(float(_mem["phys_top"]), b.global_position.y)
@@ -417,10 +428,10 @@ func _run_phys() -> void:
 				_next(1)
 				return
 			if _step_t > 12.0:
-				_fail("物理测试：魂兽 12 秒还没落地（case %d，状态 %d，位置 %s）" % [case, b.state, b.global_position])
+				_fail("物理测试：灵兽 12 秒还没落地（case %d，状态 %d，位置 %s）" % [case, b.state, b.global_position])
 
 
-# ------------------------------------------------------------------ 抓魂兽流程
+# ------------------------------------------------------------------ 抓灵兽流程
 
 func _habitat_spot(w: World, h: String) -> Dictionary:
 	# 返回 {stand: 玩家站的位置, target: 引魂索落点, water: 是否落在水里}
@@ -537,15 +548,15 @@ func _run_hunt() -> void:
 			elif _step_t > 8.0:
 				_fail("拽不上来，state=%d" % p.lure.state)
 		4:
-			# 等魂兽出现
+			# 等灵兽出现
 			for b: Beast in w.beasts.values():
 				if b.alive() and b.owner_peer == Net.my_id:
 					_target = b
-					_note("魂兽出现了：%s，位置 %s" % [b.name, b.global_position])
+					_note("灵兽出现了：%s，位置 %s" % [b.name, b.global_position])
 					_next(5)
 					return
 			if _step_t > 3.0:
-				_fail("拽了之后没出现魂兽")
+				_fail("拽了之后没出现灵兽")
 		5:
 			# 空中开火，打到死
 			if not is_instance_valid(_target) or not _target.alive():
@@ -576,15 +587,15 @@ func _run_hunt() -> void:
 					_mem["kill_shot"] = true
 					_shot(h + "_kill")
 					return
-				_note("击杀成功，金魂币 %d → %d，等级 %d，击杀数 %d" % [_money_before, Profile.money, Profile.level, st["kills"]])
+				_note("击杀成功，灵石 %d → %d，等级 %d，击杀数 %d" % [_money_before, Profile.money, Profile.level, st["kills"]])
 				if Profile.money <= _money_before:
-					_fail("击杀了但金魂币没增加")
+					_fail("击杀了但灵石没增加")
 					return
 				_queue.pop_front()
 				_next(0)
 			elif _step_t > 3.0:
 				# 可能逃走了：重来一次
-				_note("魂兽跑了，重试")
+				_note("灵兽跑了，重试")
 				_next(0)
 
 
@@ -645,7 +656,7 @@ func _run_shop() -> void:
 				return
 			# 卖掉再买回来：不能显示"已拥有"，升级和配件还在
 			var sold := Profile.money
-			if not _check(Profile.sell_weapon("baoyu") and Profile.money > sold and not Profile.has_weapon("baoyu"), "卖不了暴雨梨花针"):
+			if not _check(Profile.sell_weapon("baoyu") and Profile.money > sold and not Profile.has_weapon("baoyu"), "卖不了千丝雨针"):
 				return
 			w.on_sold_weapon("baoyu")
 			if not _check(Profile.buy_weapon("baoyu"), "卖掉的暗器买不回来"):
@@ -653,7 +664,7 @@ func _run_shop() -> void:
 			w.on_bought_weapon("baoyu")
 			w.hud._shop._tab = "attach"
 			w.hud._shop.refresh()
-			_note("买了 4 把暗器和 2 个升级，花了 %d 金魂币" % (before - Profile.money))
+			_note("买了 4 把暗器和 2 个升级，花了 %d 灵石" % (before - Profile.money))
 			if not _check(p.guns.size() == 6, "暗器数量不对（5 把 + 空手）：%d" % p.guns.size()):
 				return
 			var dmg := float(Profile.weapon_stats("zhuge")["damage"])
@@ -693,7 +704,7 @@ func _run_recoil() -> void:
 		1:
 			if _step_t < 1.2:
 				return
-			if not _check(p.gun.id == "zhuge", "切不到诸葛神弩"):
+			if not _check(p.gun.id == "zhuge", "切不到连机神弩"):
 				return
 			_mem["ammo0"] = p.gun.ammo
 			_mem["pitch0"] = p.pitch
@@ -770,7 +781,7 @@ func _run_sniper() -> void:
 				_next_phase()
 
 
-# ------------------------------------------------------------------ 魂环：瓶颈、掉环、吸收、选魂技、放魂技
+# ------------------------------------------------------------------ 灵环：瓶颈、掉环、吸收、选神通、放神通
 
 func _run_ring() -> void:
 	var w := _ready_world()
@@ -784,7 +795,7 @@ func _run_ring() -> void:
 			if not _check(Profile.level == 10 and Profile.at_bottleneck(), "经验很多时应该卡在 10 级瓶颈，实际 %d 级" % Profile.level):
 				return
 			_note("卡在 10 级瓶颈")
-			# 刚从暗器铺出来：先走开一点，别让魂环掉在铺子门口（按 F 会开铺子）
+			# 刚从暗器铺出来：先走开一点，别让灵环掉在铺子门口（按 F 会开铺子）
 			var away := p.global_position - w.builder.shop_door
 			away.y = 0.0
 			if away.length() < 12.0:
@@ -816,20 +827,20 @@ func _run_ring() -> void:
 				_shot("ring_drop")
 				return
 			var it := w.nearest_interactable()
-			var dbg := "玩家 %s，魂环 %s" % [p.global_position, w.rings.values().map(func(r): return r["pos"])]
-			if not _check(it.get("id", "") == "ring" and it.get("ok", false), "站在魂环旁边却不能吸收：%s（%s）" % [it, dbg]):
+			var dbg := "玩家 %s，灵环 %s" % [p.global_position, w.rings.values().map(func(r): return r["pos"])]
+			if not _check(it.get("id", "") == "ring" and it.get("ok", false), "站在灵环旁边却不能吸收：%s（%s）" % [it, dbg]):
 				return
-			# 第十一版：吸收要站着 10 秒，会来一小波魂兽；测试里别让人被咬死
+			# 第十一版：吸收要站着 10 秒，会来一小波灵兽；测试里别让人被咬死
 			p.invuln_t = 20.0
 			w.interact()
 			_next(3)
 		3:
 			if w.hud._choice == null and Profile.rings.size() >= 1:
-				# 新版：魂技吸收完自动揭晓，不用选
-				_note("吸收了百年魂环，魂技【%s】" % Data.SKILLS[Profile.rings[0]["skill"]]["name"])
+				# 新版：神通吸收完自动揭晓，不用选
+				_note("吸收了百年灵环，神通【%s】" % Data.SKILLS[Profile.rings[0]["skill"]]["name"])
 				Profile.add_xp(100000)
 				w._broadcast_prog()
-				if not _check(Profile.level == 20, "吸收魂环后没有突破瓶颈（%d 级）" % Profile.level):
+				if not _check(Profile.level == 20, "吸收灵环后没有突破瓶颈（%d 级）" % Profile.level):
 					return
 				_next(4)
 			elif w.hud._choice != null:
@@ -843,30 +854,30 @@ func _run_ring() -> void:
 				w.hud._choice = null
 				w.set_ui_open(false)
 				w.hud._refresh_skills()
-				if not _check(Profile.rings.size() == 1, "吸收后魂环数不对"):
+				if not _check(Profile.rings.size() == 1, "吸收后灵环数不对"):
 					return
-				_note("吸收了百年魂环，魂技【%s】" % Data.SKILLS[sid]["name"])
+				_note("吸收了百年灵环，神通【%s】" % Data.SKILLS[sid]["name"])
 				Profile.add_xp(100000)
 				w._broadcast_prog()
-				if not _check(Profile.level == 20, "吸收魂环后没有突破瓶颈（%d 级）" % Profile.level):
+				if not _check(Profile.level == 20, "吸收灵环后没有突破瓶颈（%d 级）" % Profile.level):
 					return
 				_next(4)
 			elif _step_t > 15.0:
-				_fail("吸收魂环 15 秒后还没学到魂技")
+				_fail("吸收灵环 15 秒后还没学到神通")
 		4:
 			if _step_t < 0.5:
 				return
 			p.soul = Profile.max_soul()
-			# 魂技现在由魂兽决定：测试固定换成第一环的攻击魂技，结果稳定
+			# 神通现在由灵兽决定：测试固定换成第一环的攻击神通，结果稳定
 			Profile.rings[0]["skill"] = Data.SKILL_TREE[Data.wuhun_id(Settings.wuhun)][0][0]
 			var s0 := p.soul
 			var m := w.island.habitat("meadow")
 			var c: Vector2 = m["center"]
 			_aim(p, Vector3(c.x, w.island.height_at(c.x, c.y), c.y))
 			w.skills.cast(0)
-			if not _check(w.skills.cooldowns[0] > 0.0 and p.soul < s0, "放魂技没生效"):
+			if not _check(w.skills.cooldowns[0] > 0.0 and p.soul < s0, "放神通没生效"):
 				return
-			_note("放出魂技，冷却 %.1f 秒" % w.skills.cooldowns[0])
+			_note("放出神通，冷却 %.1f 秒" % w.skills.cooldowns[0])
 			_next(5)
 		5:
 			if _step_t < 0.4:
@@ -995,9 +1006,9 @@ func _run_boss() -> void:
 				_next(5)
 		5:
 			if w.boss == null:
-				if not _check(not Profile.bones.is_empty(), "打死 Boss 没拿到魂骨"):
+				if not _check(not Profile.bones.is_empty(), "打死 Boss 没拿到灵骨"):
 					return
-				_note("Boss 死了，拿到魂骨 %s，任务：%s" % [Profile.bones, w._cur_quest().get("text", "")])
+				_note("Boss 死了，拿到灵骨 %s，任务：%s" % [Profile.bones, w._cur_quest().get("text", "")])
 				if not _check(w._cur_quest().get("type", "") in ["boat", "end", "god"], "打完 Boss 任务没推进"):
 					return
 				_next(6)
@@ -1012,7 +1023,7 @@ func _run_boss() -> void:
 				_next_phase()
 
 
-## 魂兽王：捆魂、暴怒、逃跑、击杀掉王魂和魂环，再拿王魂附魔
+## 灵兽王：捆魂、暴怒、逃跑、击杀掉王魄和灵环，再拿王魄附魔
 func _run_kings() -> void:
 	var w := _ready_world()
 	if not w:
@@ -1021,15 +1032,15 @@ func _run_kings() -> void:
 	match _step:
 		0:
 			w._init_elites()
-			if not _check(not w.elites.is_empty(), "这张图没有魂兽王的位置"):
+			if not _check(not w.elites.is_empty(), "这张图没有灵兽王的位置"):
 				return
 			var key: String = w.elites.keys()[0]
 			w._host_spawn_elite(key)
 			var k: Beast = w.beasts.get(int(w.elites[key]["id"]))
-			if not _check(k != null and k.temper == "elite", "魂兽王没刷出来"):
+			if not _check(k != null and k.temper == "elite", "灵兽王没刷出来"):
 				return
 			_mem["king"] = k.id
-			_note("魂兽王：%s，血量 %d" % [k.display_name(), int(k.max_hp)])
+			_note("灵兽王：%s，血量 %d" % [k.display_name(), int(k.max_hp)])
 			p.teleport(k.global_position + Vector3(0, 0.5, 14))
 			_next(1)
 		1:
@@ -1037,17 +1048,19 @@ func _run_kings() -> void:
 				return
 			var k: Beast = w.beasts.get(int(_mem["king"]))
 			w.host_hook(k.id, Net.my_id)
-			if not _check(k.root_t > 0.0, "单人用引魂索钩魂兽王没捆住"):
+			if not _check(k.root_t > 0.0, "单人用引魂索钩灵兽王没捆住"):
 				return
 			_note("捆魂成功，按住 %.1f 秒" % k.root_t)
 			k.root_t = 0.0
+			# 随机词条"坚甲"会让打身子的伤害减半，测不到半血
+			k.affixes.clear()
 			k.take_hit(k.max_hp * 0.55, Vector3.ZERO, Vector3.ZERO, false, Net.my_id, 10.0)
 			_next(2)
 		2:
 			if _step_t < 0.5:
 				return
 			var k: Beast = w.beasts.get(int(_mem["king"]))
-			if not _check(k._phase2, "魂兽王半血没暴怒"):
+			if not _check(k._phase2, "灵兽王半血没暴怒"):
 				return
 			k.root_t = 0.0
 			k.take_hit(k.hp - k.max_hp * 0.2, Vector3.ZERO, Vector3.ZERO, false, Net.my_id, 10.0)
@@ -1056,9 +1069,9 @@ func _run_kings() -> void:
 			if _step_t < 0.6:
 				return
 			var k: Beast = w.beasts.get(int(_mem["king"]))
-			if not _check(k._retreat, "魂兽王残血没逃跑"):
+			if not _check(k._retreat, "灵兽王残血没逃跑"):
 				return
-			_note("魂兽王暴怒、逃跑都正常")
+			_note("灵兽王暴怒、逃跑都正常")
 			_mem["mats"] = int(Profile.materials.get(k.species, 0))
 			_mem["sp"] = k.species
 			k.take_hit(k.hp + 10.0, Vector3.ZERO, Vector3.ZERO, false, Net.my_id, 10.0)
@@ -1067,19 +1080,19 @@ func _run_kings() -> void:
 		4:
 			if _step_t < 1.0:
 				return
-			if not _check(int(Profile.materials.get(str(_mem["sp"]), 0)) > int(_mem["mats"]), "打死魂兽王没拿到王魂"):
+			if not _check(int(Profile.materials.get(str(_mem["sp"]), 0)) > int(_mem["mats"]), "打死灵兽王没拿到王魄"):
 				return
-			if not _check(not w.rings.is_empty(), "打死魂兽王没掉魂环"):
+			if not _check(not w.rings.is_empty(), "打死灵兽王没掉灵环"):
 				return
 			Profile.add_material("rabbit", 2)
 			Profile.add_money(1000)
 			if not _check(Profile.do_enchant("xiujian", "bind") and Profile.enchant.get("xiujian", "") == "bind", "附魔失败"):
 				return
-			_note("王魂、魂环、附魔都正常")
+			_note("王魄、灵环、附魔都正常")
 			_next_phase()
 
 
-## 界面截图：HUD、暗器铺、武魂、暂停、成就、地图、魂技二选一、倒地、Boss 出场、魂师榜
+## 界面截图：HUD、暗器铺、灵相、暂停、成就、地图、神通二选一、倒地、Boss 出场、修士榜
 ##   godot --path game --resolution 1920x1080 -- --autotest=shots --plan=menu,uishots,done --out=目录
 func _run_uishots() -> void:
 	var w := _ready_world()
@@ -1120,10 +1133,10 @@ func _run_uishots() -> void:
 				_aim(p, k.global_position + Vector3(0, 1.5, 0))
 			p.hp = Profile.max_hp() * 0.7
 			p.soul = Profile.max_soul() * 0.55
-			h.feed("你 击杀了 百年 · 魔狼", Color.WHITE)
-			h.feed("客人 击杀了 十年 · 柔骨兔", Color.WHITE)
+			h.feed("你 击杀了 百年 · 恶狼", Color.WHITE)
+			h.feed("客人 击杀了 十年 · 玉兔", Color.WHITE)
 			h.kill_popup(186, 42, ["爆头 +50%", "空中击杀"], "wolf", 1)
-			h.toast("✔ 悬赏完成：风铃鸟 · 十年    +70 金魂币", Color(0.6, 1.0, 0.7), 5.0)
+			h.toast("✔ 悬赏完成：青鸾 · 十年    +70 灵石", Color(0.6, 1.0, 0.7), 5.0)
 			_next(2)
 		2:
 			if _step_t < 0.6:
@@ -1202,7 +1215,7 @@ func _run_uishots() -> void:
 			_next(12)
 			await _shot("ui_down")
 			h.death_countdown(-1.0)
-			h.boss_intro("千年魂兽 · 曼陀罗蛇")
+			h.boss_intro("千年灵兽 · 碧鳞蛇")
 		12:
 			if _step_t < 1.4:
 				return
@@ -1321,7 +1334,7 @@ func _run_fxshots() -> void:
 			await _shot("fx_" + str(_mem["shot"]))
 
 
-## 天上飞的鸟：用真的射线打它，要掉下来变成一只魂兽；魂兽王任务要能计数
+## 天上飞的鸟：用真的射线打它，要掉下来变成一只灵兽；灵兽王任务要能计数
 func _run_critters() -> void:
 	var w := _ready_world()
 	if not w:
@@ -1353,11 +1366,11 @@ func _run_critters() -> void:
 		2:
 			if _step_t < 0.5:
 				return
-			if not _check(w.beasts.size() > int(_mem["nb"]), "打中鸟以后没有掉下来变成魂兽"):
+			if not _check(w.beasts.size() > int(_mem["nb"]), "打中鸟以后没有掉下来变成灵兽"):
 				return
 			if not _check(not (w.builder._critters[0] as Node3D).visible, "打下来的鸟还在天上飞"):
 				return
-			_note("天上的鸟打下来变成了魂兽")
+			_note("天上的鸟打下来变成了灵兽")
 			# 秘境任务：通关一次就算
 			w.quest_idx = _quest_index(w.chapter, "dungeon")
 			w.quest_count = 0
@@ -1370,7 +1383,7 @@ func _run_critters() -> void:
 			_next_phase()
 
 
-## 猎魂连击：空中命中涨评级、奖励倍数、3 秒不打就断；武魂真身：充满后变身、加伤害、子弹不耗、到时间结束
+## 猎灵连击：空中命中涨评级、奖励倍数、3 秒不打就断；灵相真身：充满后变身、加伤害、子弹不耗、到时间结束
 func _run_combo() -> void:
 	var w := _ready_world()
 	if not w:
@@ -1397,13 +1410,13 @@ func _run_combo() -> void:
 				return
 			_note("连击 3 秒不打就断了")
 			if not Combo.TRUE_BODY:
-				_check(c.meter == 0.0, "武魂真身关掉了还在充能")
+				_check(c.meter == 0.0, "灵相真身关掉了还在充能")
 				_next_phase()
 				return
 			c.meter = 1.0
 			var before := p.damage_mult()
 			c.activate()
-			if not _check(c.active() and p.damage_mult() > before * 1.8, "武魂真身没加伤害"):
+			if not _check(c.active() and p.damage_mult() > before * 1.8, "灵相真身没加伤害"):
 				return
 			p.gun.ammo = 0
 			_mem["dm"] = before
@@ -1411,20 +1424,20 @@ func _run_combo() -> void:
 		2:
 			if _step_t < 0.3:
 				return
-			if not _check(p.gun.ammo == int(p.gun.d["mag"]), "武魂真身期间子弹还在消耗"):
+			if not _check(p.gun.ammo == int(p.gun.d["mag"]), "灵相真身期间子弹还在消耗"):
 				return
 			c.tb_t = 0.05
 			_next(3)
 		3:
 			if _step_t < 0.4:
 				return
-			if not _check(not c.active() and c.meter == 0.0, "武魂真身到时间没结束"):
+			if not _check(not c.active() and c.meter == 0.0, "灵相真身到时间没结束"):
 				return
-			_note("武魂真身：加伤害、子弹不耗、到时间结束都正常")
+			_note("灵相真身：加伤害、子弹不耗、到时间结束都正常")
 			_next_phase()
 
 
-## 截图：连击评级 S、武魂真身
+## 截图：连击评级 S、灵相真身
 func _run_comboshot() -> void:
 	var w := _ready_world()
 	if not w:
@@ -1457,8 +1470,8 @@ func _run_comboshot() -> void:
 			_next_phase()
 
 
-## 机器人打一局秘境（配 --from_save=profile.json --tier=0，用真存档的等级、暗器、魂骨；存档只读不写）：
-## 站在进出台上，自动瞄最近的魂兽开枪，记掉了多少血、最低剩多少、多久通关——用来调单人难度
+## 机器人打一局秘境（配 --from_save=profile.json --tier=0，用真存档的等级、暗器、灵骨；存档只读不写）：
+## 站在进出台上，自动瞄最近的灵兽开枪，记掉了多少血、最低剩多少、多久通关——用来调单人难度
 func _run_bot() -> void:
 	var w := _ready_world()
 	if not w:
@@ -1537,7 +1550,7 @@ func _run_bot() -> void:
 				# 血少了吃回血丹（真人也会吃）
 				if p.hp < Profile.max_hp() * 0.4 and int(Profile.items.get("pill", 0)) > 0:
 					p._use_pill()
-				# 装着的魂技好了就放（真人也会放）
+				# 装着的神通好了就放（真人也会放）
 				if bool(args.get("skills", "1") == "1"):
 					for i in 3:
 						if int(Profile.skill_slots[i]) >= 0 and float(w.skills.cooldowns[i]) <= 0.0:
@@ -1546,7 +1559,7 @@ func _run_bot() -> void:
 				get_tree().create_timer(0.02).timeout.connect(func(): Input.action_release("fire"))
 
 
-## 观察秘境（调试用，配 --from_save）：人站着不打，每 2 秒记一次每只魂兽在干什么、谁咬到人了；人来回走，看会不会卡住
+## 观察秘境（调试用，配 --from_save）：人站着不打，每 2 秒记一次每只灵兽在干什么、谁咬到人了；人来回走，看会不会卡住
 func _run_dgwatch() -> void:
 	var w := _ready_world()
 	if not w:
@@ -1621,7 +1634,7 @@ func _free_later(n: Node) -> void:
 	get_tree().create_timer(2.0).timeout.connect(n.queue_free)
 
 
-## 仇恨范围：60 米外的凶暴魂兽不过来，走到 14 米它就来咬；90 级魂力护体减伤 36%
+## 仇恨范围：60 米外的凶暴灵兽不过来，走到 14 米它就来咬；90 级灵力护体减伤 36%
 func _run_aggro() -> void:
 	var w := _ready_world()
 	if not w:
@@ -1641,7 +1654,7 @@ func _run_aggro() -> void:
 				if w.island.is_land(q.x, q.z) and gy != -INF and absf(gy - base.y) < 6.0 and absf(gy - w.island.height_at(q.x, q.z)) < 0.5:
 					spot = Vector3(q.x, gy + 0.4, q.z)
 					break
-			if not _check(spot != Vector3.INF, "60 米外找不到陆地放魂兽"):
+			if not _check(spot != Vector3.INF, "60 米外找不到陆地放灵兽"):
 				return
 			_target = w._host_spawn_wild(spot, "wolf", 1, "fierce")
 			_next(1)
@@ -1649,12 +1662,12 @@ func _run_aggro() -> void:
 			if _step_t < 5.0:
 				return
 			var b := _target
-			if not _check(b != null and is_instance_valid(b) and b.alive(), "凶暴魂兽不见了"):
+			if not _check(b != null and is_instance_valid(b) and b.alive(), "凶暴灵兽不见了"):
 				return
 			var d := b.global_position.distance_to(p.global_position)
-			if not _check(d > 45.0, "60 米外的凶暴魂兽还是追过来了（现在 %.0f 米）" % d):
+			if not _check(d > 45.0, "60 米外的凶暴灵兽还是追过来了（现在 %.0f 米）" % d):
 				return
-			_note("60 米外的凶暴魂兽不追人（%.0f 米）" % d)
+			_note("60 米外的凶暴灵兽不追人（%.0f 米）" % d)
 			var to := p.global_position - b.global_position
 			to.y = 0.0
 			var q := b.global_position + to.normalized() * 14.0
@@ -1679,15 +1692,15 @@ func _run_aggro() -> void:
 				p.hp = Profile.max_hp()
 				if not _check(absf(lost - 64.0) < 1.0, "90 级挨 100 点伤害掉了 %.1f（应该 64）" % lost):
 					return
-				_note("90 级魂力护体：挨 100 掉 %.0f" % lost)
+				_note("90 级灵力护体：挨 100 掉 %.0f" % lost)
 				_next_phase()
 			elif _step_t > 8.0:
-				_fail("走到 14 米凶暴魂兽也不过来（%.1f 米；魂兽 %s %s state=%d，玩家 %s dead=%s 能打=%s）" % [d, b.global_position, b.temper, b.state, p.global_position, p.dead, not p.untargetable()])
+				_fail("走到 14 米凶暴灵兽也不过来（%.1f 米；灵兽 %s %s state=%d，玩家 %s dead=%s 能打=%s）" % [d, b.global_position, b.temper, b.state, p.global_position, p.dead, not p.untargetable()])
 
 
-## 猎魂：卡瓶颈 → 猎魂榜挑一只（记下卡片上写的魂技）→ 猎物出现、有踪迹、罗盘不标成普通的王
-## → 打死掉魂环 → 吸收（单人 10 秒、来一小波只冲吸收的人）→ 学到的就是卡片上写的魂技
-## → 再吸收一次时倒下：打断、魂环掉回地上
+## 猎灵：卡瓶颈 → 猎灵榜挑一只（记下卡片上写的神通）→ 猎物出现、有踪迹、罗盘不标成普通的王
+## → 打死掉灵环 → 吸收（单人 10 秒、来一小波只冲吸收的人）→ 学到的就是卡片上写的神通
+## → 再吸收一次时倒下：打断、灵环掉回地上
 func _run_huntrun() -> void:
 	var w := _world()
 	match _step:
@@ -1700,23 +1713,38 @@ func _run_huntrun() -> void:
 			w._broadcast_prog()
 			var h := w.hunt
 			w.hud.open_board()
-			if not _check(w.hud._board != null and is_instance_valid(w.hud._board), "猎魂榜打不开"):
+			if not _check(w.hud._board != null and is_instance_valid(w.hud._board), "猎灵榜打不开"):
 				return
 			w.hud._close_board()
 			var list := h.species_list()
-			if not _check(not list.is_empty(), "猎魂榜上没有魂兽"):
+			if not _check(not list.is_empty(), "猎灵榜上没有灵兽"):
 				return
 			var sp := str(list[0])
 			var age := h.base_age()
 			_mem["sp"] = sp
 			_mem["sid"] = h.skill_preview(sp, age)
-			_note("猎魂榜：%d 种魂兽；挑了%s%s，卡片上写的魂技【%s】" % [list.size(), Data.age_name(age), Data.BEASTS[sp]["name"], Data.SKILLS[str(_mem["sid"])]["name"]])
+			_note("猎灵榜：%d 种灵兽；挑了%s%s，卡片上写的神通【%s】" % [list.size(), Data.age_name(age), Data.BEASTS[sp]["name"], Data.SKILLS[str(_mem["sid"])]["name"]])
 			w.player.invuln_t = 9999.0
 			h.request(sp, age)
+			_mem["old_wid"] = w.get_instance_id()
+			_next(10)
+		10:
+			# 全队去猎场：换了一张大地图
+			w = _ready_world()
+			if not w or w.get_instance_id() == int(_mem["old_wid"]) or not w.island.hunting:
+				if _step_t > 15.0:
+					_fail("挑了猎物没去猎场")
+				return
+			var isl := w.island
+			_note("到了猎场：%d×%d 米，%d 片区域（老窝「%s」离营地 %d 米，巢穴「%s」），%d 处宝藏" % [isl.size - 1, isl.size - 1, isl.habitats.size(), isl.zone_name(isl.home), int(isl.home.distance_to(isl.spawn)), isl.zone_name(isl.nest), isl.treasures.size()])
+			if not _check(isl.habitats.size() >= 5 and isl.home.distance_to(isl.spawn) > 100.0 and isl.treasures.size() >= 8, "猎场太小 / 区域太少"):
+				return
+			w.player.invuln_t = 9999.0
 			_next(1)
 		1:
 			var h := w.hunt
-			if h.target_id == 0 or not w.beasts.has(h.target_id):
+			# 猎物刚出现的那一帧，自己这边还没换过来（下一帧会把追踪进度清零），等它换好再看爪痕
+			if h.target_id == 0 or not w.beasts.has(h.target_id) or h._clue_target != h.target_id:
 				if _step_t > 5.0:
 					_fail("挑了猎物没出现")
 				return
@@ -1783,11 +1811,57 @@ func _run_huntrun() -> void:
 			if not _check(locked_mark, "锁定了罗盘上却没有猎物"):
 				return
 			_note("锁定猎物：罗盘上标出来了（%.0f 秒）" % h._lock_t)
+			# 打到三成血：它逃往巢穴（测试里把它挪到巢穴旁边，不用等它走过去）
 			var b := _target
-			b.last_hitter = Net.my_id
-			b.damagers[Net.my_id] = 1.0
-			b.hp = 0.0
-			w._host_kill(b)
+			b.affixes.clear()
+			b.hp = b.max_hp * 0.28
+			b._aggro_t = 0.0
+			_next(11)
+		11:
+			var b := _target
+			if not b._retreat:
+				if _step_t > 3.0:
+					_fail("三成血了猎物没逃跑")
+				return
+			if not _mem.has("moved"):
+				_mem["moved"] = true
+				var nest: Vector3 = w.island.nest
+				_note("猎物逃往巢穴「%s」（离它 %d 米）" % [w.island.zone_name(nest), int(b.global_position.distance_to(nest))])
+				b.global_position = nest + Vector3(6.0, 1.5, 0.0)
+				b.linear_velocity = Vector3.ZERO
+				return
+			if not b.napping:
+				if _step_t > 10.0:
+					_fail("猎物回到巢穴没睡着")
+				return
+			if not _check(b.has_node("Zzz"), "睡着了头上没有 Zzz"):
+				return
+			var real := b.take_hit(100.0, Vector3.ZERO, Vector3.ZERO, true, Net.my_id, 10.0)
+			if not _check(real >= 240.0 and not b.napping, "偷袭伤害不对（%.0f，应该是 250）" % real):
+				return
+			_note("猎物在巢穴睡着了；偷袭一下 %.0f 伤害（×2.5），它醒了" % real)
+			b.hp = b.max_hp * 0.15
+			_next(12)
+		12:
+			var h := w.hunt
+			if not h.weak:
+				if _step_t > 3.0:
+					_fail("两成血以下没有虚弱")
+				return
+			if not _mem.has("hooked"):
+				_mem["hooked"] = true
+				_note("猎物虚弱了（一瘸一拐）：用引魂索捆住活捉")
+				_target.bind_cd = 0.0
+				w.host_hook(_target.id, Net.my_id)
+				return
+			if w.trip.phase != "done":
+				if _step_t > 6.0:
+					_fail("捆住虚弱的猎物没活捉（cap %d，phase %s）" % [h._cap_id, w.trip.phase])
+				return
+			var r: Dictionary = w.trip.result
+			if not _check(bool(r["captured"]) and int(r["money"]) > 0, "活捉结算不对：%s" % str(r)):
+				return
+			_note("活捉成功：评级 %s，用时 %d 秒，报酬 %d 灵石 + %d 修为" % [r["rating"], int(r["time"]), int(r["money"]), int(r["xp"])])
 			_next(3)
 		3:
 			if _step_t < 0.5:
@@ -1797,7 +1871,7 @@ func _run_huntrun() -> void:
 			var rid := -1
 			for k in w.rings:
 				rid = int(k)
-			if not _check(rid >= 0, "猎物没掉魂环"):
+			if not _check(rid >= 0, "猎物没掉灵环"):
 				return
 			var rp: Vector3 = w.rings[rid]["pos"]
 			w.player.teleport(Vector3(rp.x, w.island.height_at(rp.x, rp.z) + 0.2, rp.z))
@@ -1806,7 +1880,7 @@ func _run_huntrun() -> void:
 			if _step_t < 0.3:
 				return
 			var it := w.nearest_interactable()
-			if not _check(str(it.get("id", "")) == "ring" and bool(it.get("ok", false)), "站在魂环旁边不能吸收（%s）" % str(it.get("text", ""))):
+			if not _check(str(it.get("id", "")) == "ring" and bool(it.get("ok", false)), "站在灵环旁边不能吸收（%s）" % str(it.get("text", ""))):
 				return
 			_note("提示：%s" % str(it["text"]))
 			w.interact()
@@ -1815,7 +1889,7 @@ func _run_huntrun() -> void:
 			var h := w.hunt
 			if h.channel.is_empty():
 				if _step_t > 2.0:
-					_fail("吸收魂环没开始")
+					_fail("吸收灵环没开始")
 				return
 			if not _check(w.player.channeling and absf(float(h.channel["dur"]) - Data.HUNT_CHANNEL_SOLO) < 0.1, "单人吸收时间不对（%.0f 秒）" % float(h.channel["dur"])):
 				return
@@ -1828,18 +1902,18 @@ func _run_huntrun() -> void:
 					for b: Beast in w.beasts.values():
 						if b.alive() and b.focus_peer == Net.my_id:
 							n += 1
-					if not _check(n >= 1, "吸收时没来魂兽"):
+					if not _check(n >= 1, "吸收时没来灵兽"):
 						return
 					_mem["wave"] = n
-					_note("吸收中：来了 %d 只魂兽冲着吸收的人" % n)
+					_note("吸收中：来了 %d 只灵兽冲着吸收的人" % n)
 				if _step_t > 14.0:
 					_fail("单人吸收 14 秒还没结束")
 				return
-			if not _check(Profile.rings.size() == 1 and not w.player.channeling, "吸收结束没学到魂技"):
+			if not _check(Profile.rings.size() == 1 and not w.player.channeling, "吸收结束没学到神通"):
 				return
-			if not _check(str(Profile.rings[0]["skill"]) == str(_mem["sid"]), "学到的魂技和猎魂榜上写的不一样（%s ≠ %s）" % [Profile.rings[0]["skill"], _mem["sid"]]):
+			if not _check(str(Profile.rings[0]["skill"]) == str(_mem["sid"]), "学到的神通和猎灵榜上写的不一样（%s ≠ %s）" % [Profile.rings[0]["skill"], _mem["sid"]]):
 				return
-			_note("吸收完：学到的就是猎魂榜上写的【%s】（%.1f 秒）" % [Data.SKILLS[str(_mem["sid"])]["name"], _step_t])
+			_note("吸收完：学到的就是猎灵榜上写的【%s】（%.1f 秒）" % [Data.SKILLS[str(_mem["sid"])]["name"], _step_t])
 			Profile.level = 20
 			w._broadcast_prog()
 			w._host_drop_ring(w.player.global_position + Vector3(0, 1.0, 0), 1, str(_mem["sp"]), 90.0)
@@ -1850,7 +1924,7 @@ func _run_huntrun() -> void:
 			var rid := -1
 			for k in w.rings:
 				rid = int(k)
-			if not _check(rid >= 0, "第二个魂环没掉"):
+			if not _check(rid >= 0, "第二个灵环没掉"):
 				return
 			Net.send_host("absorb", [rid])
 			_next(8)
@@ -1866,11 +1940,157 @@ func _run_huntrun() -> void:
 		9:
 			if _step_t < 0.5:
 				return
-			if not _check(w.hunt.channel.is_empty() and not w.rings.is_empty() and not w.player.channeling, "倒下了吸收没被打断 / 魂环没掉回地上"):
+			if not _check(w.hunt.channel.is_empty() and not w.rings.is_empty() and not w.player.channeling, "倒下了吸收没被打断 / 灵环没掉回地上"):
 				return
-			_note("吸收时倒下：打断，魂环掉回地上")
+			_note("吸收时倒下：打断，灵环掉回地上")
 			w._respawn_at_dock()
 			w.player.invuln_t = 3.0
+			# 打开一处宝藏，然后回岛
+			var tp: Vector3 = w.island.treasures[0]
+			w.player.teleport(tp + Vector3(1.0, 0.4, 0))
+			_next(13)
+		13:
+			if _step_t < 0.4:
+				return
+			if not _mem.has("chest"):
+				_mem["chest"] = true
+				var money0 := Profile.money
+				var it := w.nearest_interactable()
+				if not _check(str(it.get("id", "")) == "htreasure", "站在宝藏旁边没有「打开宝藏」（%s）" % str(it.get("text", ""))):
+					return
+				w.interact()
+				if not _check(Profile.money > money0 and w.trip.found_list().size() == 1, "打开宝藏没拿到东西"):
+					return
+				_note("打开了一处宝藏：+%d 灵石" % (Profile.money - money0))
+				# 灵兽群：走到一处 60 米外，应该刷出来一群（年份不超过猎物）
+				if not _check(w.trip._packs.size() >= 8, "猎场里灵兽群太少（%d 处）" % w.trip._packs.size()):
+					return
+				w.trip.wilds_on = true
+				var pk: Dictionary = w.trip._packs[0]
+				var pp: Vector3 = pk["pos"]
+				var away := (w.island.spawn - pp)
+				away.y = 0.0
+				var at := pp + away.normalized() * 60.0
+				w.player.teleport(Vector3(at.x, w.island.height_at(at.x, at.z) + 0.5, at.z))
+				w.player.invuln_t = 60.0
+				_mem["pk"] = pk
+				_next(14)
+				return
+		14:
+			if _step_t < 2.5:
+				return
+			var ids: Array = (_mem["pk"] as Dictionary)["ids"]
+			if not _check(ids.size() >= 2, "走近了灵兽群没刷出来（%d 只）" % ids.size()):
+				return
+			var top := int(w.trip.info.get("age", 0))
+			for id in ids:
+				var b: Beast = w.beasts.get(int(id))
+				if b and not _check(b.age <= top, "灵兽群的年份（%d）比猎物（%d）还高" % [b.age, top]):
+					return
+			_note("灵兽群：%d 处，走近刷出 %d 只%s（%s）" % [w.trip._packs.size(), ids.size(), Data.BEASTS[str((_mem["pk"] as Dictionary)["sp"])]["name"], w.beasts[int(ids[0])].temper])
+			for id in ids.duplicate():
+				var b2: Beast = w.beasts.get(int(id))
+				if b2:
+					# 铁钳蟹这种带甲的会减伤（第五章跑出来过没打死），给足
+					w.host_skill_damage(b2, b2.hp * 4.0 + 100.0, Vector3.ZERO, Net.my_id)
+			w.trip.wilds_on = false
+			if w.island.guard_spots.is_empty():
+				_note("这张猎场没有守宝点")
+				_next(16)
+				return
+			if not _check(int((_mem["pk"] as Dictionary)["killed"]) >= 2, "灵兽群打死了没记上"):
+				return
+			var gp: Vector3 = w.island.guard_spots[0]["pos"]
+			w.player.teleport(gp + Vector3(0, 0.5, 1.8))
+			w.player.invuln_t = 60.0
+			var it0 := w.nearest_interactable()
+			if not _check(str(it0.get("id", "")) == "htchest" and not bool(it0.get("act", true)), "王还没打倒，大宝箱就能开（%s）" % str(it0.get("text", ""))):
+				return
+			var g := w.trip.host_spawn_guard(0)
+			if not _check(g != null and g.temper == "elite" and g.hunt_role == "guard" and g.age <= top, "守宝的王不对"):
+				return
+			_note("守宝的王：%s（血 %d）" % [w.trip.guard_name(0), int(g.max_hp)])
+			_mem["gid"] = g.id
+			_mem["rings0"] = w.rings.size()
+			w.host_skill_damage(g, g.hp + 10.0, Vector3.ZERO, Net.my_id)
+			_next(15)
+		15:
+			if _step_t < 0.6:
+				return
+			if not _check(w.trip.guard_dead[0], "守宝的王死了，宝箱没解锁"):
+				return
+			if not _check(w.rings.size() <= int(_mem["rings0"]), "守宝的王掉了灵环（灵环只该从猎物身上来）"):
+				return
+			var gp2: Vector3 = w.island.guard_spots[0]["pos"]
+			w.player.teleport(gp2 + Vector3(0, 0.5, 1.8))
+			_next(16)
+		16:
+			if not _mem.has("opened"):
+				if _step_t < 0.4:
+					return
+				_mem["opened"] = true
+				if not w.island.guard_spots.is_empty():
+					var money1 := Profile.money
+					var it := w.nearest_interactable()
+					if not _check(str(it.get("id", "")) == "htchest" and bool(it.get("act", false)), "站在大宝箱旁边打不开（%s）" % str(it.get("text", ""))):
+						return
+					w.interact()
+					if not _check(Profile.money > money1 and w.trip.guard_marks().size() == w.island.guard_spots.size() - 1, "大宝箱没拿到东西 / 地图标记没变"):
+						return
+					_note("大宝箱：+%d 灵石" % (Profile.money - money1))
+				# L 键回岛（F 是神通键）：地上有灵环时要按两次
+				_mem["old_wid"] = w.get_instance_id()
+				w.trip.key_return()
+				if not w.rings.is_empty():
+					if not _check(w.trip.back_t < 9000.0, "地上有灵环，按一次 L 就回岛了"):
+						return
+					w.trip.key_return()
+				return
+			w = _ready_world()
+			if not w or w.get_instance_id() == int(_mem["old_wid"]) or w.island.hunting:
+				if _step_t > 15.0:
+					_fail("猎灵完了按 L 回不了岛")
+				return
+			_note("按 L 回到了岛上")
+			w.player.invuln_t = 3.0
+			_next_phase()
+
+
+## 猎场失败：全队倒下 3 次 → 猎灵失败 → 回岛
+func _run_huntfail() -> void:
+	var w := _world()
+	match _step:
+		0:
+			w = _ready_world()
+			if not w or _step_t < 1.0:
+				return
+			var list := w.hunt.species_list()
+			w.hunt.request(str(list[0]), w.hunt.base_age())
+			_mem["old_wid"] = w.get_instance_id()
+			_next(1)
+		1:
+			w = _ready_world()
+			if not w or w.get_instance_id() == int(_mem["old_wid"]) or not w.island.hunting:
+				if _step_t > 15.0:
+					_fail("没去猎场")
+				return
+			if _step_t < 2.5:
+				return
+			for i in 3:
+				w.trip.on_my_faint()
+			if not _check(w.trip.phase == "fail" and w.trip.faints == 3, "倒下 3 次没失败（%d 次，%s）" % [w.trip.faints, w.trip.phase]):
+				return
+			_note("全队倒下 3 次：猎灵失败")
+			_mem["old_wid"] = w.get_instance_id()
+			w.trip.host_return()
+			_next(2)
+		2:
+			w = _ready_world()
+			if not w or w.get_instance_id() == int(_mem["old_wid"]) or w.island.hunting:
+				if _step_t > 15.0:
+					_fail("失败了回不了岛")
+				return
+			_note("失败后回到了岛上")
 			_next_phase()
 
 
@@ -1942,7 +2162,7 @@ func _run_dungeon() -> void:
 			_mem.erase("walk_from")
 			_mem["walk"] = k + 1
 		3:
-			# 测试：场地里出来的魂兽一律秒掉
+			# 测试：场地里出来的灵兽一律秒掉
 			for b: Beast in w.beasts.values():
 				if b.alive() and b.hunt_role in ["dg", "dgboss"] and b.state != Beast.State.AIR:
 					b.last_hitter = Net.my_id
@@ -1969,11 +2189,13 @@ func _run_dungeon() -> void:
 				return
 			if not _check(d._chest.visible, "通关没有宝箱"):
 				return
+			if not _check(d._result != null and d._result.visible, "通关没有结算面板"):
+				return
 			if not _check(d.best_time(0) > 0, "没记下通关时间"):
 				return
 			if not _check(str(_mem["qtype"]) != "dungeon" or w.quest_idx > int(_mem["quest"]), "通关秘境没完成任务"):
 				return
-			_note("通关：+%d 金魂币，用时 %d 秒，任务推进到「%s」" % [Profile.money - int(_mem["money"]), d.best_time(0), str(w._cur_quest().get("text", ""))])
+			_note("通关：+%d 灵石，用时 %d 秒，任务推进到「%s」" % [Profile.money - int(_mem["money"]), d.best_time(0), str(w._cur_quest().get("text", ""))])
 			p.teleport(d.spawn_pad() + Vector3(0.5, 0.2, 0))
 			_next(5)
 		5:
@@ -1992,6 +2214,18 @@ func _run_dungeon() -> void:
 				return
 			if not _check(d.run.is_empty(), "人都走了秘境还没结束"):
 				return
+			if not _check(not d._card.visible and not d._result.visible, "出了秘境，左上角 / 中间还挂着秘境的信息"):
+				return
+			# 三层秘境之主和秘境同年份（以前高一档：千年秘境掉万年灵环）
+			d.run = {"tier": 2, "age": d.tier_age(2), "mod": "armor", "phase": "wave", "wave": 3, "t": 0.0, "left": 0, "boss": 0}
+			d._start_boss()
+			var b3: Beast = w.beasts.get(int(d.run["boss"]))
+			if not _check(b3 != null and b3.age == d.tier_age(2), "三层秘境之主年份不对（%d，秘境 %d）" % [b3.age if b3 else -1, d.tier_age(2)]):
+				return
+			_note("三层秘境之主：%s（和秘境同年份）" % b3.display_name())
+			w._remove_beast(b3)
+			d.run = {}
+			d._sync()
 			# 再进一次，然后倒下
 			Net.send_host("dgenter", [1])
 			_next(7)
@@ -2014,7 +2248,7 @@ func _run_dungeon() -> void:
 			_next_phase()
 
 
-## 截图：猎魂榜、踪迹、吸收魂环（队友视角）、秘境入口、秘境场地、秘境之主
+## 截图：猎灵榜、踪迹、吸收灵环（队友视角）、秘境入口、秘境场地、秘境之主
 func _run_dgshot() -> void:
 	var w := _ready_world()
 	if not w:
@@ -2125,7 +2359,7 @@ func _fx_burn_bleed(fx: Fx, o: Vector3, side: Vector3, c: Color) -> void:
 	fx.empower_hit("bleed", o + Vector3.UP * 1.5 - side, c)
 
 
-## 魂兽巢穴：放出来、打掉、爆掉给奖励
+## 灵兽巢穴：放出来、打掉、爆掉给奖励
 func _run_nests() -> void:
 	var w := _ready_world()
 	if not w:
@@ -2163,7 +2397,7 @@ func _run_nests() -> void:
 				return
 			if not _check(not w.nests.nests[0]["alive"] and Profile.money > int(_mem["money_n"]), "巢打爆了没奖励"):
 				return
-			_note("巢打爆了，金魂币 %d → %d" % [int(_mem["money_n"]), Profile.money])
+			_note("巢打爆了，灵石 %d → %d" % [int(_mem["money_n"]), Profile.money])
 			_next_phase()
 
 
@@ -2214,7 +2448,7 @@ func _run_down() -> void:
 				_fail("按空格没有回码头复活")
 
 
-## 新魂技：召唤、连锁、黑洞、领域、环绕、附体、神技，每个放一次（周围放几只魂兽当靶子）
+## 新神通：召唤、连锁、黑洞、领域、环绕、附体、神技，每个放一次（周围放几只灵兽当靶子）
 const SK2_ALL := ["lyc_dance", "lyc_storm", "lyc_king", "lyc_wall", "lyc_net", "bh_rage", "hf_meteor", "qb_wall", "ls_true", "bh_shen"]
 var SK2: Array = SK2_ALL
 
@@ -2265,7 +2499,7 @@ func _run_skills2() -> void:
 		2:
 			if _step_t < 3.0:
 				return
-			_note("新魂技都放过了")
+			_note("新神通都放过了")
 			_next_phase()
 
 
@@ -2312,7 +2546,7 @@ func _run_bossshot() -> void:
 				_next_phase()
 
 
-## 奇遇 + 海鸥群 + 魂兽独门招式（平时自动测试里关着，这里专门跑一遍）
+## 奇遇 + 海鸥群 + 灵兽独门招式（平时自动测试里关着，这里专门跑一遍）
 func _run_events() -> void:
 	var w := _ready_world()
 	if not w:
@@ -2326,7 +2560,7 @@ func _run_events() -> void:
 			var ev: Dictionary = Data.CH_EVENTS[w.chapter]
 			w._host_tide_spawn(ev)
 			w._host_tide_king(ev)
-			# 一只凶暴的魂兽放独门招式
+			# 一只凶暴的灵兽放独门招式
 			var b := w._host_spawn(1, p.global_position + Vector3(4, 0.5, 0), "bird", 0, p.global_position, "fierce", "grass")
 			if b:
 				b._sk_cd = 0.0
@@ -2341,7 +2575,7 @@ func _run_events() -> void:
 				return
 			if not _check(not w.loot._flock.has(900) or w.loot._flock[900]["dead"], "海鸥打不下来"):
 				return
-			_note("奇遇、王、海鸥群、魂兽招式都跑过了，没有报错")
+			_note("奇遇、王、海鸥群、灵兽招式都跑过了，没有报错")
 			_next_phase()
 
 
@@ -2470,7 +2704,7 @@ func _run_host() -> void:
 		1:
 			for id in w.stats:
 				if id != Net.my_id and int(w.stats[id]["kills"]) >= 2:
-					_note("客人击杀 %d 只，房主金魂币 %d、修为 %d" % [w.stats[id]["kills"], Profile.money, Profile.xp])
+					_note("客人击杀 %d 只，房主灵石 %d、修为 %d" % [w.stats[id]["kills"], Profile.money, Profile.xp])
 					if not _check(Profile.xp > 0 or Profile.level > 1, "队友击杀，房主没分到修为"):
 						return
 					_next(2)
@@ -2480,7 +2714,8 @@ func _run_host() -> void:
 				_pass("房主测试通过")
 
 
-## 联机（房主，--dg=1）：客人进来 → 挑一只猎物 → 进一层秘境（客人跟进来）→ 自动秒掉魂兽直到通关 → 等客人走
+## 联机（房主，--dg=1）：客人进来 → 进一层秘境（客人跟进来）→ 自动秒掉灵兽直到通关
+## → 猎灵榜挑一只 → 两个人一起到猎场 → 打倒猎物、结算 → 一起回岛
 func _run_dghost() -> void:
 	var w := _ready_world()
 	if not w:
@@ -2491,13 +2726,11 @@ func _run_dghost() -> void:
 			if not w.remotes.is_empty():
 				_note("客人进来了：%s" % w.remotes.keys())
 				w.player.invuln_t = 9999.0
-				var list := w.hunt.species_list()
-				w.hunt.request(str(list[0]), w.hunt.base_age())
 				_next(1)
 			elif _t > 40.0:
 				_fail("没有客人加入")
 		1:
-			if _step_t < 3.0:
+			if _step_t < 2.0:
 				return
 			Net.send_host("dgenter", [0])
 			_next(2)
@@ -2516,15 +2749,67 @@ func _run_dghost() -> void:
 					w._host_kill(b)
 			if not d.run.is_empty() and str(d.run["phase"]) == "clear":
 				_note("两个人通关了秘境")
+				d.leave()
 				_next(4)
 			elif _step_t > 90.0:
 				_fail("两个人 90 秒没打完秘境")
 		4:
+			# 等两个人都出了秘境，挑猎物去猎场
+			if _step_t < 4.0:
+				return
+			if d.inside or d._members.size() > 0:
+				if _step_t > 30.0:
+					_fail("出不了秘境（还有 %d 人在里面）" % d._members.size())
+				return
+			var list := w.hunt.species_list()
+			w.hunt.request(str(list[0]), w.hunt.base_age())
+			_mem["old_wid"] = w.get_instance_id()
+			_next(5)
+		5:
+			if w.get_instance_id() == int(_mem["old_wid"]) or not w.island.hunting or w.remotes.is_empty() or w.hunt.target_id == 0:
+				if _step_t > 40.0:
+					_fail("两个人没一起到猎场（猎场 %s，客人 %d）" % [w.island.hunting, w.remotes.size()])
+				return
+			w.player.invuln_t = 9999.0
+			if _step_t < 4.0:
+				return
+			_note("两个人都到了猎场，猎物出现了")
+			var b: Beast = w.beasts[w.hunt.target_id]
+			b.last_hitter = int(w.remotes.keys()[0])
+			b.damagers[b.last_hitter] = 1.0
+			b.damagers[Net.my_id] = 1.0
+			b.hp = 0.0
+			w._host_kill(b)
+			_next(6)
+		6:
+			if w.trip.phase != "done":
+				if _step_t > 5.0:
+					_fail("打倒猎物没结算")
+				return
+			if _step_t < 4.0:
+				return
+			_note("猎灵结算：评级 %s" % str(w.trip.result["rating"]))
+			_mem["old_wid"] = w.get_instance_id()
+			w.trip.host_return()
+			_next(7)
+		7:
+			if w.get_instance_id() == int(_mem["old_wid"]) or w.island.hunting:
+				if _step_t > 30.0:
+					_fail("回不了岛")
+				return
+			if w.remotes.is_empty():
+				if _step_t > 30.0:
+					_fail("回岛以后客人没回来")
+				return
+			_note("两个人一起回到了岛上")
+			_next(8)
+		8:
 			if w.remotes.is_empty() or _step_t > 10.0:
 				_pass("联机房主测试通过")
 
 
-## 联机（客人，--dg=1）：看到房主挑的猎物（有踪迹、罗盘）→ 房主开了秘境，从入口跟进去 → 通关拿到奖励 → 离开
+## 联机（客人，--dg=1）：房主开了秘境，从入口跟进去 → 通关拿到奖励 → 离开
+## → 房主挑了猎物，自己也被带到猎场、看得到猎物 → 结算拿到报酬 → 跟着回岛
 func _run_dgclient() -> void:
 	var w := _ready_world()
 	if not w:
@@ -2533,15 +2818,10 @@ func _run_dgclient() -> void:
 	match _step:
 		0:
 			w.player.invuln_t = 9999.0
-			var tb: Beast = w.beasts.get(w.hunt.target_id) if w.hunt.target_id != 0 else null
-			if tb != null and tb.hunt_role == "target":
-				_note("客人看到了房主挑的猎物：%s" % tb.display_name())
-				_next(1)
-			elif _step_t > 25.0:
-				_fail("客人没收到猎物")
+			_next(1)
 		1:
 			if d.run.is_empty():
-				if _step_t > 25.0:
+				if _step_t > 40.0:
 					_fail("客人没看到房主开的秘境")
 				return
 			var tier := int(d.run["tier"])
@@ -2565,11 +2845,37 @@ func _run_dgclient() -> void:
 				_fail("客人按 F 没进秘境")
 		4:
 			if not d.run.is_empty() and str(d.run["phase"]) == "clear" and Profile.money > int(_mem["money"]):
-				_note("客人拿到了通关奖励：+%d 金魂币" % (Profile.money - int(_mem["money"])))
+				_note("客人拿到了通关奖励：+%d 灵石" % (Profile.money - int(_mem["money"])))
 				d.leave()
-				_next_phase()
+				_next(5)
 			elif _step_t > 100.0:
 				_fail("客人 100 秒没等到通关")
+		5:
+			var tb: Beast = w.beasts.get(w.hunt.target_id) if w.hunt.target_id != 0 else null
+			if not w.island.hunting or tb == null:
+				if _step_t > 60.0:
+					_fail("客人没跟着到猎场 / 没看到猎物")
+				return
+			w.player.invuln_t = 9999.0
+			_note("客人也到了猎场，看到了猎物：%s" % tb.display_name())
+			_mem["money"] = Profile.money
+			_next(6)
+		6:
+			if w.trip == null or w.trip.phase != "done":
+				if _step_t > 40.0:
+					_fail("客人没收到猎灵结算")
+				return
+			if not _check(Profile.money > int(_mem["money"]), "客人没拿到猎灵报酬"):
+				return
+			_note("客人拿到了猎灵报酬：+%d 灵石（评级 %s）" % [Profile.money - int(_mem["money"]), str(w.trip.result["rating"])])
+			_next(7)
+		7:
+			if w.island.hunting:
+				if _step_t > 40.0:
+					_fail("客人没跟着回岛")
+				return
+			_note("客人跟着回到了岛上")
+			_next_phase()
 
 
 
@@ -2578,7 +2884,7 @@ func _run_dgclient() -> void:
 ## 一只不会动、打不死的靶子
 func _dummy(w: World, pos: Vector3) -> Beast:
 	pos.y = w.island.height_at(pos.x, pos.z) + 0.9
-	# 金刚猿：个子大、身上没有甲（铁甲犀打身子只吃一成多伤害，测出来的数不准）
+	# 山魈：个子大、身上没有甲（铁甲兕打身子只吃一成多伤害，测出来的数不准）
 	var b: Beast = w._host_spawn_wild(pos, "ape", 1, "flee")
 	if b:
 		b.affixes.clear()
@@ -2591,6 +2897,338 @@ func _dummy(w: World, pos: Vector3) -> Beast:
 
 func _dummy_center(b: Beast) -> Vector3:
 	return b.global_position + Vector3(0, 0.35, 0)
+
+
+## 队友的样子（截图）：在面前放一个假的队友，站着、走、跑、蹲各拍一张
+## 过场动画在游戏里播出来的样子（视频 + 标题 / 字幕叠层），每段截几张
+const CINES := [["prologue", "", [4.0, 16.0, 30.0, 44.0]], ["voyage", "前往 · 第二章 · 落霞林", [3.0]], ["dungeon", "洞天秘境 · 千年 · 二层", [2.5]],
+	["hunt", "猎场 · 万年铁钳蟹王", [2.5]], ["ascend", "", [6.0, 14.0, 22.0]]]
+
+
+func _run_cineshot() -> void:
+	match _step:
+		0:
+			_mem["ci"] = 0
+			_next(1)
+		1:
+			var ci := int(_mem["ci"])
+			if ci >= CINES.size():
+				_next_phase()
+				return
+			var c: Array = CINES[ci]
+			var v := Voyage.new()
+			v.video = "res://assets/cutscene/%s.ogv" % c[0]
+			v.title = str(c[1])
+			v.length = 60.0
+			if c[0] == "voyage":
+				v.captions = [[0.5, 6.0, "碧鳞蛟盘踞镜湖三千年，湖底压着第一块天枢碎片"]]
+			main.add_child(v)
+			_mem["v"] = v
+			_mem["si"] = 0
+			_next(2)
+		2:
+			var c2: Array = CINES[int(_mem["ci"])]
+			var times: Array = c2[2]
+			var si := int(_mem["si"])
+			if si >= times.size():
+				var v2: Voyage = _mem["v"]
+				if is_instance_valid(v2):
+					v2._finish()
+				_mem["ci"] = int(_mem["ci"]) + 1
+				_next(1)
+				return
+			if _step_t >= float(times[si]):
+				_mem["si"] = si + 1
+				_shot("cine_%s_%d" % [c2[0], si])
+
+
+func _run_mateshot() -> void:
+	var w := _ready_world()
+	if not w:
+		return
+	var p := w.player
+	match _step:
+		0:
+			var m := RemotePlayer.new()
+			w.add_child(m)
+			m.setup(w, 99, {"name": "青崖", "wuhun": 5, "level": 42, "rings": [0, 1, 1, 2], "outfit": "default", "skin": "default"})
+			_mem["mate"] = m
+			_mem["base"] = p.global_position + Vector3(0, 0, -4.0)
+			_mem["k"] = 0
+			_next(1)
+		1:
+			var m: RemotePlayer = _mem["mate"]
+			var base: Vector3 = _mem["base"]
+			var k := int(_mem["k"])
+			var poses := [["idle", 0.0, 1], ["walk", 2.5, 1], ["run", 7.0, 3], ["crouch", 0.0, 9], ["side", 5.0, 3]]
+			if k >= poses.size():
+				m.queue_free()
+				_next_phase()
+				return
+			var pose: Array = poses[k]
+			var spd := float(pose[1])
+			# 在人面前绕圈走（能看到侧面和正面）
+			var a := _step_t * spd * 0.35
+			var pos: Vector3 = base + Vector3(sin(a) * 1.5 if spd > 0.0 else 0.0, 0, 0)
+			pos.y = w.island.height_at(pos.x, pos.z)
+			var yaw := PI * 0.5 if spd > 0.0 else PI + 0.5
+			if str(pose[0]) == "side":
+				yaw = PI * 0.5
+			m.push_snapshot([pos, yaw, 0.0, "zhuge", int(pose[2]), 0, Vector3.ZERO, 100.0, 1.0, 1.0])
+			_aim(p, base + Vector3(0, 1.1, 0))
+			if _step_t > 1.6 and not _mem.has("shot%d" % k):
+				_mem["shot%d" % k] = true
+				_shot("mate_" + str(pose[0]))
+			if _step_t > 2.0:
+				_mem["k"] = k + 1
+				_step_t = 0.0
+
+
+## 第十三版 Boss 招式：五个 Boss 轮流出来，每一招都放一遍（不报错、招式真的出来）；
+## 圈砸到人会掉血、翻滚躲过去算极限闪避；破绽时打头伤害翻倍
+const ARTS := {"mandala": ["sweep", "spit", "coil", "dive", "sweep2", "swamp"], "spider": ["web", "lunge", "drop", "brood", "lunge2", "cage"],
+	"titan": ["rocks", "charge", "quake", "fists", "rockrain", "charge2"], "icedragon": ["breath", "spiral", "swoop", "shards"],
+	"whale": ["tsunami", "vortex", "breach", "geyser", "gaze", "storm"]}
+
+
+func _run_bossarts() -> void:
+	var w := _ready_world()
+	if not w:
+		return
+	var p := w.player
+	var kinds: Array = ARTS.keys()
+	match _step:
+		0:
+			_mem["ki"] = 0
+			_next(1)
+		1:
+			# 出下一个 Boss
+			var ki := int(_mem["ki"])
+			if ki >= kinds.size():
+				_next(9)
+				return
+			var kind := str(kinds[ki])
+			if w.boss:
+				w.boss.queue_free()
+				w.boss = null
+			w._on_boss_spawn([kind, 9.0e7, w.island.boss_pos, 0])
+			_mem["ai"] = 0
+			_mem["tel"] = 0
+			_next(2)
+		2:
+			var b := w.boss
+			if _step_t < 3.5:
+				return
+			# 人站在 Boss 旁边 16 米（水里的 Boss：岸上）
+			var c := b.center()
+			var dir := Vector3(-c.x, 0, -c.z).normalized()
+			# 大个子的 Boss 离远一点（不然人会被放到它身上）
+			var st := Vector3(c.x, 0, c.z) + dir * (16.0 + maxf(b.size.x, b.size.z) * 0.7)
+			for i in 200:
+				if w.island.is_land(st.x, st.z):
+					break
+				st += dir
+			st.y = w.island.height_at(st.x, st.z) + 0.3
+			p.teleport(st)
+			_mem["stand"] = st
+			_mem["bpos"] = b.head.global_position
+			p.hp = Profile.max_hp()
+			p.invuln_t = 0.0
+			_next(3)
+		3:
+			# 一招一招放
+			var b := w.boss
+			var list: Array = ARTS[b.kind]
+			var ai := int(_mem["ai"])
+			if p.dead:
+				p.revive()
+				p.invuln_t = 0.0
+			p.hp = Profile.max_hp()
+			if not b._act.is_empty() or b.stun_t > 0.0 or b.state != "idle":
+				if _step_t > 12.0:
+					_fail("%s 的招 %s 卡住了（state=%s act=%s stun=%.1f）" % [b.kind, str(list[maxi(ai - 1, 0)]), b.state, str(b._act), b.stun_t])
+				b.stun_t = minf(b.stun_t, 0.3)
+				return
+			if _step_t < 0.6 and ai > 0:
+				return
+			if ai >= list.size():
+				_note("%s：%s 都放出来了（预警 %d 个）" % [Data.BOSSES[b.kind]["name"], "、".join(list), int(_mem["tel"])])
+				_next(4)
+				return
+			var n0 := w.arts._lanes.size() + w.arts._sweeps.size() + w.arts._circles.size() + w.arts._walls.size() + w.arts._vortexes.size() + w._hazards.size() + w._waves.size()
+			b.phase = 2 if ai >= 4 else 1
+			b.force_art = str(list[ai])
+			b._busy = 0.0
+			b._sp_cd = 0.0
+			b._ult_cd = 99.0
+			b._ult_ready = false
+			b._moves(0.016)
+			_mem["ai"] = ai + 1
+			_mem["n0"] = n0
+			_step_t = 0.0
+			_next(5)
+		5:
+			# 等这一招真的出来（预警 / 冲锋 / 潜水 / 召唤）
+			var b := w.boss
+			var n := w.arts._lanes.size() + w.arts._sweeps.size() + w.arts._circles.size() + w.arts._walls.size() + w.arts._vortexes.size() + w._hazards.size() + w._waves.size()
+			var ok := n > int(_mem["n0"]) or not b._act.is_empty() or b.state != "idle" or b.stun_t > 0.0
+			if ok:
+				_mem["tel"] = int(_mem["tel"]) + maxi(n - int(_mem["n0"]), 0)
+				if _shots:
+					# 截图：看着 Boss，等招式出来一点再拍
+					_aim(p, b.center())
+					var nm := "art_%s_%s" % [b.kind, str(ARTS[b.kind][int(_mem["ai"]) - 1])]
+					get_tree().create_timer(0.9).timeout.connect(func(): _shot(nm))
+				_next(3)
+				_step_t = 0.0
+			elif _step_t > 1.5:
+				_fail("%s 的招 %s 没放出来" % [b.kind, str(ARTS[b.kind][int(_mem["ai"]) - 1])])
+		4:
+			# 砸到人掉血；翻滚躲过算极限闪避；破绽打头 ×2
+			var b := w.boss
+			b._busy = 99.0
+			if not _mem.has("hurt") and not _mem.has("hurt_wait"):
+				w.arts.clear_all()
+				if p.dead:
+					p.revive()
+				# 砸人、闪避这两下在出生点测（Boss 冲锋、落石会把人推到奇怪的地方）
+				b.head.global_position = _mem["bpos"]
+				p.teleport(w.island.spawn + Vector3(0, 0.5, 0))
+				p.velocity = Vector3.ZERO
+				p.hp = Profile.max_hp()
+				p.invuln_t = 0.0
+				_mem["hp0"] = p.hp
+				_mem["hurt_wait"] = true
+				_step_t = 0.0
+				return
+			if _mem.has("hurt_wait"):
+				if _step_t < 0.5:
+					return
+				_mem.erase("hurt_wait")
+				p.invuln_t = 0.0
+				p.hp = Profile.max_hp()
+				_mem["hp0"] = p.hp
+				w.arts.circle(p.global_position, 4.0, 0.4, 40.0, "rock")
+				_mem["hurt"] = true
+				_step_t = 0.0
+				return
+			if not _mem.has("dodge") and _step_t < 1.2:
+				return
+			if not _mem.has("dodge"):
+				# 前面招式的余波（推飞、倒地被海鸥叼走）偶尔让这一下落空：重来两次
+				if p.hp >= float(_mem["hp0"]) and int(_mem.get("retry", 0)) < 2:
+					_mem["retry"] = int(_mem.get("retry", 0)) + 1
+					_mem.erase("hurt")
+					return
+				if not _check(p.hp < float(_mem["hp0"]), "%s：圈砸到人没掉血（hp %.0f，dead=%s，invuln %.2f，位置 %s）" % [b.kind, p.hp, p.dead, p.invuln_t, p.global_position]):
+					return
+				_mem.erase("retry")
+				p.hp = Profile.max_hp()
+				p.velocity = Vector3.ZERO
+				_mem["pd0"] = int(Profile.stats.get("perfect_dodges", 0))
+				_mem["dc"] = p.global_position
+				_mem["dodge"] = true
+				if p.dead:
+					p.revive()
+				p.hp = Profile.max_hp()
+				# 翻滚中挨一下（和圈砸到人走的是同一条路）
+				p._roll_t = 0.42
+				p.invuln_t = 0.36
+				p._pd_cd = 0.0
+				var hp1 := p.hp
+				w.arts._hurt(40.0, p.global_position + Vector3(2, 0, 0), Vector3.ZERO)
+				if not _check(p.hp >= hp1, "%s：翻滚的无敌时间里还掉血了" % b.kind):
+					return
+				_step_t = 0.0
+				return
+			if _step_t < 0.3:
+				return
+			if not _check(int(Profile.stats.get("perfect_dodges", 0)) > int(_mem["pd0"]) and p.buff("dmg") >= 0.3, "%s：翻滚躲过去没有极限闪避（次数 %d→%d，buff %.2f，hp %.0f/%.0f，圈 %d，圈心 %s 人 %s 地面 %.1f）" % [b.kind, int(_mem["pd0"]), int(Profile.stats.get("perfect_dodges", 0)), p.buff("dmg"), p.hp, Profile.max_hp(), w.arts._circles.size(), _mem["dc"], p.global_position, w.island.height_at(p.global_position.x, p.global_position.z)]):
+				return
+			var h0 := b.hp
+			b.stun_t = 0.0
+			var d1 := b.take_hit(100.0, true, Net.my_id)
+			w.arts.stun(b, 2.0)
+			var d2 := b.take_hit(100.0, true, Net.my_id)
+			if not _check(d2 > d1 * 1.9, "%s：破绽时打头没有翻倍（%.0f → %.0f）" % [b.kind, d1, d2]):
+				return
+			b.hp = h0
+			b.stun_t = 0.0
+			b._busy = 0.0
+			for k in ["hurt", "dodge", "rolled"]:
+				_mem.erase(k)
+			p.buffs.erase("dmg")
+			_mem["ki"] = int(_mem["ki"]) + 1
+			_next(1)
+		9:
+			if w.boss:
+				w.boss.queue_free()
+				w.boss = null
+			w.arts.clear_all()
+			w.hud.boss_bar("")
+			_note("五个 Boss 的招式、破绽、极限闪避都没问题")
+			_next_phase()
+
+
+## 丹药（代替烤肉 / 饱食度）和散魂丹：4 号位轮换、每种丹药的效果、散掉一个灵环再补上同一个位置
+func _run_pills() -> void:
+	var w := _ready_world()
+	if not w:
+		return
+	var p := w.player
+	match _step:
+		0:
+			if not _check(bool(Data.ITEMS["meat"].get("hidden", false)), "烤肉还在卖"):
+				return
+			for id in Data.PILL_ORDER:
+				Profile.items[id] = 2
+			p.select_slot(3)
+			var first := p.cur_pill()
+			p.select_slot(3)
+			if not _check(p.cur_pill() != first, "再按 4 没换丹药（%s）" % first):
+				return
+			p.soul = 1.0
+			p.eat_pill("soul_pill")
+			if not _check(p.soul > Profile.max_soul() * 0.5, "回魂丹没回灵力（%.0f）" % p.soul):
+				return
+			p.eat_pill("haste_pill")
+			p.eat_pill("guard_pill")
+			p.eat_pill("rage_pill")
+			p.eat_pill("giant_pill")
+			if not _check(p.buff("speed") >= 0.35 and p.buff("dr") >= 0.4 and p.buff("dmg") >= 0.4 and p._giant_t > 0.0, "丹药的效果不对（%s，巨灵 %.1f）" % [str(p.buffs), p._giant_t]):
+				return
+			if not _check(Profile.item_count("rage_pill") == 1, "吃了丹药没扣"):
+				return
+			_note("丹药：4 号位轮换，回魂 / 疾风 / 金刚 / 破境 / 巨灵 都生效（%s）" % str(p.buffs.keys()))
+			# 散魂丹：三个假灵环，散掉第二个，再补上
+			_mem["saved"] = [Profile.rings.duplicate(true), Profile.skill_slots.duplicate(), Profile.level, Profile.ring_hole]
+			Profile.rings = [{"age": 0, "skill": "lyc_root", "beast": "rabbit"}, {"age": 1, "skill": "lyc_mark", "beast": "bird"}, {"age": 1, "skill": "lyc_pull", "beast": "moth"}]
+			Profile.skill_slots = [0, 1, 2]
+			Profile.level = 35
+			Profile.ring_hole = -1
+			Profile.items["scatter_pill"] = 0
+			if not _check(Profile.remove_ring(1) != "", "没有散魂丹也能散灵环"):
+				return
+			Profile.items["scatter_pill"] = 1
+			if not _check(Profile.remove_ring(1) == "" and Profile.rings.size() == 2 and Profile.ring_hole == 1, "散灵环不对（%d 个，洞 %d）" % [Profile.rings.size(), Profile.ring_hole]):
+				return
+			if not _check(Profile.skill_slots == [0, -1, 1], "散掉以后神通槽不对（%s）" % str(Profile.skill_slots)):
+				return
+			if not _check(Profile.next_ring_index() == 1 and Profile.can_absorb(1) == "", "散掉的位置补不上（%s）" % Profile.can_absorb(1)):
+				return
+			w.rings_changed()
+			Profile.add_ring(1, "lyc_spike", "wolf")
+			if not _check(Profile.rings.size() == 3 and str(Profile.rings[1]["skill"]) == "lyc_spike" and Profile.ring_hole == -1 and Profile.skill_slots == [0, 1, 2], "补上的灵环位置不对（%s，%s）" % [str(Profile.rings), str(Profile.skill_slots)]):
+				return
+			_note("散魂丹：散掉第二灵环，猎一只补回第二灵环的位置，神通槽跟着对上")
+			var sv: Array = _mem["saved"]
+			Profile.rings = sv[0]
+			Profile.skill_slots = sv[1]
+			Profile.level = int(sv[2])
+			Profile.ring_hole = int(sv[3])
+			w.rings_changed()
+			p.select_slot(1)
+			_next_phase()
 
 
 func _run_guns2() -> void:
@@ -2625,7 +3263,7 @@ func _run_guns2() -> void:
 			_switch_to(p, "meihua")
 			_next(1)
 		1:
-			# 梅花袖箭：扣一下出三箭
+			# 寒梅袖箭：扣一下出三箭
 			if _step_t < 0.6:
 				return
 			var a: Beast = _mem["dm"]["A"]
@@ -2638,15 +3276,15 @@ func _run_guns2() -> void:
 			if _step_t < 1.2:
 				return
 			var shots: int = int(_mem["mh0"]) - p.gun.ammo
-			_note("梅花袖箭扣一下出了 %d 箭，靶子掉血 %d" % [shots, int(float(_mem["hp0"]) - a.hp)])
-			if not _check(shots == 3, "梅花袖箭一次应该出 3 箭，出了 %d" % shots):
+			_note("寒梅袖箭扣一下出了 %d 箭，靶子掉血 %d" % [shots, int(float(_mem["hp0"]) - a.hp)])
+			if not _check(shots == 3, "寒梅袖箭一次应该出 3 箭，出了 %d" % shots):
 				return
-			if not _check(a.hp < float(_mem["hp0"]), "梅花袖箭没打中靶子"):
+			if not _check(a.hp < float(_mem["hp0"]), "寒梅袖箭没打中靶子"):
 				return
 			_switch_to(p, "hansha")
 			_next(2)
 		2:
-			# 含沙射影：按住越打越快
+			# 流沙机弩：按住越打越快
 			if _step_t < 0.6:
 				return
 			var a2: Beast = _mem["dm"]["A"]
@@ -2660,13 +3298,13 @@ func _run_guns2() -> void:
 				return
 			var iv1: float = p.gun.interval()
 			Input.action_release("fire")
-			_note("含沙射影：刚开火每发 %.3f 秒，转起来 %.3f 秒（转速 %.2f）" % [float(_mem["hs_iv0"]), iv1, p.gun.heat])
-			if not _check(p.gun.heat > 0.85 and iv1 < float(_mem["hs_iv0"]) * 0.6, "含沙射影没有越打越快"):
+			_note("流沙机弩：刚开火每发 %.3f 秒，转起来 %.3f 秒（转速 %.2f）" % [float(_mem["hs_iv0"]), iv1, p.gun.heat])
+			if not _check(p.gun.heat > 0.85 and iv1 < float(_mem["hs_iv0"]) * 0.6, "流沙机弩没有越打越快"):
 				return
 			_switch_to(p, "guanyin")
 			_next(3)
 		3:
-			# 观音泪：轻点一下 vs 蓄满
+			# 天心泪：轻点一下 vs 蓄满
 			if _step_t < 0.6:
 				return
 			var a3: Beast = _mem["dm"]["A"]
@@ -2705,15 +3343,15 @@ func _run_guns2() -> void:
 				return
 			Input.action_release("aim")
 			var d2 := float(_mem["gy_hp"]) - a3.hp
-			_note("观音泪：轻点 %d，蓄满（%.2f）%d" % [int(float(_mem["gy_d1"])), float(_mem["gy_full"]), int(d2)])
-			if not _check(float(_mem["gy_full"]) >= 0.99, "观音泪按住 1.3 秒没蓄满"):
+			_note("天心泪：轻点 %d，蓄满（%.2f）%d" % [int(float(_mem["gy_d1"])), float(_mem["gy_full"]), int(d2)])
+			if not _check(float(_mem["gy_full"]) >= 0.99, "天心泪按住 1.3 秒没蓄满"):
 				return
-			if not _check(float(_mem["gy_d1"]) > 0.0 and d2 > float(_mem["gy_d1"]) * 3.5, "观音泪蓄满的伤害不够（轻点 %d，蓄满 %d）" % [int(float(_mem["gy_d1"])), int(d2)]):
+			if not _check(float(_mem["gy_d1"]) > 0.0 and d2 > float(_mem["gy_d1"]) * 3.5, "天心泪蓄满的伤害不够（轻点 %d，蓄满 %d）" % [int(float(_mem["gy_d1"])), int(d2)]):
 				return
 			_switch_to(p, "zimu")
 			_next(4)
 		4:
-			# 子母追魂夺命胆：打中间那只，三只都挨炸，子胆也炸
+			# 子母雷珠：打中间那只，三只都挨炸，子胆也炸
 			if _step_t < 0.6:
 				return
 			var dm2: Dictionary = _mem["dm"]
@@ -2730,14 +3368,14 @@ func _run_guns2() -> void:
 			var lost: Array = []
 			for i in 3:
 				lost.append(int(float(hs[i]) - (dm2["B%d" % i] as Beast).hp))
-			_note("子母追魂夺命胆：三只靶子各掉 %s" % str(lost))
+			_note("子母雷珠：三只靶子各掉 %s" % str(lost))
 			for i in 3:
 				if not _check(int(lost[i]) > 0, "爆炸没炸到第 %d 只（%s）" % [i + 1, str(lost)]):
 					return
 			_switch_to(p, "longxu")
 			_next(5)
 		5:
-			# 龙须针：一针穿两只
+			# 追星针：一针穿两只
 			if _step_t < 0.6:
 				return
 			var dm3: Dictionary = _mem["dm"]
@@ -2745,24 +3383,30 @@ func _run_guns2() -> void:
 			var c1: Beast = dm3["C1"]
 			var eye := p.cam.global_position
 			_aim(p, _dummy_center(c0))
+			if not _mem.has("lx_fired"):
+				# 两只靶子排在一条线上：开枪前每帧把后面那只按住在线上（以前放下去就往下掉，偶尔打空）
+				var want := eye + (_dummy_center(c0) - eye) * 1.8
+				c1.global_position += want - _dummy_center(c1)
+				c1.linear_velocity = Vector3.ZERO
 			if not _mem.has("lx"):
-				# 两只靶子排在一条线上
-				c1.global_position = eye + (_dummy_center(c0) - eye) * 1.8 - Vector3(0, 0.35, 0)
+				# 开镜打（腰射有散布，远的那只偶尔打不到）
+				Input.action_press("aim")
 				_mem["lx"] = [c0.hp, c1.hp]
 				_mem["lx_t"] = _step_t
 				return
 			if not _mem.has("lx_fired"):
-				if _step_t - float(_mem["lx_t"]) < 0.2:
+				if _step_t - float(_mem["lx_t"]) < 0.5:
 					return
 				_mem["lx_fired"] = true
 				p.fire_buffer = 0.2
 				return
-			if _step_t - float(_mem["lx_t"]) < 0.8:
+			if _step_t - float(_mem["lx_t"]) < 1.1:
 				return
+			Input.action_release("aim")
 			var l0 := float(_mem["lx"][0]) - c0.hp
 			var l1 := float(_mem["lx"][1]) - c1.hp
-			_note("龙须针穿透：第一只掉 %d，后面那只掉 %d" % [int(l0), int(l1)])
-			if not _check(l0 > 0.0 and l1 > 0.0, "龙须针没有穿透两只"):
+			_note("追星针穿透：第一只掉 %d，后面那只掉 %d" % [int(l0), int(l1)])
+			if not _check(l0 > 0.0 and l1 > 0.0, "追星针没有穿透两只"):
 				return
 			_next(6)
 		6:
@@ -2770,7 +3414,7 @@ func _run_guns2() -> void:
 			var r0 := float(Profile.weapon_stats("kongque")["reload"])
 			var lv := Profile.add_mastery("kongque", 400)
 			var r1 := float(Profile.weapon_stats("kongque")["reload"])
-			_note("孔雀翎熟练度 → %d 级，换弹 %.2f → %.2f 秒" % [Profile.mastery_level("kongque"), r0, r1])
+			_note("流光翎熟练度 → %d 级，换弹 %.2f → %.2f 秒" % [Profile.mastery_level("kongque"), r0, r1])
 			if not _check(lv >= 3 and r1 < r0, "熟练度升级没有加成"):
 				return
 			if not _check(Profile.owns_skin("kongque", "steel") and not Profile.owns_skin("zhuge", "steel"), "熟练度皮肤应该只给练到的那把"):
@@ -2780,7 +3424,7 @@ func _run_guns2() -> void:
 				if not _check(Profile.buy_attach("kongque", a), "买不了配件 %s" % a):
 					return
 			var st := Profile.weapon_stats("kongque")
-			_note("孔雀翎装扩容弹匣 + 轻型枪托 + 消音器：弹匣 %d，开镜 %.2f 秒，消音 %s" % [int(st["mag"]), float(st["ads_time"]), str(st.get("quiet", false))])
+			_note("流光翎装扩容弹匣 + 轻型枪托 + 消音器：弹匣 %d，开镜 %.2f 秒，消音 %s" % [int(st["mag"]), float(st["ads_time"]), str(st.get("quiet", false))])
 			if not _check(int(st["mag"]) == int(round(float(base["mag"]) * 1.5)) and float(st["ads_time"]) < float(base["ads_time"]) and bool(st.get("quiet", false)), "新配件数值不对"):
 				return
 			w.on_attach_changed()
@@ -3033,7 +3677,7 @@ func _run_vm() -> void:
 				_next(0)
 
 
-# ------------------------------------------------------------------ 把所有魂兽模型摆成一排看朝向和大小
+# ------------------------------------------------------------------ 把所有灵兽模型摆成一排看朝向和大小
 
 func _setup_zoo() -> void:
 	var root := Node3D.new()

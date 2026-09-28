@@ -2,19 +2,19 @@ class_name Boss
 extends Node3D
 ## Boss：房主算 AI 和血量，客人按快照插值显示。模型和数值在 Data.BOSSES 里。
 ##
-## ai = water（千年曼陀罗蛇、深海魔鲸）：待在水里，头露出水面。
+## ai = water（千年碧鳞蛇、玄鲲）：待在水里，头露出水面。
 ##   喷毒 —— 毒液落地变成毒池；尾巴砸 —— 地上先出红圈，1.3 秒后砸下；
 ##   潜水 —— 沉下去，从玩家附近的水里跃出；半血以下召唤小怪
-## ai = land（人面魔蛛、泰坦巨猿）：在空地上绕着玩家走。
+## ai = land（千目蛛母、朱厌）：在空地上绕着玩家走。
 ##   吐网 / 扔石头；跳砸 —— 红圈预警后跳过来；喷毒；半血以下更快
-## ai = air（冰霜巨龙）：在天上盘旋。
+## ai = air（冰螭）：在天上盘旋。
 ##   冰息 —— 冻住的地方会减速；俯冲 —— 红圈预警后冲下来；半血以下召唤雪原狼
 ## 打头是弱点，伤害 ×1.7；打身体 ×0.6
 ##
 ## 受击体积：按模型真实的包围盒做一个身体盒子 + 头上一个弱点球（Data.BOSSES 的 weak 是头在包围盒里的位置）。
-## 魂技按"离身体表面多远"算，不按中心算，不然大 Boss 根本打不到。
+## 神通按"离身体表面多远"算，不按中心算，不然大 Boss 根本打不到。
 ## 仇恨：只打附近 90 米内、没隐身、没刚复活的玩家；没人可打一段时间就慢慢回血。
-## 外观：身上有流动的金色能量和边缘光、四个魂环、背后的圣光光轮、天上照下来的光柱、金色光点。
+## 外观：身上有流动的金色能量和边缘光、四个灵环、背后的圣光光轮、天上照下来的光柱、金色光点。
 
 const INTERP_DELAY := 0.1
 
@@ -67,6 +67,12 @@ var _since_hit := 99.0
 var _custom := false              # 用的是玩家自己放的模型（有真贴图，不压暗）            # 多久没挨打了：远处狙击也算在打它，不会回血
 var _soul_rings: Array = []
 var _pillar: MeshInstance3D
+# 第十三版：每个 Boss 自己一套招式（零件在 world.arts，BossArts）
+var stun_t := 0.0                # 露出破绽还剩几秒（房主）：不动不出招，打头伤害翻倍
+var stun_vis := 0.0              # 大家都有：画破绽用
+var _act := {}                   # 正在做的大动作：冲锋 / 爬高落下 / 俯冲
+var _busy := 0.0                 # 这一招还要多久才出下一招
+var _stun_after := 0.0           # 潜水扑出来落地以后露破绽几秒
 
 const HOLY_SHADER := """shader_type spatial;
 render_mode unshaded, blend_add, depth_draw_never, cull_back, shadows_disabled;
@@ -112,6 +118,10 @@ func setup(p_world: Node, p_kind: String, p_hp: float, p_proxy: bool, anchor: Ve
 	hp = p_hp
 	_anchor = anchor
 	name = "Boss"
+	# 以前各种 Boss 共用的普通攻击（吐口水、跳砸、定时潜水）不用了，出招全在 _moves 里按 Boss 分
+	_atk_cd = 1e9
+	_dive_cd = 1e9
+	_sp_cd = 3.0
 	_build()
 
 
@@ -202,7 +212,7 @@ func _build() -> void:
 
 ## 让 Boss 看起来威猛、有神圣感：
 ##   材质变暗、更有光泽，外面再叠一层流动的金色能量 + 边缘光（HOLY_SHADER）；
-##   一个加粗发亮的年份魂环（魂兽只有一个魂环）；头后面一圈圣光光轮；天上照下来一道光柱；金色光点往上飘；眼睛发光
+##   一个加粗发亮的年份灵环（灵兽只有一个灵环）；头后面一圈圣光光轮；天上照下来一道光柱；金色光点往上飘；眼睛发光
 func _decorate() -> void:
 	var holy := ShaderMaterial.new()
 	holy.shader = Shader.new()
@@ -236,7 +246,7 @@ func _decorate() -> void:
 			mi.set_surface_override_material(i, m)
 	var c := _box.get_center()
 	var big := maxf(size.x, size.z)
-	# 魂兽只有一个魂环（代表它的年份）：就是 _build 里那一圈，这里只把它加粗、加亮
+	# 灵兽只有一个灵环（代表它的年份）：就是 _build 里那一圈，这里只把它加粗、加亮
 	var ring0 := head.get_node("Ring") as MeshInstance3D
 	var rr0 := big * 0.6
 	ring0.mesh = U.torus(rr0 - 0.3, rr0 + 0.3, 96, 10)
@@ -332,6 +342,9 @@ func take_hit(dmg: float, weak: bool, shooter: int) -> float:
 	if dead:
 		return 0.0
 	var real := dmg * (1.7 if weak else 0.6) * (_mark_mult if _mark_t > 0.0 else 1.0)
+	# 露出破绽：打头 ×2，打身子 ×1.3
+	if stun_t > 0.0:
+		real *= 2.0 if weak else 1.3
 	hp -= real
 	_since_hit = 0.0
 	damagers[shooter] = float(damagers.get(shooter, 0.0)) + real
@@ -468,6 +481,17 @@ func _think(dt: float) -> void:
 	state_t += dt
 	_since_hit += dt
 	_mark_t = maxf(_mark_t - dt, 0.0)
+	# 露出破绽：趴着 / 浮着不动，不出招
+	if stun_t > 0.0:
+		stun_t -= dt
+		if stun_t <= 0.0:
+			_sp_cd = maxf(_sp_cd, 1.2)
+			BeastModels.play_role(model, "attack")
+		return
+	# 冲锋、爬高落下、俯冲这些大动作自己管位置
+	if not _act.is_empty():
+		_act_tick(dt)
+		return
 	if _targets().is_empty():
 		# 没人可打：脱战，慢慢回血（打死人以后复活回来不会一直被追着打）。
 		# 远处还有人在打它（狙击）就不算脱战，不回血
@@ -491,58 +515,363 @@ func _think(dt: float) -> void:
 			_think_land(dt, speed_k)
 
 
-## 新招式（学黑神话 / 艾尔登法环）：看起手、踩节奏翻滚才能躲
-##   延迟重击：起手时长不固定，红圈只在最后 0.35 秒出现
-##   冲击环：脚下扩散的红墙，跳过去或者翻滚穿过去（二阶段连着两圈）
-##   连扫：三～四下扇形横扫，每一下都重新对准人
-##   全场大招（二阶段）：一大片都砸，只有几个绿圈安全
+## 第十三版：每个 Boss 自己一套招式（用户："最后的 Boss 和第一个用的技能一样、特效也没变，完全就是数值；借鉴鬼泣"）。
+## 招式零件在 world.arts（BossArts）；这里决定什么时候出哪一招。一招出完 _busy 秒内不出下一招；
+## 二阶段（半血）多几招、出得更快。大动作（冲锋、潜水突袭、从天而降、俯冲）结束会露出破绽：打头伤害翻倍。
+##   碧鳞蛇（毒）：毒雾横扫、三连毒液、缠绕、潜水突袭（落地破绽）｜二阶段：来回横扫、毒沼
+##   千目蛛母（蛛丝）：蛛丝弹幕、毒牙扑咬、从天而降（破绽）、子蛛｜二阶段：连扑、蛛网牢笼（只有中间安全）
+##   朱厌（岩石）：巨岩连投、蛮牛冲锋（撞完破绽 3 秒）、震地三连、左右双拳｜二阶段：落石雨、连冲两次
+##   冰螭（冰）：冰息扫射、冰锥螺旋、贴地俯冲（破绽）、冰晶追身｜二阶段：寒潮（躲进绿圈）
+##   玄鲲（水）：海啸（找缺口）、漩涡、跃海冲击（破绽）、水柱追身｜二阶段：深渊凝视（扫射）、海啸加水柱一起来
+const STYLE_OF := {"mandala": "poison", "spider": "silk", "titan": "rock", "icedragon": "ice", "whale": "water"}
+
+
+func _style() -> String:
+	return str(STYLE_OF.get(kind, "fire"))
+
+
 func _moves(dt: float) -> void:
 	_sp_cd -= dt
 	_ult_cd -= dt
-	var h := head.global_position
-	var o := Vector3(h.x, world.island.height_at(h.x, h.z), h.z)
-	if _combo_n > 0:
-		_combo_t -= dt
-		if _combo_t <= 0.0:
-			_combo_t = 0.75 if phase == 1 else 0.6
-			_combo_n -= 1
-			var tp := _target_by_peer(_combo_peer)
-			if not tp.is_empty():
-				world.boss_cone(o, (tp["pos"] as Vector3) - o, deg_to_rad(38.0), 12.0 + maxf(size.x, size.z) * 0.6, 0.5, 30.0)
-				BeastModels.play_role(model, "attack")
+	_busy = maxf(_busy - dt, 0.0)
+	if _busy > 0.0 or state != "idle":
 		return
-	if state != "idle" and state != "dive_attack":
-		return
-	if phase == 2 and (_ult_ready or _ult_cd <= 0.0):
+	if phase == 2 and kind in ["icedragon", "whale"] and (_ult_ready or _ult_cd <= 0.0):
 		_ult_ready = false
-		_ult_cd = 45.0
+		_ult_cd = 50.0
 		_ultimate()
+		_busy = 5.5
 		return
 	if _sp_cd > 0.0:
 		return
-	_sp_cd = randf_range(6.0, 9.0) if phase == 1 else randf_range(4.0, 6.0)
-	_atk_cd = maxf(_atk_cd, 2.0)
-	var tp2 := _pick_target()
-	if tp2.is_empty():
+	var tp := _pick_target()
+	if tp.is_empty():
 		return
-	var r := randf()
-	if r < 0.35:
-		world.boss_shockwave(o, 42.0, 11.0 if phase == 1 else 14.0, 26.0)
-		BeastModels.play_role(model, "attack")
-		if phase == 2:
-			get_tree().create_timer(0.9).timeout.connect(func():
-				if not dead:
-					world.boss_shockwave(o, 42.0, 14.0, 26.0))
-	elif r < 0.7:
-		var delay := randf_range(1.0, 2.0)
-		world.boss_telegraph(tp2["pos"], 5.5, delay, 42.0, "slam", h, true)
-		get_tree().create_timer(delay - 0.2).timeout.connect(func():
-			if not dead:
-				BeastModels.play_role(model, "attack"))
-	else:
-		_combo_n = 3 if phase == 1 else 4
-		_combo_t = 0.3
-		_combo_peer = int(tp2["peer"])
+	var h := head.global_position
+	var o := Vector3(h.x, world.island.height_at(h.x, h.z), h.z)
+	var t: Vector3 = tp["pos"]
+	var peer := int(tp["peer"])
+	BeastModels.play_role(model, "attack")
+	match kind:
+		"spider":
+			_art_spider(o, t, peer)
+		"titan":
+			_art_titan(o, t, peer)
+		"icedragon":
+			_art_dragon(o, t, peer)
+		"whale":
+			_art_whale(o, t, peer)
+		_:
+			_art_mandala(o, t, peer)
+	# 两招之间喘口气（二阶段短一点）
+	_sp_cd = randf_range(1.0, 2.0) * (1.0 if phase == 1 else 0.6)
+
+
+var force_art := ""              # 自动测试：指定下一招
+
+
+## 按权重挑一招：opts = [[名字, 权重], ...]
+func _pick(opts: Array) -> String:
+	if force_art != "":
+		var f := force_art
+		force_art = ""
+		for e in opts:
+			if str(e[0]) == f:
+				return f
+	var total := 0.0
+	for e in opts:
+		total += float(e[1])
+	var r := randf() * total
+	for e in opts:
+		r -= float(e[1])
+		if r <= 0.0:
+			return str(e[0])
+	return str(opts[0][0])
+
+
+## 过一会儿再做（Boss 死了就不做）
+func _later(sec: float, f: Callable) -> void:
+	var tw := create_tween()
+	tw.tween_interval(maxf(sec, 0.01))
+	tw.tween_callback(func():
+		if not dead and is_instance_valid(world):
+			f.call())
+
+
+## 这个人现在在哪（走了就用 fallback）
+func _peer_pos_or(peer: int, fallback: Vector3) -> Vector3:
+	for p in _targets():
+		if int(p["peer"]) == peer:
+			return p["pos"]
+	return fallback
+
+
+func _yaw_to(o: Vector3, p: Vector3) -> float:
+	return atan2(p.x - o.x, p.z - o.z)
+
+
+## 冲过去：地上先出一条直线预警，delay 秒后 Boss 沿着冲（冲击跟着走）；stun > 0 冲完露破绽；again = 冲完马上再冲一次
+func _lunge(o: Vector3, t: Vector3, delay: float, speed: float, dmg: float, width: float, stun: float, again := false) -> void:
+	var dir := Vector3(t.x - o.x, 0, t.z - o.z)
+	var dist := dir.length()
+	dir = dir.normalized() if dist > 0.5 else -head.global_basis.z
+	var length := clampf(dist + 9.0, 14.0, 42.0)
+	# 别冲出场地太远（地上的 Boss 在老窝 34 米内活动）
+	var end := o + dir * length
+	var an := Vector3(_anchor.x, 0, _anchor.z)
+	var ec := Vector3(end.x, 0, end.z)
+	if ai == "land" and ec.distance_to(an) > 34.0:
+		ec = an + (ec - an).limit_length(34.0)
+		length = maxf(Vector3(ec.x - o.x, 0, ec.z - o.z).length(), 10.0)
+	world.arts.lane(o, dir, length, width, delay, dmg, _style(), speed)
+	_act = {"type": "charge", "t": 0.0, "from": head.global_position, "dir": dir, "len": maxf(length - 2.0, 4.0), "delay": delay,
+		"speed": speed, "dmg": dmg, "width": width, "stun": stun, "again": again}
+	_busy = 0.6
+
+
+## 大动作：冲锋 / 俯冲（charge）、爬到高处再砸下来（climb）
+func _act_tick(dt: float) -> void:
+	_act["t"] = float(_act["t"]) + dt
+	var t := float(_act["t"])
+	match str(_act["type"]):
+		"charge":
+			var from: Vector3 = _act["from"]
+			var dir: Vector3 = _act["dir"]
+			var delay := float(_act["delay"])
+			if t < delay:
+				# 蓄力：往后缩一点，盯着冲的方向
+				_face_toward(head.global_position + dir * 10.0, dt * 4.0)
+				var back := from - dir * sin(t / delay * PI * 0.5) * 1.5
+				head.global_position = Vector3(back.x, head.global_position.y, back.z)
+				return
+			var k := clampf((t - delay) * float(_act["speed"]) / float(_act["len"]), 0.0, 1.0)
+			var p := from + dir * float(_act["len"]) * k
+			var g := maxf(world.island.height_at(p.x, p.z), Island.WATER_Y)
+			match ai:
+				"air":
+					p.y = g + size.y * 0.45 + 1.0
+				"water":
+					p.y = head.global_position.y
+				_:
+					p.y = world.island.height_at(p.x, p.z) + _hover()
+			head.global_position = head.global_position.lerp(p, 1.0 - exp(-18.0 * dt))
+			_face_toward(p + dir * 10.0, dt * 4.0)
+			if k >= 1.0:
+				var st := float(_act["stun"])
+				var again := bool(_act["again"])
+				var a := _act
+				_act = {}
+				if again:
+					var tp := _pick_target()
+					if not tp.is_empty():
+						var h := head.global_position
+						_lunge(Vector3(h.x, world.island.height_at(h.x, h.z), h.z), tp["pos"], 0.55, float(a["speed"]), float(a["dmg"]), float(a["width"]), maxf(st, 2.5), false)
+						return
+				if st > 0.0:
+					world.arts.stun(self, st)
+					world.fx.slam(Vector3(head.global_position.x, g, head.global_position.z), 6.0)
+				_busy = 0.8
+		"climb":
+			# 千目蛛母：爬到高处（1 秒）→ 地上出圈跟着人（圈定了就不动）→ 砸下来 → 腿陷进蛛网里露破绽
+			var at: Vector3 = _act["at"]
+			var gy: float = world.island.height_at(at.x, at.z)
+			if t < 1.0:
+				var h0 := head.global_position
+				head.global_position = Vector3(h0.x, lerpf(h0.y, gy + 36.0, 1.0 - exp(-4.0 * dt)), h0.z)
+				return
+			if not _act.has("marked"):
+				_act["marked"] = true
+				at = _peer_pos_or(int(_act["peer"]), at)
+				_act["at"] = at
+				world.arts.circle(at, 7.0, 1.7, 45.0, "silk")
+				return
+			if t < 2.45:
+				var hp2 := head.global_position
+				head.global_position = hp2.lerp(Vector3(at.x, gy + 36.0, at.z), 1.0 - exp(-5.0 * dt))
+				return
+			if t < 2.7:
+				var k2 := (t - 2.45) / 0.25
+				head.global_position = Vector3(at.x, lerpf(gy + 36.0, gy + _hover(), k2 * k2), at.z)
+				return
+			head.global_position = Vector3(at.x, gy + _hover(), at.z)
+			_act = {}
+			world.arts.stun(self, float(2.5))
+			_busy = 0.8
+
+
+# ------------------------------------------------------------------ 五个 Boss 的招式
+
+func _art_mandala(o: Vector3, t: Vector3, peer: int) -> void:
+	var A: BossArts = world.arts
+	var yaw := _yaw_to(o, t)
+	var opts: Array = [["sweep", 3.0], ["spit", 2.0], ["coil", 2.0], ["dive", 1.5]]
+	if phase == 2:
+		opts.append_array([["sweep2", 2.5], ["swamp", 2.0]])
+	match _pick(opts):
+		"sweep":
+			var s := 1.0 if randf() < 0.5 else -1.0
+			A.sweep(o, yaw - 1.05 * s, yaw + 1.05 * s, 26.0, 0.12, 1.1, 1.0, 28.0, "poison")
+			_busy = 2.4
+		"sweep2":
+			A.sweep(o, yaw - 1.1, yaw + 1.1, 26.0, 0.12, 1.0, 0.9, 28.0, "poison")
+			_later(1.6, func(): A.sweep(o, yaw + 1.1, yaw - 1.1, 26.0, 0.12, 0.45, 0.9, 28.0, "poison"))
+			_busy = 3.4
+		"spit":
+			for i in 3:
+				_later(i * 0.35 + 0.05, func():
+					var q := _peer_pos_or(peer, t) + Vector3(randf_range(-2.0, 2.0), 0, randf_range(-2.0, 2.0))
+					world.boss_projectile("spit", _mouth(), q, 1.1, 3.2, 14.0 * world.boss_mult()))
+			_busy = 1.8
+		"coil":
+			# 缠绕：一大圈藤蔓，1.5 秒内冲出去
+			A.circle(t, 6.5, 1.5, 30.0, "poison")
+			_later(1.45, func(): world.fx.vines(t, 6.5, BossArts.col("poison"), 16))
+			_busy = 1.8
+		"dive":
+			_stun_after = 2.5
+			_set_state("dive")
+			_busy = 0.5
+		"swamp":
+			var pts: Array = []
+			for i in 6:
+				var a := randf() * TAU
+				pts.append([t + Vector3(cos(a), 0, sin(a)) * randf_range(0.0, 8.0), 1.0 + i * 0.22])
+			A.rain(pts, 3.6, 26.0, "poison")
+			_busy = 2.6
+
+
+func _art_spider(o: Vector3, t: Vector3, peer: int) -> void:
+	var A: BossArts = world.arts
+	var opts: Array = [["web", 2.5], ["lunge", 3.0], ["drop", 1.6], ["brood", 1.0]]
+	if phase == 2:
+		opts.append_array([["lunge2", 2.0], ["cage", 1.6]])
+	match _pick(opts):
+		"web":
+			var pts: Array = []
+			for i in 7:
+				var a := randf() * TAU
+				pts.append([t + Vector3(cos(a), 0, sin(a)) * randf_range(0.0, 9.0), 0.8 + i * 0.14])
+			A.rain(pts, 2.8, 22.0, "silk")
+			_busy = 2.0
+		"lunge":
+			_lunge(o, t, 0.8, 30.0, 34.0, 5.0, 0.0)
+		"lunge2":
+			_lunge(o, t, 0.7, 32.0, 34.0, 5.0, 2.0, true)
+		"drop":
+			_act = {"type": "climb", "t": 0.0, "peer": peer, "at": t}
+			_busy = 0.5
+		"brood":
+			world.boss_summon(self, "spiderling", 2 if phase == 1 else 3)
+			A.circle(t, 4.0, 1.2, 22.0, "silk")
+			_busy = 1.5
+		"cage":
+			# 蛛网牢笼：一圈蛛丝砸在身边，只有正中间安全——站着别动
+			var pts2: Array = []
+			var a0 := randf() * TAU
+			for i in 12:
+				var a2 := a0 + TAU * i / 12.0
+				pts2.append([t + Vector3(cos(a2), 0, sin(a2)) * randf_range(5.5, 8.5), 1.3 + (i % 3) * 0.12])
+			A.rain(pts2, 3.4, 30.0, "silk")
+			if peer == Net.my_id:
+				world.hud.toast("蛛网牢笼——站在正中间别动！", Color(0.95, 0.95, 1.0), 2.0)
+			else:
+				Net.send(peer, "hint", ["蛛网牢笼——站在正中间别动！"])
+			_busy = 2.6
+
+
+func _art_titan(o: Vector3, t: Vector3, peer: int) -> void:
+	var A: BossArts = world.arts
+	var opts: Array = [["rocks", 2.5], ["charge", 2.5], ["quake", 2.0], ["fists", 2.5]]
+	if phase == 2:
+		opts.append_array([["rockrain", 2.0], ["charge2", 2.0]])
+	match _pick(opts):
+		"rocks":
+			# 三块石头，节奏不一样：躲完第一块别松劲
+			for d in [0.05, 0.6, 1.35]:
+				_later(float(d), func():
+					var q := _peer_pos_or(peer, t) + Vector3(randf_range(-1.5, 1.5), 0, randf_range(-1.5, 1.5))
+					world.boss_projectile("rock", _mouth() + Vector3(0, 1, 0), q, 1.1, 3.0, 26.0 * world.boss_mult()))
+			_busy = 2.0
+		"charge":
+			_lunge(o, t, 1.3, 26.0, 45.0, 7.0, 3.0)
+		"charge2":
+			_lunge(o, t, 1.1, 30.0, 45.0, 7.0, 3.0, true)
+		"quake":
+			for i in 3:
+				_later(i * 0.8 + 0.05, func(): world.boss_shockwave(o, 36.0, 12.0, 24.0 * world.boss_mult()))
+			_busy = 2.8
+		"fists":
+			# 左右两拳：圈最后 0.4 秒才出来，看它抬手
+			var side := Vector3(t.z - o.z, 0, -(t.x - o.x)).normalized()
+			A.circle(t + side * 2.5, 5.0, 1.2, 40.0, "rock", true)
+			A.circle(t - side * 2.5, 5.0, 1.75, 40.0, "rock", true)
+			_busy = 2.1
+		"rockrain":
+			var pts: Array = []
+			for i in 14:
+				var a := randf() * TAU
+				pts.append([t + Vector3(cos(a), 0, sin(a)) * randf_range(0.0, 16.0), 0.8 + randf() * 2.2])
+			A.rain(pts, 3.0, 30.0, "rock")
+			_busy = 3.2
+
+
+func _art_dragon(o: Vector3, t: Vector3, peer: int) -> void:
+	var A: BossArts = world.arts
+	var yaw := _yaw_to(o, t)
+	var opts: Array = [["breath", 3.0], ["spiral", 2.5], ["swoop", 2.0], ["shards", 2.0]]
+	match _pick(opts):
+		"breath":
+			var s := 1.0 if randf() < 0.5 else -1.0
+			A.sweep(o, yaw - 1.2 * s, yaw + 1.2 * s, 38.0, 0.1, 1.3, 1.5, 36.0, "ice")
+			_busy = 3.0
+		"spiral":
+			# 冰锥螺旋：从人脚下往外一圈圈扎出来
+			var pts: Array = []
+			var a0 := randf() * TAU
+			var sgn := 1.0 if randf() < 0.5 else -1.0
+			for i in 16:
+				var a := a0 + i * 0.75 * sgn
+				var rr := 1.5 + i * 0.75
+				pts.append([t + Vector3(cos(a), 0, sin(a)) * rr, 0.8 + i * 0.12])
+			A.rain(pts, 2.6, 26.0, "ice")
+			_busy = 2.8
+		"swoop":
+			_lunge(o, t, 1.4, 38.0, 48.0, 8.0, 2.5)
+		"shards":
+			A.chase(peer, 5, 0.45, 3.2, 0.8, 24.0, "ice")
+			_busy = 2.8
+
+
+func _art_whale(o: Vector3, t: Vector3, peer: int) -> void:
+	var A: BossArts = world.arts
+	var yaw := _yaw_to(o, t)
+	var dir := Vector3(t.x - o.x, 0, t.z - o.z).normalized()
+	var opts: Array = [["tsunami", 2.0], ["vortex", 1.6], ["breach", 1.6], ["geyser", 2.5]]
+	if phase == 2:
+		opts.append_array([["gaze", 2.5], ["storm", 1.6]])
+	match _pick(opts):
+		"tsunami":
+			A.wall(t - dir * 38.0, dir, 42.0, 12.0, 70.0, randf_range(-18.0, 18.0), 7.5, 55.0, "water", 1.6)
+			_busy = 4.0
+		"vortex":
+			A.vortex(t.lerp(o, 0.25), 16.0, 6.0, 16.0, 4.5, 30.0, "water")
+			A.chase(peer, 3, 0.8, 3.2, 0.9, 28.0, "water")
+			_busy = 3.2
+		"breach":
+			_stun_after = 2.0
+			_set_state("dive")
+			_busy = 0.5
+		"geyser":
+			A.chase(peer, 6, 0.4, 3.4, 0.75, 30.0, "water")
+			_busy = 2.8
+		"gaze":
+			var s := 1.0 if randf() < 0.5 else -1.0
+			A.sweep(o, yaw - 1.4 * s, yaw + 1.4 * s, 50.0, 0.08, 1.4, 1.8, 50.0, "water")
+			_busy = 3.6
+		"storm":
+			A.wall(t - dir * 38.0, dir, 42.0, 11.0, 70.0, randf_range(-18.0, 18.0), 8.0, 55.0, "water", 1.8)
+			_later(1.0, func(): A.chase(peer, 5, 0.5, 3.2, 0.8, 28.0, "water"))
+			_busy = 4.5
 
 
 func _target_by_peer(peer: int) -> Dictionary:
@@ -573,7 +902,7 @@ func _ultimate() -> void:
 				break
 	if safes.is_empty():
 		safes.append(c)
-	world.boss_ultimate(c, 32.0, safes, 4.0, 70.0)
+	world.boss_ultimate(c, 32.0, safes, 4.0, 70.0 * world.boss_mult())
 	BeastModels.play_role(model, "attack")
 	# 放大招的这几秒不出别的招：躲进绿圈就一定安全
 	_sp_cd = 6.5
@@ -641,7 +970,8 @@ func _think_water(dt: float, speed_k: float) -> void:
 					pos = world.water_point_near(tp["pos"])
 				head.global_position = Vector3(pos.x, _anchor.y - size.y, pos.z)
 				_move_to = pos
-				world.boss_telegraph(Vector3(pos.x, 0.0, pos.z), 6.5 + size.z * 0.15, 1.3, 30.0, "leap", pos)
+				# 水面先冒泡（圈），1.3 秒后从水里扑出来
+				world.arts.circle(Vector3(pos.x, 0.0, pos.z), 6.5 + size.z * 0.15, 1.3, 30.0 if kind == "mandala" else 52.0, _style())
 				_set_state("leap")
 		"leap":
 			if state_t > 1.2:
@@ -650,6 +980,15 @@ func _think_water(dt: float, speed_k: float) -> void:
 				_anchor = Vector3(head.global_position.x, _anchor.y, head.global_position.z)
 				_set_state("idle")
 				_move_to = _patrol_point()
+				# 玄鲲落回水里：两圈浪
+				if kind == "whale":
+					var hp3 := head.global_position
+					world.boss_shockwave(Vector3(hp3.x, 0.0, hp3.z), 40.0, 13.0, 30.0 * world.boss_mult())
+					_later(0.7, func(): world.boss_shockwave(Vector3(hp3.x, 0.0, hp3.z), 40.0, 15.0, 30.0 * world.boss_mult()))
+				# 扑出来以后搁浅：露破绽
+				if _stun_after > 0.0:
+					world.arts.stun(self, _stun_after)
+					_stun_after = 0.0
 
 
 func _patrol_point() -> Vector3:
@@ -682,7 +1021,9 @@ func _think_land(dt: float, speed_k: float) -> void:
 			var want := dir * (1.0 if dist > keep + 4.0 else (-1.0 if dist < keep else 0.0)) + side * 0.6
 			var np := h + want.normalized() * 4.5 * speed_k * dt
 			var c := Vector3(_anchor.x, 0, _anchor.z)
-			if Vector3(np.x, 0, np.z).distance_to(c) < 30.0:
+			# 在老窝 30 米内活动；冲锋冲出去了也能走回来
+			var nd := Vector3(np.x, 0, np.z).distance_to(c)
+			if nd < 30.0 or nd < Vector3(h.x, 0, h.z).distance_to(c):
 				head.global_position = Vector3(np.x, world.island.height_at(np.x, np.z) + off, np.z)
 			_face_toward(tp["pos"], dt)
 			if _atk_cd <= 0.0:
@@ -823,7 +1164,7 @@ func _update_visual(dt: float) -> void:
 	BeastModels._animate_model(model, airborne, _speed, "fly" if ai == "air" else "run")
 	for b in parts:
 		b.global_transform = head.global_transform * Transform3D(Basis(), b.get_meta("offset") as Vector3)
-	# 魂环、光轮、光柱
+	# 灵环、光轮、光柱
 	for i in _soul_rings.size():
 		var sr: Node3D = _soul_rings[i]
 		sr.rotation = Vector3(sin(_t * 0.6 + i) * 0.12, _t * (0.5 + i * 0.15) * (1.0 if i % 2 == 0 else -1.0), cos(_t * 0.5 + i) * 0.12)

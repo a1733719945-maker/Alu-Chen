@@ -1,14 +1,14 @@
 class_name Combo
 extends Node
-## 猎魂连击 + 武魂真身（第九版，用户说"单纯打打打刷怪，很容易疲倦"）。
+## 猎灵连击 + 灵相真身（第九版，用户说"单纯打打打刷怪，很容易疲倦"）。
 ##
 ## 连击：打得漂亮就拿得多，不是比谁刷得多。
 ##   空中命中 +1（爆头再 +1），地上命中只 +0.25，空中击杀 +4，地上击杀 +1.5。
-##   3 秒没加分就断（武魂真身时 5 秒）。评级 D → C → B → A → S → SS → SSS，
-##   评级越高金魂币和修为越多（最高 ×2.5），命中音调跟着连击往上走，升评级屏幕一闪；S 以上队友也看得到。
-## 武魂真身（原著的大招）：连击给它充能，满了按 Z 变身 12 秒——伤害 +120%、子弹不耗、跑得快，
-##   天上显现武魂法相，身边 25 米的队友伤害 +30%。结束时一圈冲击波。
-## 第十版：武魂真身关掉了（用户说"这和魂技有任何差别吗"），连击只留评级和奖励倍数。
+##   3 秒没加分就断（灵相真身时 5 秒）。评级 D → C → B → A → S → SS → SSS，
+##   评级越高灵石和修为越多（最高 ×2.5），命中音调跟着连击往上走，升评级屏幕一闪；S 以上队友也看得到。
+## 灵相真身：连击给它充能，满了按 Z 变身 12 秒——伤害 +120%、子弹不耗、跑得快，
+##   天上显现灵相法相，身边 25 米的队友伤害 +30%。结束时一圈冲击波。
+## 第十版：灵相真身关掉了（用户说"这和神通有任何差别吗"），连击只留评级和奖励倍数。
 ##   TRUE_BODY 改回 true 就能打开。
 
 const TRUE_BODY := false
@@ -36,8 +36,8 @@ var points := 0.0                  # 连击分
 var hits := 0                      # 连击数（显示用）
 var since := 99.0                  # 离上次加分多久
 var best_rank := 0                 # 这一串到过的最高评级
-var meter := 0.0                   # 武魂真身充能 0..1
-var tb_t := 0.0                    # 武魂真身剩余时间
+var meter := 0.0                   # 灵相真身充能 0..1
+var tb_t := 0.0                    # 灵相真身剩余时间
 var _ready_told := false
 
 
@@ -72,7 +72,7 @@ func _add(p: float, count := true) -> void:
 		meter = minf(meter + p * TB_PER_POINT, 1.0)
 		if meter >= 1.0 and not _ready_told:
 			_ready_told = true
-			world.hud.toast("武魂真身 · 充能完毕，按 Z 变身", UiKit.GOLD, 3.5)
+			world.hud.toast("灵相真身 · 充能完毕，按 Z 变身", UiKit.GOLD, 3.5)
 			Sfx.play("level_up", -6.0, 0.0, 1.3)
 	var r := rank()
 	if r > before:
@@ -83,7 +83,7 @@ func _add(p: float, count := true) -> void:
 			Net.send(0, "crank", [Settings.display_name(), r])
 
 
-## 暗器 / 拳头打中魂兽
+## 暗器 / 拳头打中灵兽
 func hit(air: bool, head: bool) -> void:
 	_add((1.0 + (1.0 if head else 0.0)) if air else (0.25 + (0.25 if head else 0.0)))
 
@@ -128,7 +128,7 @@ func activate() -> void:
 	var p: Player = world.player
 	if meter < 1.0 or active() or p == null or p.dead:
 		if meter < 1.0 and not active():
-			world.hud.toast("武魂真身还没充满：连击越高充得越快", Color(0.85, 0.85, 0.9), 2.0)
+			world.hud.toast("灵相真身还没充满：连击越高充得越快", Color(0.85, 0.85, 0.9), 2.0)
 		return
 	tb_t = TB_TIME
 	_ready_told = false

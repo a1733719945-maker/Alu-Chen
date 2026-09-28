@@ -22,9 +22,9 @@ var reload_total := 0.0
 var cycling := 0.0               # 拉栓剩余时间
 var burst_left := 0              # 三连发还剩几箭没出
 var burst_t := 0.0               # 离下一箭还有多久
-var charge := 0.0                # 蓄力进度 0~1（观音泪）
+var charge := 0.0                # 蓄力进度 0~1（天心泪）
 var charge_full := false
-var heat := 0.0                  # 转速 0~1（含沙射影：越打越快）
+var heat := 0.0                  # 转速 0~1（流沙机弩：越打越快）
 var _pattern: Array = []
 
 
@@ -53,7 +53,7 @@ func charge_mult() -> float:
 	return lerpf(1.0, float(d.get("charge_k", 1.0)), charge)
 
 
-## 每帧更新。speed_k 是换弹速度加成（增幅魂技）。返回事件列表（给音效、动画用）
+## 每帧更新。speed_k 是换弹速度加成（增幅神通）。返回事件列表（给音效、动画用）
 func update(dt: float, speed_k := 1.0) -> Array:
 	var ev: Array = []
 	fire_cd -= dt

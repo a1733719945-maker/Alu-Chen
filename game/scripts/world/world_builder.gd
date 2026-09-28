@@ -2,11 +2,11 @@ class_name WorldBuilder
 extends RefCounted
 ## 把 Island 的数据搭成看得见、碰得到的场景。
 ##
-## 第一章 湖心岛：晴天、草地、松树和阔叶树、兔子洞、月光花丛、码头、暗器铺小屋、北坡祭坛、乌篷船。
-## 第二章 落日森林：黄昏、秋天的落叶林、狼穴、泥潭、毒沼、古树林和千年古树、商人帐篷。
-## 第三章 星斗大森林：月夜、巨树、发光的蓝银草和蘑菇、魔蛛巢、蝠巢枯林、星斗古树。
-## 第四章 极北之地：雪天、雪松、冰晶、冰湖浮冰、雪狼洞和冰窟、飘雪。
-## 第五章 海神岛：正午、椰子树、金沙滩、浅海珊瑚、海崖。
+## 第一章 镜湖：晴天、草地、松树和阔叶树、兔子洞、月光花丛、码头、暗器铺小屋、北坡祭坛、乌篷船。
+## 第二章 落霞林：黄昏、秋天的落叶林、狼穴、泥潭、毒沼、古树林和千年古树、商人帐篷。
+## 第三章 苍梧林海：月夜、巨树、发光的青冥藤和蘑菇、毒蛛巢、蝠巢枯林、苍梧古木。
+## 第四章 朔北冰原：雪天、雪松、冰晶、冰湖浮冰、雪狼洞和冰窟、飘雪。
+## 第五章 归墟：正午、椰子树、金沙滩、浅海珊瑚、海崖。
 ##
 ## 素材全是 CC0 免费素材：天空 HDR 和植物、石头模型来自 Poly Haven，地面和树皮贴图来自 ambientCG。
 ## 树是程序生成的：树皮圆管做树干树枝，再插上几十张“一簇树叶”的贴片（tools/prepare_assets.py 生成）。
@@ -27,9 +27,11 @@ const ENV := {
 	"island": {"sky": "sky_day", "u": 0.595, "elev": 48.0, "heading": 999.0, "light_elev": 48.0, "sun": Color(1.0, 0.95, 0.86), "energy": 1.25,
 		"ambient": 0.7, "exposure": 0.95, "white": 6.0, "glow": 0.5, "bloom": 0.03, "fog": Color(0.68, 0.76, 0.86), "fog_d": 0.00095,
 		"scatter": 0.12, "aerial": 0.45, "fog_sky": 0.1, "sat": 1.08, "contrast": 1.04},
-	"forest": {"sky": "sky_dusk", "u": 0.613, "elev": 4.7, "heading": -70.0, "light_elev": 17.0, "sun": Color(1.0, 0.72, 0.45), "energy": 1.55,
-		"ambient": 0.75, "exposure": 1.05, "white": 5.0, "glow": 0.7, "bloom": 0.08, "fog": Color(0.86, 0.66, 0.5), "fog_d": 0.006,
-		"scatter": 0.35, "aerial": 0.5, "fog_sky": 0.25, "vol": 0.012, "vol_albedo": Color(1.0, 0.85, 0.7), "sat": 1.12, "contrast": 1.06},
+	# 落霞：用户反馈"整张图巨亮、秘境里太阳亮得什么都看不到"——太阳贴着地平线，体积雾吃了 2.2 倍的阳光、泛光和曝光又偏高，
+	# 朝西一看整屏发白。曝光、泛光、雾里的阳光、天空亮度都压下来
+	"forest": {"sky": "sky_dusk", "u": 0.613, "elev": 4.7, "heading": -70.0, "light_elev": 17.0, "sun": Color(1.0, 0.74, 0.5), "energy": 1.25,
+		"ambient": 0.62, "exposure": 0.82, "white": 5.0, "glow": 0.45, "bloom": 0.02, "fog": Color(0.62, 0.5, 0.42), "fog_d": 0.005,
+		"scatter": 0.12, "aerial": 0.5, "fog_sky": 0.35, "vol": 0.007, "vol_albedo": Color(0.9, 0.78, 0.66), "vol_e": 0.6, "sky_e": 0.6, "sat": 1.1, "contrast": 1.06},
 	# 月夜：月光别太亮（用户反馈太亮、月亮从山前面透出来）——月光、曝光、辉光、月晕都压低，天空多被雾盖住
 	"deepforest": {"sky": "sky_night", "u": 0.600, "elev": 13.8, "heading": -40.0, "light_elev": 28.0, "sun": Color(0.6, 0.72, 1.0), "energy": 0.42,
 		"ambient": 0.6, "exposure": 1.0, "white": 4.0, "glow": 0.5, "bloom": 0.03, "fog": Color(0.08, 0.12, 0.2), "fog_d": 0.0045,
@@ -53,7 +55,7 @@ var colliders: StaticBody3D
 var env: Environment
 var sun: DirectionalLight3D
 var shop_door := Vector3.ZERO
-var board_pos := Vector3.ZERO          # 猎魂榜（码头边的告示牌）
+var board_pos := Vector3.ZERO          # 猎灵榜（码头边的告示牌）
 var boat_pos := Vector3.ZERO
 var boat: Node3D
 
@@ -66,7 +68,7 @@ var _trunks: Array = []                # [Vector2 位置, 半径]：放灌木、
 var _trunk_grid := {}                  # 8 米一格，查附近的树干
 var _birds: Array[Node3D] = []
 var _moths: Array[Node3D] = []
-var _critters: Array = []        # 天上飞的鸟、蛾子、蝙蝠、海鸥：能打，打中了掉下来变成真的魂兽
+var _critters: Array = []        # 天上飞的鸟、蛾子、蝙蝠、海鸥：能打，打中了掉下来变成真的灵兽
 var _bubbles: Array[MeshInstance3D] = []
 var _altar_flame: Node3D
 var _snowfall: GPUParticles3D
@@ -130,14 +132,85 @@ func build() -> void:
 		"sea":
 			_corals()
 			_beach()
-	_dock()
-	_boat()
-	_shop()
-	_board()
-	_altar()
-	_signs()
+	if island.hunting:
+		# 猎场：没有码头、暗器铺、祭坛；南边是营地
+		_camp()
+	else:
+		_dock()
+		_boat()
+		_shop()
+		_board()
+		_altar()
+		_signs()
 	_ambient_life()
 	apply_quality()
+
+
+## 放东西的范围：岛是 ±150 米；猎场到外圈山脚
+func _ext() -> float:
+	return island.rim_r + 6.0 if island.hunting else 150.0
+
+
+## 猎场比岛大多少（按面积；树、石头的数量跟着乘）
+func _area_k() -> float:
+	return pow(_ext() / 150.0, 2.0) * 0.8 if island.hunting else 1.0
+
+
+# ------------------------------------------------------------------ 猎场：营地
+
+var camp_pos := Vector3.ZERO           # 营地补给箱（按 F 打开暗器铺买补给）
+
+
+func _camp() -> void:
+	var c := island.spawn
+	var wood := _wood()
+	var cloth := _cloth(Color(0.72, 0.18, 0.14))
+	# 帐篷：两块斜的布搭成"人"字（里边高、外边着地）。以前转角的正负号反了，搭成了倒过来的 V
+	var tent := Vector3(c.x - 7.0, island.height_at(c.x - 7.0, c.z + 4.0), c.z + 4.0)
+	for s in [-1.0, 1.0]:
+		U.part(root, U.box(Vector3(2.6, 0.05, 4.2)), cloth, tent + Vector3(s * 0.9, 1.05, 0), Vector3(0, 0, -s * 0.85))
+	# 屋脊一根横杆
+	U.part(root, U.cyl(0.05, 0.05, 4.3, 6), wood, tent + Vector3(0, 2.05, 0), Vector3(PI / 2, 0, 0))
+	U.part(root, U.cyl(0.05, 0.05, 2.4, 6), wood, tent + Vector3(0, 1.2, 2.0))
+	U.part(root, U.cyl(0.05, 0.05, 2.4, 6), wood, tent + Vector3(0, 1.2, -2.0))
+	_add_collider(_box(Vector3(3.4, 2.0, 4.4)), Transform3D(Basis(), tent + Vector3(0, 1.0, 0)))
+	# 篝火
+	var fire := Vector3(c.x + 3.0, island.height_at(c.x + 3.0, c.z - 3.0), c.z - 3.0)
+	for k in 6:
+		var a := TAU * k / 6.0
+		U.part(root, U.sphere(0.28, 8, 6), _stone(), fire + Vector3(cos(a) * 0.9, 0.1, sin(a) * 0.9))
+	for k in 3:
+		U.part(root, U.cyl(0.07, 0.07, 1.3, 6), wood, fire + Vector3(0, 0.25, 0), Vector3(PI / 2 - 0.3, TAU * k / 3.0, 0))
+	U.part(root, U.sphere(0.45, 10, 8), U.glow(Color(1.0, 0.55, 0.2), 4.0), fire + Vector3(0, 0.5, 0), Vector3.ZERO, Vector3(1, 1.4, 1), false)
+	var fl := OmniLight3D.new()
+	fl.light_color = Color(1.0, 0.6, 0.3)
+	fl.light_energy = 2.2
+	fl.omni_range = 12.0
+	fl.position = fire + Vector3(0, 1.5, 0)
+	root.add_child(fl)
+	# 补给箱（打开是暗器铺）
+	camp_pos = Vector3(c.x - 3.0, island.height_at(c.x - 3.0, c.z - 5.0), c.z - 5.0)
+	U.part(root, U.box(Vector3(1.4, 0.8, 0.9)), wood, camp_pos + Vector3(0, 0.4, 0))
+	U.part(root, U.box(Vector3(1.46, 0.12, 0.96)), U.mat(Color(0.9, 0.7, 0.3), 0.35, 0.0, 0.8), camp_pos + Vector3(0, 0.85, 0))
+	_add_collider(_box(Vector3(1.4, 0.8, 0.9)), Transform3D(Basis(), camp_pos + Vector3(0, 0.4, 0)))
+	var t := U.label3d("营地补给", 56, Color(1.0, 0.85, 0.5))
+	t.visibility_range_end = 30.0
+	t.pixel_size = 0.01
+	t.position = camp_pos + Vector3(0, 1.8, 0)
+	root.add_child(t)
+	# 营地的旗子：远处也看得到
+	var fy := island.height_at(c.x + 6.0, c.z)
+	U.part(root, U.cyl(0.06, 0.08, 7.0, 6), wood, Vector3(c.x + 6.0, fy + 3.5, c.z))
+	U.part(root, U.box(Vector3(1.6, 1.0, 0.04)), cloth, Vector3(c.x + 6.9, fy + 6.3, c.z))
+	shop_door = camp_pos + Vector3(0, 1.0, 0)
+	boat_pos = Vector3(9999, 0, 9999)
+	board_pos = Vector3(9999, 0, 9999)
+
+
+func _box(size: Vector3) -> BoxShape3D:
+	var s := BoxShape3D.new()
+	s.size = size
+	return s
 
 
 ## 画质设置改了以后调用：只改光影效果（植被密度要重新进地图）
@@ -281,8 +354,8 @@ func _cloth(color: Color) -> StandardMaterial3D:
 # ------------------------------------------------------------------ 小路
 
 func _path_field() -> void:
-	var S := Island.SIZE
-	var H := Island.HALF
+	var S := island.size
+	var H := island.half
 	_path.resize(S * S)
 	_path.fill(99.0)
 	for pl in island.paths:
@@ -305,9 +378,9 @@ func _path_field() -> void:
 
 
 func path_d(x: float, z: float) -> float:
-	var i := clampi(roundi(x) + Island.HALF, 0, Island.SIZE - 1)
-	var j := clampi(roundi(z) + Island.HALF, 0, Island.SIZE - 1)
-	return _path[i + j * Island.SIZE]
+	var i := clampi(roundi(x) + island.half, 0, island.size - 1)
+	var j := clampi(roundi(z) + island.half, 0, island.size - 1)
+	return _path[i + j * island.size]
 
 
 # ------------------------------------------------------------------ 地形
@@ -446,8 +519,8 @@ func _ground_material() -> ShaderMaterial:
 
 
 func _terrain() -> void:
-	var S := Island.SIZE
-	var H := Island.HALF
+	var S := island.size
+	var H := island.half
 	var hts := island.heights
 	var verts := PackedVector3Array()
 	var norms := PackedVector3Array()
@@ -515,9 +588,9 @@ func _water() -> void:
 	pm.subdivide_depth = 200
 	var sm := ShaderMaterial.new()
 	sm.shader = WATER_SHADER
-	var img := Image.create_from_data(Island.SIZE, Island.SIZE, false, Image.FORMAT_RF, island.heights.to_byte_array())
+	var img := Image.create_from_data(island.size, island.size, false, Image.FORMAT_RF, island.heights.to_byte_array())
 	sm.set_shader_parameter("height_tex", ImageTexture.create_from_image(img))
-	sm.set_shader_parameter("terrain_half", float(Island.HALF))
+	sm.set_shader_parameter("terrain_half", float(island.half))
 	var nt := NoiseTexture2D.new()
 	nt.width = 256
 	nt.height = 256
@@ -583,6 +656,8 @@ func _mountains() -> void:
 	nz.fractal_octaves = 5
 	var A := 256
 	var r0 := 290.0 if forest else (560.0 if biome == "sea" else 340.0)
+	if island.hunting:
+		r0 = float(island.half) + 25.0
 	var radii: Array[float] = []
 	for i in 30:
 		radii.append(r0 + pow(i / 29.0, 1.5) * 1000.0)
@@ -672,7 +747,7 @@ func _mountains() -> void:
 
 # ------------------------------------------------------------------ 批量绘制
 
-## 盖在东西上面的一层雪（极北之地）
+## 盖在东西上面的一层雪（朔北冰原）
 func _snow_overlay() -> ShaderMaterial:
 	if not _tex_cache.has("snow_overlay"):
 		var m := ShaderMaterial.new()
@@ -1118,7 +1193,7 @@ func _trees() -> void:
 	var xforms := []
 	for k in kinds:
 		xforms.append([])
-	var target: int = {"island": 240, "forest": 700, "deepforest": 850, "snow": 380, "sea": 230}[biome]
+	var target: int = int({"island": 240, "forest": 700, "deepforest": 850, "snow": 380, "sea": 230}[biome] * _area_k())
 	var min_h := 0.9 if biome == "sea" else 1.2
 	var tree_noise := FastNoiseLite.new()
 	tree_noise.seed = island.map_seed + 301
@@ -1127,8 +1202,8 @@ func _trees() -> void:
 	var placed := 0
 	while placed < target and tries < target * 40:
 		tries += 1
-		var x := r.randf_range(-158, 158)
-		var z := r.randf_range(-158, 158)
+		var x := r.randf_range(-_ext() - 8.0, _ext() + 8.0)
+		var z := r.randf_range(-_ext() - 8.0, _ext() + 8.0)
 		var h := island.height_at(x, z)
 		if h < min_h or island.slope_at(x, z) > 0.85 or not _free(x, z, 2.5):
 			continue
@@ -1193,6 +1268,7 @@ func _scatter_prop(name: String, count: int, where: Callable, smin: float, smax:
 	var variants := _prop(name)
 	if variants.is_empty():
 		return
+	count = int(count * _area_k())
 	var per := []
 	for v in variants:
 		per.append([])
@@ -1228,8 +1304,8 @@ func _scatter_prop(name: String, count: int, where: Callable, smin: float, smax:
 ## 常用的放置规则
 func _spot_land(min_h := 1.0, max_slope := 0.8, margin := 1.0, avoid_trunk := 1.0) -> Callable:
 	return func(r: RandomNumberGenerator) -> Vector3:
-		var x := r.randf_range(-150, 150)
-		var z := r.randf_range(-150, 150)
+		var x := r.randf_range(-_ext(), _ext())
+		var z := r.randf_range(-_ext(), _ext())
 		var h := island.height_at(x, z)
 		if h < min_h or island.slope_at(x, z) > max_slope or not _free(x, z, margin):
 			return Vector3.INF
@@ -1362,14 +1438,14 @@ func _grass() -> void:
 	var xs := []
 	var cols := []
 	var base_count: int = {"island": 50000, "forest": 22000, "deepforest": 20000, "snow": 7000, "sea": 32000}[biome]
-	var target := int(base_count * _density())
+	var target := int(base_count * _density() * (_area_k() * 0.6 if island.hunting else 1.0))
 	var tries := 0
 	var meadow := island.habitat("meadow")
 	var grove := island.habitat("grove")
 	while xs.size() < target and tries < target * 5:
 		tries += 1
-		var x := r.randf_range(-150, 150)
-		var z := r.randf_range(-150, 150)
+		var x := r.randf_range(-_ext(), _ext())
+		var z := r.randf_range(-_ext(), _ext())
 		var h := island.height_at(x, z)
 		if h < 1.0 or island.slope_at(x, z) > 0.7:
 			continue
@@ -1645,7 +1721,7 @@ func _swamp_plants() -> void:
 	_scatter(_tuft_mesh(0.8, 0.62), reeds, cols, 70.0, false, 40.0, _grass_mat("grass_tuft_dry", 0.12, 70.0))
 
 
-## 魔蛛巢：洞口拉满白色蛛丝，地上有卵囊
+## 毒蛛巢：洞口拉满白色蛛丝，地上有卵囊
 func _webs(type: String) -> void:
 	var hb := island.habitat(type)
 	if hb.is_empty():
@@ -1667,7 +1743,7 @@ func _webs(type: String) -> void:
 			U.part(root, U.sphere(0.28, 10, 6), egg, ep, Vector3.ZERO, Vector3(1, 1.3, 1), false)
 
 
-## 星斗大森林：一片片会发光的蓝银草（唐三的武魂）
+## 苍梧林海：一片片会发光的青冥藤
 func _blue_silver_grass() -> void:
 	var r := RandomNumberGenerator.new()
 	r.seed = island.map_seed + 700
@@ -1675,7 +1751,7 @@ func _blue_silver_grass() -> void:
 	var cols := []
 	var centers: Array[Vector2] = []
 	for i in 40:
-		var c := Vector2(r.randf_range(-130, 130), r.randf_range(-130, 130))
+		var c := Vector2(r.randf_range(-_ext() + 20.0, _ext() - 20.0), r.randf_range(-_ext() + 20.0, _ext() - 20.0))
 		if island.height_at(c.x, c.y) > 1.2:
 			centers.append(c)
 	var g := island.habitat("glade")
@@ -1740,7 +1816,7 @@ func _ice_floes_build() -> void:
 	while xs.size() < 160 and tries < 20000:
 		tries += 1
 		var a := rng.randf() * TAU
-		var rr := rng.randf_range(80, 170)
+		var rr := rng.randf_range(80, 170) if not island.hunting else rng.randf_range(30.0, _ext())
 		var x := cos(a) * rr
 		var z := sin(a) * rr
 		var h := island.height_at(x, z)
@@ -1798,7 +1874,7 @@ func _snowfall_build() -> void:
 	_snowfall = p
 
 
-## 海神岛：浅海里一丛丛珊瑚（透过海水能看到）
+## 归墟：浅海里一丛丛珊瑚（透过海水能看到）
 func _corals() -> void:
 	var branches := []
 	var bcols := []
@@ -1808,8 +1884,8 @@ func _corals() -> void:
 	var pal := [Color(1.0, 0.45, 0.55), Color(1.0, 0.65, 0.3), Color(0.75, 0.45, 1.0), Color(1.0, 0.9, 0.4), Color(0.35, 0.9, 0.85)]
 	while branches.size() < 1400 and tries < 40000:
 		tries += 1
-		var x := rng.randf_range(-165, 165)
-		var z := rng.randf_range(-165, 165)
+		var x := rng.randf_range(-_ext() - 15.0, _ext() + 15.0)
+		var z := rng.randf_range(-_ext() - 15.0, _ext() + 15.0)
 		var h := island.height_at(x, z)
 		if h > -0.8 or h < -3.2:
 			continue
@@ -1832,15 +1908,15 @@ func _corals() -> void:
 	_multimesh(U.sphere(0.5, 10, 6), brains, rcols, false, m)
 
 
-## 海神岛：沙滩上的贝壳和海星
+## 归墟：沙滩上的贝壳和海星
 func _beach() -> void:
 	var xs := []
 	var cols := []
 	var tries := 0
 	while xs.size() < 500 and tries < 20000:
 		tries += 1
-		var x := rng.randf_range(-160, 160)
-		var z := rng.randf_range(-160, 160)
+		var x := rng.randf_range(-_ext() - 10.0, _ext() + 10.0)
+		var z := rng.randf_range(-_ext() - 10.0, _ext() + 10.0)
 		var h := island.height_at(x, z)
 		if h < 0.3 or h > 1.6:
 			continue
@@ -2050,7 +2126,7 @@ func _shop() -> void:
 		_lantern(hut.transform * Vector3(-2.6, 2.6, 2.1), Color(1.0, 0.5, 0.2))
 		_lantern(hut.transform * Vector3(2.6, 2.6, 2.1), Color(1.0, 0.5, 0.2))
 	else:
-		# 唐门小屋：木墙、红柱、灰瓦翘檐，门前一张柜台
+		# 千机阁小屋：木墙、红柱、灰瓦翘檐，门前一张柜台
 		U.part(hut, U.box(Vector3(6.0, 3.0, 4.6)), wood, Vector3(0, 1.5, 0))
 		U.part(hut, U.box(Vector3(6.4, 0.3, 5.0)), _stone(), Vector3(0, 0.1, 0))
 		for x in [-3.0, 3.0]:
@@ -2088,7 +2164,7 @@ func _shop() -> void:
 		_lantern(hut.transform * Vector3(-3.0, 2.7, 2.7), Color(1.0, 0.35, 0.18))
 		_lantern(hut.transform * Vector3(3.0, 2.7, 2.7), Color(1.0, 0.35, 0.18))
 	var tent := forest or biome == "snow"
-	var sign := U.label3d("唐门 · 暗器铺", 72, Color(0.35, 0.12, 0.05) if not tent else Color(1.0, 0.86, 0.5), 6)
+	var sign := U.label3d("千机阁 · 暗器铺", 72, Color(0.35, 0.12, 0.05) if not tent else Color(1.0, 0.86, 0.5), 6)
 	sign.position = Vector3(0, 3.35, 2.53) if not tent else Vector3(0, 3.1, 2.3)
 	sign.billboard = BaseMaterial3D.BILLBOARD_DISABLED
 	sign.pixel_size = 0.0065
@@ -2103,7 +2179,7 @@ func _shop() -> void:
 
 # ------------------------------------------------------------------ 祭坛
 
-## 猎魂榜：出生点旁边一块木告示牌，上面钉着几张画着魂兽的纸，挂一盏灯
+## 猎灵榜：出生点旁边一块木告示牌，上面钉着几张画着灵兽的纸，挂一盏灯
 func _board() -> void:
 	var p := island.ground_point(island.spawn.x + 5.5, island.spawn.z - 4.0)
 	board_pos = p
@@ -2134,7 +2210,7 @@ func _board() -> void:
 	var sh := BoxShape3D.new()
 	sh.size = Vector3(2.4, 2.6, 0.3)
 	_add_collider(sh, Transform3D(Basis(Vector3.UP, -0.5), p + Vector3(0, 1.3, 0)))
-	var t := U.label3d("猎魂榜", 56, Color(1.0, 0.8, 0.5))
+	var t := U.label3d("猎灵榜", 56, Color(1.0, 0.8, 0.5))
 	t.visibility_range_end = 30.0
 	t.pixel_size = 0.012
 	t.position = p + Vector3(0, 3.1, 0)
@@ -2239,11 +2315,11 @@ func _signs() -> void:
 	for p in island.ponds.slice(0, 1):
 		_sign(p["center"] + Vector2(p["radius"] + 3.0, -2.0), str(Data.HABITATS[island.water_habitat]["name"]), wsub, Color(0.6, 1.0, 0.8))
 	if forest or biome == "snow":
-		_sign(Vector2(island.shop_pos.x + 5.0, island.shop_pos.z + 3.0), "行脚商人", "唐门的暗器也能在这儿买", Color(1.0, 0.85, 0.5))
+		_sign(Vector2(island.shop_pos.x + 5.0, island.shop_pos.z + 3.0), "行脚商人", "千机阁的暗器也能在这儿买", Color(1.0, 0.85, 0.5))
 	_sign(Vector2(island.altar_pos.x + 4.5, island.altar_pos.z + 4.5), "祭坛", "按 F 召唤 Boss（要先完成前面的任务）", Color(1.0, 0.75, 0.45))
 
 
-# ------------------------------------------------------------------ 天上飞的鸟和蛾子：打中了掉下来变成真的魂兽（World.critter_hit），过一会儿天上再补一只
+# ------------------------------------------------------------------ 天上飞的鸟和蛾子：打中了掉下来变成真的灵兽（World.critter_hit），过一会儿天上再补一只
 
 func _ambient_life() -> void:
 	var centers: Array = []
@@ -2253,7 +2329,8 @@ func _ambient_life() -> void:
 			var f := island.habitat("flowers")
 			centers = [[m["center"], "bird", 4, 14.0, 22.0, 10.0, 20.0], [f["center"], "moth", 3, 1.5, 3.5, 3.0, 8.0]]
 		"forest":
-			centers = [[island.arena, "bird", 3, 26.0, 36.0, 12.0, 20.0]]
+			var fc: Vector2 = island.arena if island.arena != Vector2.INF else (island.habitats[0]["center"] as Vector2)
+			centers = [[fc, "bird", 3, 26.0, 36.0, 12.0, 20.0]]
 		"deepforest":
 			var ro := island.habitat("roost")
 			centers = [[ro["center"], "bat", 5, 10.0, 18.0, 6.0, 14.0]]
@@ -2273,7 +2350,7 @@ func _ambient_life() -> void:
 				_moths.append(n)
 			else:
 				_birds.append(n)
-			# 能被暗器、引魂索打中：魂兽层上的一个球（打中由 World.critter_hit 处理）
+			# 能被暗器、引魂索打中：灵兽层上的一个球（打中由 World.critter_hit 处理）
 			var body := StaticBody3D.new()
 			body.name = "Hit"
 			body.collision_layer = U.LAYER_BEAST

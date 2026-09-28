@@ -1,6 +1,6 @@
 class_name FxLib
 extends RefCounted
-## 特效用的贴图、材质、着色器（全局缓存，Fx 和魂兽的魂环都用）。
+## 特效用的贴图、材质、着色器（全局缓存，Fx 和灵兽的灵环都用）。
 ## 贴图是 tools/make_fx_textures.gd 程序生成的（assets/fx）：白色 + 透明度，材质里上色；
 ## 加法混合的颜色乘了 hdr（大于 1），配合环境的泛光（glow）才会"发光"，不再是一块纯色塑料。
 
@@ -62,7 +62,7 @@ static func pmat(tex_name: String, add: bool, hdr := 1.0, atlas := 1, soft := 0.
 	return m
 
 
-## 平面上的贴图（冲击环、魂环、水花圈）：不朝镜头，躺在地上或者竖着。颜色乘 hdr
+## 平面上的贴图（冲击环、灵环、水花圈）：不朝镜头，躺在地上或者竖着。颜色乘 hdr
 static func quad_mat(tex_name: String, color: Color, hdr := 2.0, add := true) -> StandardMaterial3D:
 	var key := "q|%s|%s|%.2f|%s" % [tex_name, color.to_html(), hdr, add]
 	if _mats.has(key):
@@ -281,7 +281,7 @@ static func spark_mat(hdr := 3.0, stretch := 4.0) -> ShaderMaterial:
 	return m
 
 
-## 地上的贴花（法阵、焦痕、预警圈）只投到第 1 层（地形、树、石头）。魂兽、Boss、人、手里的暗器放到第 2 层，就不会被贴花染色
+## 地上的贴花（法阵、焦痕、预警圈）只投到第 1 层（地形、树、石头）。灵兽、Boss、人、手里的暗器放到第 2 层，就不会被贴花染色
 static func no_decals(n: Node) -> void:
 	if n is VisualInstance3D:
 		(n as VisualInstance3D).layers = 2
@@ -289,9 +289,9 @@ static func no_decals(n: Node) -> void:
 		(c as VisualInstance3D).layers = 2
 
 
-# ------------------------------------------------------------------ 魂环（魂兽脚下、掉在地上）
+# ------------------------------------------------------------------ 灵环（灵兽脚下、掉在地上）
 
-## 一圈魂环：躺平的贴图，亮环 + 柔光。万年的环是黑的：黑环（普通混合）+ 外面一圈暗红光
+## 一圈灵环：躺平的贴图，亮环 + 柔光。万年的环是黑的：黑环（普通混合）+ 外面一圈暗红光
 static func soul_ring(color: Color, glow: Color, radius: float, hdr := 2.2) -> Node3D:
 	var n := Node3D.new()
 	var dark := color.get_luminance() < 0.2
