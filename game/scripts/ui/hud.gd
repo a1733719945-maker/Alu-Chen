@@ -1748,7 +1748,7 @@ void fragment() {
 	var kc := CenterContainer.new()
 	kc.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	v.add_child(kc)
-	_death_key = UiKit.key_hint("空格", "回码头复活", 17)
+	_death_key = UiKit.key_hint("跳跃键" if Settings.touch_active() else "空格", "回码头复活", 17)
 	kc.add_child(_death_key)
 
 
@@ -1938,6 +1938,16 @@ func _build_pause() -> void:
 	]
 	if Combo.TRUE_BODY:
 		keys.append(["Z", "灵相真身（连击充满）"])
+	if Settings.touch_active():
+		keys = [
+			["左半屏", "按住拖动走路，推到头冲刺"], ["右半屏", "滑动转视角"],
+			["大圆圈", "开火（里面是子弹数）"], ["准星圈", "开镜（点一下开 / 关）"],
+			["上箭头", "跳 · 往上游 · 挣脱"], ["下箭头", "蹲 · 轻点翻滚 · 往下潜"],
+			["钩子", "引魂索：按住蓄力，松开甩"], ["Q E F", "三个神通"],
+			["交互", "旁边有东西才出现 · 按住救人"], ["回血", "吃回血丹"],
+			["物品栏", "底部直接点 · 「丢」丢出去"], ["小地图", "点一下开大地图"],
+			["菜单", "灵相、成就、猎灵榜、鱼饵、排名"], ["屏息", "开镜时出现，按住镜头稳"],
+		]
 	for k in keys:
 		grid.add_child(UiKit.key_hint(str(k[0]), str(k[1]), 15, Color(0.85, 0.88, 0.92)))
 	var sc := CenterContainer.new()

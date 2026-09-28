@@ -26,6 +26,7 @@ var _done := false
 
 func _ready() -> void:
 	layer = 30
+	add_to_group("cutscene")      # 播着的时候触屏按钮先让开（点屏幕 = 跳过）
 	var bg := ColorRect.new()
 	bg.color = Color.BLACK
 	add_child(bg)
@@ -71,7 +72,7 @@ func _ready() -> void:
 	UiKit.place(_cap, Vector4(0.5, 1, 0.5, 1), Vector4(-620, -104, 620, -40))
 	_cap.modulate.a = 0.0
 	add_child(_cap)
-	var skip := UiKit.key_hint("空格", "跳过", 15, UiKit.MIST)
+	var skip := UiKit.key_hint("点屏幕" if Settings.touch_active() else "空格", "跳过", 15, UiKit.MIST)
 	UiKit.place(skip, Vector4(1, 0, 1, 0), Vector4(-160, 24, -30, 50))
 	add_child(skip)
 	if music != "":
@@ -102,7 +103,8 @@ func _process(dt: float) -> void:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event.is_action_pressed("pause") or event.is_action_pressed("jump"):
+	var tap := event is InputEventScreenTouch and (event as InputEventScreenTouch).pressed
+	if event.is_action_pressed("pause") or event.is_action_pressed("jump") or tap:
 		get_viewport().set_input_as_handled()
 		_finish()
 

@@ -2265,6 +2265,10 @@ func _run_dungeon() -> void:
 				return
 			var pp: Vector3 = d.portals[0]["pos"]
 			var fwd := Basis(Vector3.UP, float(d.portals[0]["yaw"])) * Vector3(0, 0, 3.0)
+			# 前一段打灵主时可能被打倒、被海鸥叼走了（看招式随机）：先回码头站起来，不然传送过去马上又被叼回天上
+			if p.dead or p.carried:
+				_note("上一段被打倒了（dead=%s，被海鸥叼着=%s），先回码头复活" % [p.dead, p.carried])
+				w._respawn_at_dock()
 			p.teleport(pp + fwd + Vector3(0, 0.4, 0))
 			p.invuln_t = 9999.0
 			_note("秘境入口：%s" % ", ".join(d.portals.map(func(e): return "%s（%d, %d）" % [d.tier_name(int(e["tier"])), int(e["pos"].x), int(e["pos"].z)])))
@@ -2273,6 +2277,14 @@ func _run_dungeon() -> void:
 			if _step_t < 0.4:
 				return
 			var it := w.nearest_interactable()
+			if str(it.get("id", "")) != "dgportal":
+				# 诊断：人在哪、什么状态、附近能交互的东西离多远
+				var near: Array = []
+				for e in w.interactables():
+					var dd: float = (e["pos"] as Vector3).distance_to(p.global_position + Vector3(0, 1, 0))
+					if dd < 30.0:
+						near.append("%s %.1f/%.1f" % [e["id"], dd, float(e["r"])])
+				_note("诊断：玩家 %s dead=%s carried=%s 入口 %s 附近 %s" % [p.global_position, p.dead, p.carried, d.portals[0]["pos"], near])
 			if not _check(str(it.get("id", "")) == "dgportal", "站在秘境入口没有提示（%s）" % str(it.get("id", ""))):
 				return
 			_mem["money"] = Profile.money

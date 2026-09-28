@@ -171,6 +171,9 @@ func _active() -> bool:
 		return false
 	if world.paused or world.ui_open:
 		return false
+	# 播过场的时候让开（点屏幕跳过）
+	if get_tree().get_first_node_in_group("cutscene"):
+		return false
 	var p: Player = world.player
 	return p != null and p.input_enabled
 
