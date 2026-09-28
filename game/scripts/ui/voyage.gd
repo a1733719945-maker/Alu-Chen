@@ -1,16 +1,29 @@
 class_name Voyage
 extends CanvasLayer
-## 过场动画：画面是 tools/boat_anim 里用 Remotion 画、渲染后用 ffmpeg 转成 Ogg Theora 的视频（assets/cutscene/*.ogv）。
-##   voyage.ogv   渡海换岛（上面叠"前往 · 第几章"和这一章的一句故事）
-##   prologue.ogv 序章：天倾、五大灵主、栖霞村、怎么玩（第一次进游戏播，主菜单"序章"能重看）
-##   ascend.ogv   飞升结局 → 九重天 → 轮回
-##   dungeon.ogv  进洞天秘境（叠秘境名字）
-##   hunt.ogv     去猎场（叠猎物名字）
+## 过场动画：画面是公有领域的名画（tools/boat_anim：Remotion 做镜头、调色、双语字幕，ffmpeg 转成 Ogg Theora，assets/cutscene/*.ogv）。
+##   prologue.ogv   序章：天倾、五大灵主、栖霞村、怎么玩（第一次进游戏播，主菜单"序章"能重看）
+##   voyage_N.ogv   渡海去第 N 章（"前往 · 第几章"和这一章的故事画在视频里）
+##   ascend.ogv     飞升结局 → 九重天 → 轮回
+##   dungeon.ogv    进洞天秘境（叠秘境名字）
+##   hunt.ogv       去猎场（叠猎物名字）
 ## 字幕（captions）也可以叠在视频上：[[开始秒, 结束秒, 文字], ...]。按 Esc / 空格 / 点屏幕 / 点鼠标跳过。
+## 胶片颗粒在这里叠（画进视频里体积会大好几倍）。
+
+const GRAIN_CODE := """
+shader_type canvas_item;
+uniform float amount = 0.09;
+float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+void fragment() {
+	vec2 cell = floor(FRAGCOORD.xy / 1.6);
+	float n = hash(cell + floor(TIME * 24.0) * vec2(17.13, 31.71)) - 0.5;
+	COLOR = vec4(vec3(step(0.0, n)), abs(n) * 2.0 * amount);
+}
+"""
+static var _grain_shader: Shader
 
 signal finished
 
-var video := "res://assets/cutscene/voyage.ogv"
+var video := "res://assets/cutscene/voyage_2.ogv"
 var length := 7.0
 var title := ""
 var captions: Array = []
@@ -41,6 +54,17 @@ func _ready() -> void:
 		UiKit.fill(_player)
 		_player.finished.connect(_finish)
 		_player.play()
+	if stream:
+		if _grain_shader == null:
+			_grain_shader = Shader.new()
+			_grain_shader.code = GRAIN_CODE
+		var grain := ColorRect.new()
+		grain.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var gm := ShaderMaterial.new()
+		gm.shader = _grain_shader
+		grain.material = gm
+		add_child(grain)
+		UiKit.fill(grain)
 	if dim > 0.0:
 		var d := ColorRect.new()
 		d.color = Color(0, 0, 0, dim)

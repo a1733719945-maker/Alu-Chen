@@ -1,0 +1,39 @@
+苍墟 · 猎灵 —— 过场动画用到的画作
+
+全部是公有领域作品：画家都去世超过 100 年。
+标 CC0 的直接来自博物馆开放图库（The Met、克利夫兰美术馆、美国国家美术馆）；
+其余来自维基共享资源（Wikimedia Commons），平面画作的原样翻拍照片不另受著作权保护
+（美国判例；欧盟《数字单一市场指令》第 14 条；德国著作权法第 68 条）。
+镜头、调色、字幕由 tools/boat_anim（Remotion）制作，清单和下载地址在 tools/boat_anim/art.json。
+
+序章 prologue.ogv
+- Thomas Cole, The Voyage of Life: Youth（人生的旅程 · 青年）, 1840 — Munson-Williams-Proctor Arts Institute（Wikimedia Commons）
+- John Martin, The Great Day of His Wrath（天怒之日）, 1851–53 — Tate（Wikimedia Commons）
+- Caspar David Friedrich, Wanderer above the Sea of Fog（雾海上的旅人）, c. 1818 — Hamburger Kunsthalle（Wikimedia Commons）
+- Albert Bierstadt, Merced River, Yosemite Valley（默塞德河）, 1866 — The Metropolitan Museum of Art（CC0）
+- Frederic Edwin Church, Twilight in the Wilderness（荒野暮光）, 1860 — Cleveland Museum of Art（CC0）
+- Ivan Shishkin & Konstantin Savitsky, Morning in a Pine Forest（松林的早晨）, 1889 — Tretyakov Gallery（Wikimedia Commons）
+- Caspar David Friedrich, The Sea of Ice（冰海）, 1823–24 — Hamburger Kunsthalle（Wikimedia Commons）
+- Ivan Aivazovsky, The Ninth Wave（九级浪）, 1850 — State Russian Museum（Wikimedia Commons）
+- Gustave Doré, The Destruction of Leviathan（毁灭利维坦）, 1865（Wikimedia Commons）
+- Rosa Bonheur, The Horse Fair（马市）, 1852–55 — The Metropolitan Museum of Art（CC0）
+- Caspar David Friedrich, Two Men Contemplating the Moon（两人望月）, c. 1825–30 — The Metropolitan Museum of Art（CC0）
+- Frederic Edwin Church, Heart of the Andes（安第斯之心）, 1859 — The Metropolitan Museum of Art（CC0）
+- Caspar David Friedrich, The Monk by the Sea（海边的修士）, 1808–10 — Alte Nationalgalerie, Berlin（Wikimedia Commons）
+
+渡海 voyage_1~5.ogv
+- Caspar David Friedrich, Moonrise over the Sea（海上月出）, 1822 — Alte Nationalgalerie, Berlin（Wikimedia Commons）
+- 目的地：默塞德河（镜湖）、荒野暮光（落霞林）、松林的早晨（苍梧林海）、冰海（朔北冰原）、九级浪（归墟），见上
+
+进洞天 dungeon.ogv
+- Giovanni Battista Piranesi, The Drawbridge, Carceri d'invenzione pl. VII（幻想监狱 · 吊桥）, c. 1749–50 — The Metropolitan Museum of Art（CC0）
+
+去猎场 hunt.ogv
+- Albert Bierstadt, Among the Sierra Nevada, California（内华达山脉之间）, 1868 — Smithsonian American Art Museum（Wikimedia Commons）
+
+飞升 ascend.ogv
+- Thomas Cole, The Voyage of Life: Youth / Old Age / Childhood（人生的旅程 · 青年 / 老年 / 童年）— 青年：Munson-Williams-Proctor Arts Institute；老年、童年：National Gallery of Art, Washington（CC0）
+- J. M. W. Turner, Light and Colour (Goethe's Theory) – the Morning after the Deluge（光与色）, 1843 — Tate（Wikimedia Commons）
+- Caspar David Friedrich, Wanderer above the Sea of Fog（雾海上的旅人）
+
+字体（画在视频里）：思源宋体 Noto Serif SC、EB Garamond、Courier Prime —— 都是 SIL Open Font License。

@@ -1,10 +1,11 @@
 {
   "name": "cangxu-cinematics",
   "private": true,
-  "version": "2.0.0",
-  "description": "苍墟 · 猎灵 的过场动画（Remotion，全部用 SVG 自己画）：序章 Prologue、渡海 Voyage、飞升 Ascend、进洞天 DungeonGate、去猎场 HuntGate、灵葫立绘 Gourd。render_all.ps1 渲染成 mp4 再用 ffmpeg 转成 Ogg Theora，放进 game/assets/cutscene",
+  "version": "3.0.0",
+  "description": "苍墟 · 猎灵 的过场动画（Remotion）：画面是公有领域的名画（art.json，fetch_art.py 下载），镜头慢推 + 调色 + 双语字幕。序章 Prologue、渡海 Voyage1~5、飞升 Ascend、进洞天 DungeonGate、去猎场 HuntGate、灵葫立绘 Gourd。render_all.sh 渲染成 mp4 再用 ffmpeg 转成 Ogg Theora，放进 game/assets/cutscene",
   "scripts": {
-    "render": "powershell -ExecutionPolicy Bypass -File render_all.ps1"
+    "fetch": "python3 fetch_art.py",
+    "render": "bash render_all.sh"
   },
   "dependencies": {
     "@remotion/cli": "4.0.290",

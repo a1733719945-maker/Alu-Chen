@@ -9,3 +9,8 @@ server/node_modules/
 tests_out/
 tools/_downloads/
 tools/__pycache__/
+# 过场动画工程（Remotion）的依赖和渲染输出
+tools/boat_anim/node_modules/
+tools/boat_anim/out/
+tools/boat_anim/package-lock.json
+tools/boat_anim/public/

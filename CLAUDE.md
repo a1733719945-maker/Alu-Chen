@@ -67,6 +67,7 @@
 | 和原著版权冲突的名字 | 全部换成原创（对照表 `docs/世界观.md` 第六节 + 版本历史 20）。**以后新加内容不要用任何现成小说的名词** |
 | 没有剧情：为什么升级、为什么打 Boss、飞升只为了转生？要有中国修仙小说底子的好故事 | `docs/世界观.md`：天倾 → 五块天枢碎片 → 五大灵主 → 飞升 → 九重天 / 轮回；章节横幅、任务、Boss 出场字幕、过场动画都跟着讲 |
 | 过场动画敷衍；进秘境 / 猎场没动画；开场要有动画教怎么玩 | 全部用 Remotion 重画（`tools/boat_anim`）：序章、渡海、进秘境、进猎场、飞升；**别再用简单的 2D 图形凑** |
+| 拿别人用 Claude 做的"名画 + 纪录片字幕"短片对比，说游戏里的串场"太丑"（代码画的 SVG 色块） | 第十四版：画面全换成**公有领域的西洋名画**（用户选的：西洋名画，不要中国古画、不要实机画面），慢推镜头 + 调色 + 光尘粒子 + 衬线双语字幕 + 左上角细线标签 / 大数字 + 米白纸片卡片（版本历史 21）。用户问过"名画有没有 IP 问题"：没有（画家都死了一百多年，博物馆开放图库是 CC0，出处写在 `assets/cutscene/CREDITS.txt`） |
 | 不要找用户要模型 / 贴图 | 自己画（Remotion / 程序生成）或者网上找 CC0 |
 | 队友模型敷衍 | 程序模型重做（`RemotePlayer`），用户也可以放 `assets/models/player/player.glb`（提示词见版本历史 20） |
 
@@ -322,6 +323,16 @@
      放 `assets/models/player/player.glb`（或 .gltf）就换成自定义模型（按高度缩到 1.85 米，动画按名字找 idle / walk|run / jump，`BeastModels.instance_custom`）。给用户的 Tripo / Meshy 提示词：
      "original Chinese xianxia monster hunter, young cultivator, layered long coat with split hem, cloth sash with tassel, short cape, leather bracers and boots, hair in topknot with ribbon, quiver on back, empty hands, A-pose, stylized realistic, game-ready ~20k tris, rigged humanoid with idle / walk / run animations, export GLB"
    - 自动测试新阶段：`bossarts`（五个灵主每招都放一遍 + 破绽 + 极限闪避）、`mateshot`（队友模型截图）、`cineshot`（过场动画在游戏里的样子截图）；这些要开窗口截图的别在用户玩的时候跑
+21. 第十四版 · 名画过场（2026-09-28，在云端 Linux 会话里做的）：
+   - 为什么：代码画的 SVG 色块再怎么调也像 PPT；用户给的参考片是**现成的高质量画面**（名画 / AI 插画）+ 纪录片式剪辑。这里没有 AI 画图，所以用公有领域名画
+   - `tools/boat_anim`：`art.json`（每张画的画家、年份、收藏馆、许可、下载地址、要裁的画框）→ `python3 fetch_art.py` 下到 `public/art/`（长边 3200）+ 字体到 `public/fonts/`（思源宋体、EB Garamond、Courier Prime，OFL）+ 生成 `src/artdims.json`；`public/` 不进仓库
+     - 下载的坑：维基**原图**接口和 API 都限流（429），用 3840 宽的缩略图（尺寸必须是维基规定的档位，2560 会 400），每张歇几秒；芝加哥艺术博物馆的图片服务器挡脚本（403），不用它；大都会、克利夫兰的开放接口直接能用（CC0）
+   - `src/cine.tsx` 零件：`Film`（黑场 + 暗角 + 等字体加载）、`Shot`（名画镜头：`a` / `b` 两个机位 = 原画里的中心点 0~1 + 放大倍数，缓动推过去；调色 `grade`、粒子 `fx` = dust / embers / snow / mist、贴在画上的光 `glow`、震屏 `shake`；每个镜头底部和左上角自带压暗，亮画上字也清楚）、`Sub`（中文衬线 + 英文斜体字幕）、`Label`（左上细线标签）、`BigStat`（左上滚动大数字）、`Title`、`PaperCard`（纸片卡片，打字机标题）、`ShardFall`（五块天枢坠落）、`Flash`
+   - `src/Films.tsx`：`Prologue`（48 秒）、`Voyage`（`Voyage1~5`，每章一段：月下出海 → 目的地名画 + "前往 · 第几章" + 这一章的故事，都画在视频里）、`DungeonGate`、`HuntGate`、`Ascend`；分镜注释写在文件里。旧的 SVG 分镜（Prologue / Clips / Voyage / Ending / figures）删了，灵葫立绘挪到 `Gourd.tsx`
+   - 渲染：`./render_all.sh`（Linux：`apt-get install ffmpeg` 带 libtheora；Remotion 用 Playwright 预装的 `/opt/pw-browsers/chromium_headless_shell-*/…/headless_shell`；4 核约 15 分钟）。1920x1080 渲染 → 1600x900 + 轻微降噪 → Theora **按码率**编码（按质量编码铜版画 4 秒就 20 MB）：序章 2.6 Mbps、渡海 / 猎场 3.5、飞升 3、秘境 7（线条最密）
+   - 游戏里：`Main._travel` 播 `voyage_<章>.ogv`（没有就退回旧的叠字方式）；`voyage.gd` 叠一层胶片颗粒着色器（颗粒画进视频体积翻几倍）；旧的 `voyage.ogv`、`ending.ogv` 删了
+   - 调镜头：改 `Films.tsx` 里的机位 / 时间，`npx remotion still out/bundle Prologue out/x.jpg --frame=N --browser-executable=…` 单帧看（先 `npx remotion bundle src/index.ts --out-dir out/bundle`），比整段渲染快得多
+
 ## 还没做 / 可以继续
 
 - Boss 写实模型：免费 CC0 里没有合适的，要用户提供素材；现在靠着色器 + 光环 + 死亡神光

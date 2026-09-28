@@ -230,9 +230,14 @@ func _travel(chapter: int) -> void:
 		world.hud.visible = false
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	var v := Voyage.new()
-	v.title = "前往 · %s" % Data.CHAPTERS[chapter]["name"]
 	v.length = 8.0
-	v.captions = [[1.4, 7.4, str(Data.CHAPTERS[chapter].get("story", ""))]]
+	# 每章一段（月下出海 → 目的地的名画，"前往 · 第几章"和这一章的故事都画在视频里）
+	var per := "res://assets/cutscene/voyage_%d.ogv" % chapter
+	if ResourceLoader.exists(per):
+		v.video = per
+	else:
+		v.title = "前往 · %s" % Data.CHAPTERS[chapter]["name"]
+		v.captions = [[1.4, 7.4, str(Data.CHAPTERS[chapter].get("story", ""))]]
 	add_child(v)
 	await v.finished
 	# 建新岛要一会儿（平板上十几秒）：先盖"正在前往"，画出来了再建，不然画面停在最后一帧像黑屏卡死
