@@ -42,6 +42,8 @@ var rebirth := 0                    # 转生了几次（飞升以后可以转生
 var boss_tier := {}                 # 每个 Boss 打赢了几次：再召唤就是"二重、三重"，血更厚、奖励更高
 var materials := {}                 # 王魄：灵兽 -> 个数（打灵兽王掉，给暗器附魔用）
 var enchant := {}                   # 暗器 -> 附魔 id（Data.ENCHANTS）
+var stars := {}                     # 暗器 -> 星数（升星，Data.STAR_*）
+var star_bless := {}                # 暗器 -> 失败攒下的祝福（每次 +5% 成功率，成功清零）
 var chapter := 1
 var quest := 0              # 当前章节的任务进度
 var quest_count := 0        # 当前任务的计数（击杀数等）
@@ -121,6 +123,8 @@ func load_profile() -> void:
 	boss_tier = d.get("boss_tier", {})
 	materials = d.get("materials", {})
 	enchant = d.get("enchant", {})
+	stars = d.get("stars", {})
+	star_bless = d.get("star_bless", {})
 	skin = str(d.get("skin", "default"))
 	outfit = str(d.get("outfit", "default"))
 	if not skin in skins:
@@ -177,7 +181,7 @@ func save_profile() -> void:
 		"version": VERSION, "money": money, "xp": xp, "level": level, "weapons": weapons,
 		"upgrades": upgrades, "items": items, "rings": rings, "bones": bones, "equipped": equipped, "bag": bag, "food": food, "bait": bait, "bounties": bounties, "skins": skins, "skin": skin, "outfits": outfits, "outfit": outfit, "codex": codex,
 		"skin_of": skin_of, "charms": charms, "charm_of": charm_of, "mastery": mastery, "paint": paint,
-		"skill_slots": skill_slots, "ring_hole": ring_hole, "attach_owned": attach_owned, "attach_on": attach_on, "stats": stats, "achieved": achieved, "god": god, "max_chapter": max_chapter, "rebirth": rebirth, "boss_tier": boss_tier, "materials": materials, "enchant": enchant,
+		"skill_slots": skill_slots, "ring_hole": ring_hole, "attach_owned": attach_owned, "attach_on": attach_on, "stats": stats, "achieved": achieved, "god": god, "max_chapter": max_chapter, "rebirth": rebirth, "boss_tier": boss_tier, "materials": materials, "enchant": enchant, "stars": stars, "star_bless": star_bless,
 		"chapter": chapter, "quest": quest, "quest_count": quest_count, "kills": kills, "loadout": loadout,
 	}
 	var f := FileAccess.open(path, FileAccess.WRITE)
@@ -263,7 +267,7 @@ func do_rebirth() -> bool:
 		return false
 	var keep := {"skins": skins, "skin": skin, "outfits": outfits, "outfit": outfit, "achieved": achieved, "stats": stats,
 		"codex": codex, "attach_owned": attach_owned, "money": money / 10, "rebirth": rebirth + 1,
-		"skin_of": skin_of, "charms": charms, "charm_of": charm_of, "mastery": mastery, "paint": paint}
+		"skin_of": skin_of, "charms": charms, "charm_of": charm_of, "mastery": mastery, "paint": paint, "stars": stars, "star_bless": star_bless}
 	_defaults()
 	for k in keep:
 		set(k, keep[k])
@@ -308,6 +312,8 @@ func _defaults() -> void:
 	boss_tier = {}
 	materials = {}
 	enchant = {}
+	stars = {}
+	star_bless = {}
 	chapter = 1
 	quest = 0
 	quest_count = 0
@@ -514,7 +520,76 @@ func weapon_stats(id: String) -> Dictionary:
 		if d.has("splash_dmg"):
 			d["splash_dmg"] = float(d["splash_dmg"]) * mk
 		d["recoil_mult"] = float(d["recoil_mult"]) * (1.0 - Data.mastery_bonus(ml, "recoil"))
+	# 升星
+	var sk := Data.star_mult(star_of(id))
+	if sk != 1.0:
+		d["damage"] = d["damage"] * sk
+		if d.has("splash_dmg"):
+			d["splash_dmg"] = float(d["splash_dmg"]) * sk
 	return d
+
+
+# ------------------------------------------------------------------ 升星（赌一把）
+
+func star_of(id: String) -> int:
+	return int(stars.get(id, 0))
+
+
+func all_mats() -> int:
+	var t := 0
+	for sp in materials:
+		t += int(materials[sp])
+	return t
+
+
+## 这一次升星：成功率（含祝福）、花多少灵石、要几个王魄、失败会不会掉星
+func star_try_info(id: String, ward: bool) -> Dictionary:
+	var s := star_of(id)
+	if s >= Data.STAR_MAX:
+		return {}
+	var rate := minf(float(Data.STAR_RATE[s]) + float(star_bless.get(id, 0.0)), 1.0)
+	var price := Data.star_price(id, s)
+	var can_drop := s >= 4 and s > Data.star_floor(s)
+	if ward and can_drop:
+		price += int(price * Data.STAR_WARD_K)
+	var mats := int(Data.STAR_BREAK[s + 1][0]) if Data.STAR_BREAK.has(s + 1) else 0
+	return {"star": s, "rate": rate, "price": price, "mats": mats, "can_drop": can_drop}
+
+
+func can_star(id: String, ward: bool) -> bool:
+	var inf := star_try_info(id, ward)
+	return not inf.is_empty() and money >= int(inf["price"]) and all_mats() >= int(inf["mats"])
+
+
+## 升一次：{"ok", "from", "to", "rate"}（花钱、扣王魄；失败攒祝福、可能掉星）
+func star_try(id: String, ward: bool, roll := -1.0) -> Dictionary:
+	if not can_star(id, ward):
+		return {}
+	var inf := star_try_info(id, ward)
+	spend(int(inf["price"]))
+	var need := int(inf["mats"])
+	for sp in materials.keys():
+		if need <= 0:
+			break
+		var use := mini(int(materials[sp]), need)
+		materials[sp] = int(materials[sp]) - use
+		need -= use
+	var s := int(inf["star"])
+	var r := randf() if roll < 0.0 else roll
+	var out := {"ok": r < float(inf["rate"]), "from": s, "to": s, "rate": float(inf["rate"])}
+	if out["ok"]:
+		stars[id] = s + 1
+		star_bless[id] = 0.0
+		out["to"] = s + 1
+		count("star_ok")
+	else:
+		star_bless[id] = float(star_bless.get(id, 0.0)) + Data.STAR_BLESS
+		if bool(inf["can_drop"]) and not ward and randf() < Data.STAR_DROP:
+			stars[id] = maxi(s - 1, Data.star_floor(s))
+			out["to"] = int(stars[id])
+		count("star_fail")
+	mark_dirty()
+	return out
 
 
 # ------------------------------------------------------------------ 熟练度

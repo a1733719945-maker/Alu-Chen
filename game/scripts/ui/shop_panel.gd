@@ -6,7 +6,7 @@ extends ColorRect
 
 signal closed
 
-const TABS := [["weapons", "暗器"], ["attach", "配件"], ["upgrades", "升级"], ["enchant", "附魔"], ["items", "道具 · 鱼饵"], ["looks", "外观"]]
+const TABS := [["weapons", "暗器"], ["attach", "配件"], ["upgrades", "升级"], ["stars", "升星"], ["enchant", "附魔"], ["items", "道具 · 鱼饵"], ["looks", "外观"]]
 
 var world: Node
 var _tab := "weapons"
@@ -86,6 +86,8 @@ func refresh() -> void:
 				_attach_block(_pick_weapon)
 		"enchant":
 			_enchant_tab()
+		"stars":
+			_stars_tab()
 		"upgrades":
 			if Profile.loadout.is_empty():
 				_list.add_child(UiKit.label("身上没有暗器。先买一把", 18, UiKit.MIST))
@@ -247,6 +249,167 @@ func _weapon_card(id: String, mx: Dictionary) -> Control:
 # ------------------------------------------------------------------ 附魔：用灵兽王掉的王魄（一把暗器一个附魔，重新附魔会替换）
 
 var _ench_weapon := ""
+
+
+# ------------------------------------------------------------------ 升星：赌一把（Profile.star_try）
+
+var _star_ward := false
+var _star_busy := false
+var _star_labels: Array = []
+var _star_roll: Label
+var _star_msg: Label
+var _star_card: Control
+
+
+func _stars_tab() -> void:
+	if Profile.loadout.is_empty():
+		_list.add_child(UiKit.label("身上没有暗器。先买一把", 18, UiKit.MIST))
+		return
+	_list.add_child(UiKit.section("升星：一颗比一颗难；失败攒祝福（下次 +5%）；3 / 6 / 9 星突破，突破过的不会掉回去", UiKit.GOLD))
+	_weapon_picker()
+	var id := _pick_weapon
+	var s := Profile.star_of(id)
+	var col := Data.star_color(s) if s >= 3 else UiKit.GOLD
+	var card := PanelContainer.new()
+	card.add_theme_stylebox_override("panel", UiKit.card_style(col))
+	_list.add_child(card)
+	_star_card = card
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", 10)
+	card.add_child(v)
+	var top := HBoxContainer.new()
+	top.add_theme_constant_override("separation", 16)
+	v.add_child(top)
+	top.add_child(UiKit.title(str(Data.WEAPONS[id]["name"]), 34, Color.WHITE))
+	var brk := ""
+	for b in Data.STAR_BREAK:
+		if s >= int(b):
+			brk = str(Data.STAR_BREAK[b][1])
+	if brk != "":
+		top.add_child(UiKit.chip("突破 · " + brk, col, 15, true))
+	# 十颗星
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	v.add_child(row)
+	_star_labels.clear()
+	for i in Data.STAR_MAX:
+		var lit := i < s
+		var c: Color = (Data.star_color(i + 1) if i + 1 >= 3 else UiKit.GOLD) if lit else Color(1, 1, 1, 0.16)
+		var l := UiKit.bold("★", 46, c, 3)
+		l.pivot_offset = Vector2(20, 28)
+		row.add_child(l)
+		_star_labels.append(l)
+		if Data.STAR_BREAK.has(i + 1) and i + 1 < Data.STAR_MAX:
+			var sep := ColorRect.new()
+			sep.color = Color(1, 1, 1, 0.12)
+			sep.custom_minimum_size = Vector2(2, 40)
+			row.add_child(sep)
+	_star_roll = UiKit.num("", 26, UiKit.MOON, 3)
+	row.add_child(_star_roll)
+	v.add_child(UiKit.label("伤害 ×%.2f%s" % [Data.star_mult(s), ("  →  下一颗 ×%.2f" % Data.star_mult(s + 1)) if s < Data.STAR_MAX else ""], 18, UiKit.MOON))
+	_star_msg = UiKit.bold("", 24, UiKit.GOLD, 3)
+	v.add_child(_star_msg)
+	if s >= Data.STAR_MAX:
+		_star_msg.text = "满星 · 金身"
+		return
+	var inf := Profile.star_try_info(id, _star_ward)
+	var chips := HFlowContainer.new()
+	chips.add_theme_constant_override("h_separation", 8)
+	v.add_child(chips)
+	var bless := float(Profile.star_bless.get(id, 0.0))
+	chips.add_child(UiKit.chip("成功率 %d%%%s" % [roundi(float(inf["rate"]) * 100.0), ("（祝福 +%d%%）" % roundi(bless * 100.0)) if bless > 0.0 else ""], UiKit.GREEN if float(inf["rate"]) >= 0.6 else (UiKit.GOLD if float(inf["rate"]) >= 0.4 else UiKit.RED), 15))
+	chips.add_child(UiKit.chip("%d 灵石" % int(inf["price"]), UiKit.GOLD, 15))
+	if int(inf["mats"]) > 0:
+		chips.add_child(UiKit.chip("突破要王魄 %d / %d" % [mini(Profile.all_mats(), int(inf["mats"])), int(inf["mats"])], UiKit.GREEN if Profile.all_mats() >= int(inf["mats"]) else UiKit.RED, 15))
+	if bool(inf["can_drop"]):
+		chips.add_child(UiKit.chip("失败一半几率掉一颗（最低 ★%d）" % Data.star_floor(s), UiKit.RED, 15))
+	var act := HBoxContainer.new()
+	act.add_theme_constant_override("separation", 14)
+	v.add_child(act)
+	if bool(inf["can_drop"]):
+		var ward := CheckBox.new()
+		ward.text = "贴护星符（失败不掉星，多花 %d%%）" % roundi(Data.STAR_WARD_K * 100.0)
+		ward.button_pressed = _star_ward
+		ward.toggled.connect(func(on: bool):
+			_star_ward = on
+			refresh())
+		act.add_child(ward)
+	var go := UiKit.button("升星", 22, true)
+	go.custom_minimum_size = Vector2(200, 52)
+	go.disabled = not Profile.can_star(id, _star_ward) or _star_busy
+	go.pressed.connect(func(): _do_star(id))
+	act.add_child(go)
+
+
+## 按下升星：星星闪一阵（越来越慢，像开奖），再揭晓
+func _do_star(id: String) -> void:
+	if _star_busy:
+		return
+	var res := Profile.star_try(id, _star_ward)
+	if res.is_empty():
+		return
+	_star_busy = true
+	_money.text = "%d" % Profile.money
+	var target: Label = _star_labels[mini(int(res["from"]), _star_labels.size() - 1)]
+	var tw := create_tween()
+	var gaps := [0.05, 0.05, 0.05, 0.06, 0.06, 0.07, 0.08, 0.09, 0.1, 0.12, 0.14, 0.17, 0.2, 0.25]
+	for i in gaps.size():
+		tw.tween_callback(func():
+			if not is_instance_valid(target):
+				return
+			target.add_theme_color_override("font_color", Color(1.0, 0.95, 0.7) if i % 2 == 0 else Color(1, 1, 1, 0.25))
+			_star_roll.text = "%d%%" % randi_range(1, 99)
+			Sfx.play("ui_click", -6.0, 0.0, 0.8 + i * 0.06))
+		tw.tween_interval(float(gaps[i]))
+	tw.tween_callback(func(): _star_reveal(id, res))
+	tw.tween_interval(1.4)
+	tw.tween_callback(func():
+		_star_busy = false
+		world.on_upgraded(id)
+		world.player.viewmodel.apply_look()
+		world.hud.on_weapon(world.player.gun)
+		refresh())
+
+
+func _star_reveal(id: String, res: Dictionary) -> void:
+	if not is_instance_valid(_star_msg):
+		return
+	var from := int(res["from"])
+	var to := int(res["to"])
+	_star_roll.text = "%d%%" % roundi(float(res["rate"]) * 100.0)
+	var target: Label = _star_labels[mini(from, _star_labels.size() - 1)]
+	if bool(res["ok"]):
+		var c: Color = Data.star_color(to) if to >= 3 else UiKit.GOLD
+		target.add_theme_color_override("font_color", c)
+		target.scale = Vector2.ONE * 1.9
+		target.create_tween().tween_property(target, "scale", Vector2.ONE, 0.45).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		if Data.STAR_BREAK.has(to):
+			_star_msg.text = "突破 · %s！%s ★%d" % [Data.STAR_BREAK[to][1], Data.WEAPONS[id]["name"], to]
+			world.hud.flash(Color(c.r, c.g, c.b, 0.45))
+			Sfx.play("rare", 0.0)
+		else:
+			_star_msg.text = "升星成功！★%d" % to
+		_star_msg.add_theme_color_override("font_color", c)
+		Sfx.play("level_up", -2.0)
+		Sfx.play("coin", -4.0)
+	else:
+		target.add_theme_color_override("font_color", Color(1, 1, 1, 0.16))
+		var t2 := "失败……祝福 +%d%%（下次更容易）" % roundi(Data.STAR_BLESS * 100.0)
+		if to < from:
+			var lost: Label = _star_labels[to]
+			lost.add_theme_color_override("font_color", UiKit.RED)
+			lost.create_tween().tween_property(lost, "modulate:a", 0.15, 0.6)
+			t2 = "失败，掉了一颗星（★%d）……祝福 +%d%%" % [to, roundi(Data.STAR_BLESS * 100.0)]
+			Sfx.play("snap", 0.0, 0.0, 0.7)
+		_star_msg.text = t2
+		_star_msg.add_theme_color_override("font_color", UiKit.RED)
+		Sfx.play("dry", -2.0, 0.0, 0.8)
+		# 卡片抖一下
+		if is_instance_valid(_star_card):
+			var tw := _star_card.create_tween()
+			for k in 6:
+				tw.tween_property(_star_card, "position:x", _star_card.position.x + (8.0 if k % 2 == 0 else -8.0), 0.04)
+			tw.tween_property(_star_card, "position:x", _star_card.position.x, 0.04)
 
 
 func _enchant_tab() -> void:

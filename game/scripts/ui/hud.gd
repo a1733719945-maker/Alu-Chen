@@ -1378,7 +1378,8 @@ func on_ammo(g: Gun) -> void:
 
 func on_weapon(g: Gun) -> void:
 	var ench := str(Profile.enchant.get(g.id, ""))
-	_weapon.text = str(g.d["name"])
+	var st := Profile.star_of(g.id)
+	_weapon.text = str(g.d["name"]) + ((" ★%d" % st) if st > 0 else "")
 	_ench.text = ("◆ " + str(Data.ENCHANTS[ench]["name"])) if Data.ENCHANTS.has(ench) else ""
 	if Data.ENCHANTS.has(ench):
 		_ench.add_theme_color_override("font_color", Data.ENCHANTS[ench]["color"])

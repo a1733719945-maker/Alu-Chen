@@ -61,6 +61,7 @@ func _ready() -> void:
 			# 新暗器测试放在第一章买完暗器后面（要第一章的草地摆靶子；第五章归墟没有草地）
 			_plan.insert(_plan.find("shop") + 1, "guns2")
 			_plan.insert(_plan.find("guns2") + 1, "pills")
+			_plan.insert(_plan.find("pills") + 1, "stars")
 		"shots":
 			_shots = true
 			_shots_dir = str(args.get("out", "user://shots"))
@@ -284,6 +285,8 @@ func _process(dt: float) -> void:
 			_run_dgwatch()
 		"dungeon":
 			_run_dungeon()
+		"stars":
+			_run_stars()
 		"siege":
 			_run_siege()
 		"musou":
@@ -4228,4 +4231,67 @@ func _run_musou() -> void:
 				if _step_t > 9.0:
 					_fail("结算完没送回岛上")
 				return
+			_next_phase()
+
+
+# ------------------------------------------------------------------ 暗器升星（赌一把）
+
+func _run_stars() -> void:
+	var w := _ready_world()
+	if not w:
+		return
+	var id := "xiujian"
+	match _step:
+		0:
+			if not id in Profile.weapons:
+				Profile.weapons.append(id)
+			Profile.stars.erase(id)
+			Profile.star_bless.erase(id)
+			Profile.money += 2000000
+			Profile.materials["rabbit"] = int(Profile.materials.get("rabbit", 0)) + 10
+			var d0 := float(Profile.weapon_stats(id)["damage"])
+			# 必成功升到 5 星（3 星突破扣一个王魄）
+			var m0 := Profile.all_mats()
+			for i in 5:
+				var r := Profile.star_try(id, false, 0.0)
+				if not _check(bool(r.get("ok", false)), "升星 %d → %d 应该成功" % [i, i + 1]):
+					return
+			if not _check(Profile.star_of(id) == 5 and Profile.all_mats() == m0 - 1, "升到 5 星不对（%d 星，王魄 %d → %d）" % [Profile.star_of(id), m0, Profile.all_mats()]):
+				return
+			var d5 := float(Profile.weapon_stats(id)["damage"])
+			if not _check(is_equal_approx(d5 / d0, Data.star_mult(5)), "5 星伤害倍数不对（%.3f，应该 %.3f）" % [d5 / d0, Data.star_mult(5)]):
+				return
+			# 失败：贴护星符不掉星、攒祝福
+			var info0 := Profile.star_try_info(id, true)
+			var r2 := Profile.star_try(id, true, 0.999)
+			if not _check(not bool(r2["ok"]) and Profile.star_of(id) == 5 and float(Profile.star_bless.get(id, 0.0)) > 0.0, "贴护星符失败了不该掉星、要攒祝福"):
+				return
+			var info1 := Profile.star_try_info(id, true)
+			if not _check(float(info1["rate"]) > float(info0["rate"]), "祝福没加到成功率上"):
+				return
+			# 不贴符失败很多次：最多掉到突破线（3 星）
+			for i in 12:
+				Profile.star_try(id, false, 0.999)
+			if not _check(Profile.star_of(id) >= 3, "掉星掉穿了突破线（%d）" % Profile.star_of(id)):
+				return
+			_note("升星：5 星伤害 ×%.2f；护星符不掉星、祝福 +%d%%；连败 12 次停在 ★%d（突破保底）" % [Data.star_mult(5), roundi(Data.STAR_BLESS * 100.0), Profile.star_of(id)])
+			# 界面：暗器铺升星页点一下
+			w.hud.open_shop()
+			var sp: ShopPanel = w.hud._shop
+			sp._tab = "stars"
+			sp._pick_weapon = id
+			sp.refresh()
+			_mem["s0"] = Profile.star_of(id)
+			sp._do_star(id)
+			_next(1)
+		1:
+			var sp2: ShopPanel = w.hud._shop
+			if sp2._star_busy:
+				if _step_t > 6.0:
+					_fail("升星动画卡住了")
+				return
+			if not _check(Profile.star_of(id) != int(_mem["s0"]) or float(Profile.star_bless.get(id, 0.0)) > 0.0, "点了升星没反应"):
+				return
+			_note("暗器铺点升星：★%d → ★%d" % [int(_mem["s0"]), Profile.star_of(id)])
+			w.hud.close_panels()
 			_next_phase()

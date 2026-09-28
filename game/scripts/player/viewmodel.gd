@@ -98,6 +98,32 @@ func _build_models() -> void:
 		m.visible = false
 		add_child(m)
 		models[id] = m
+		var st := Profile.star_of(id)
+		if st >= 3:
+			_star_aura(m, Data.star_color(st), st)
+
+
+## 升星突破过的暗器：身上一直飘着一层光点（灵光蓝 / 紫电 / 金身）
+func _star_aura(m: Node3D, c: Color, st: int) -> void:
+	var p := CPUParticles3D.new()
+	p.name = "StarAura"
+	p.amount = 8 + st * 2
+	p.lifetime = 0.9
+	p.local_coords = false
+	p.mesh = U.sphere(0.006 + st * 0.0006, 6, 4)
+	p.material_override = U.glow(c, 4.0 + st * 0.4, true)
+	p.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+	p.emission_box_extents = Vector3(0.025, 0.03, 0.2)
+	p.position = Vector3(0, 0.02, -0.12)
+	p.direction = Vector3.UP
+	p.spread = 40.0
+	p.initial_velocity_min = 0.02
+	p.initial_velocity_max = 0.08
+	p.gravity = Vector3(0, 0.12, 0)
+	p.scale_amount_min = 0.6
+	p.scale_amount_max = 1.4
+	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	m.add_child(p)
 
 
 ## 换了暗器皮肤 / 装扮 / 配件：重建手里的模型

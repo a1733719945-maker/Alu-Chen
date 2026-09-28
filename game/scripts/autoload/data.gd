@@ -1474,6 +1474,52 @@ const REF_KIT := {1: ["xiujian", 10, 2], 2: ["zhuge", 30, 3], 3: ["kongque", 50,
 const HP_SHOTS := [3.0, 4.0, 5.0, 7.0, 10.0]
 const HP_TTK := [0.5, 0.8, 1.2, 1.7, 2.4]
 const HP_FOLLOW := 0.75
+## 暗器升星（用户："把武器做成可以像 2KOL2 那样升星突破的，加入 gamble 的乐趣"）：
+##   0 → 10 星，每颗 +STAR_DMG 伤害；成功率一颗比一颗低（STAR_RATE），失败攒祝福值（下次 +5%，成功清零）；
+##   3 / 6 / 9 星是突破（要王魄，光的颜色变：灵光蓝 / 紫电 / 金身，额外伤害），突破过的不会再掉回去；
+##   4 星以上失败一半几率掉一颗（贴护星符就不掉，多花六成灵石）
+const STAR_MAX := 10
+const STAR_RATE := [1.0, 0.95, 0.88, 0.8, 0.7, 0.6, 0.5, 0.42, 0.34, 0.26]
+const STAR_DMG := 0.06
+const STAR_BLESS := 0.05
+const STAR_DROP := 0.5
+const STAR_WARD_K := 0.6
+## 突破：[要几个王魄, 名字, 颜色, 额外伤害]
+const STAR_BREAK := {3: [1, "灵光", Color(0.45, 0.8, 1.0), 0.08], 6: [2, "紫电", Color(0.78, 0.45, 1.0), 0.12], 9: [3, "金身", Color(1.0, 0.78, 0.3), 0.2]}
+
+
+func star_price(id: String, s: int) -> int:
+	var base := maxf(float(WEAPONS.get(id, {}).get("price", 0)), 800.0)
+	return int(round(base * 0.2 * pow(1.55, s) / 10.0) * 10.0)
+
+
+## 升到 s 星以后伤害倍数
+func star_mult(s: int) -> float:
+	var k := 1.0 + STAR_DMG * s
+	for b in STAR_BREAK:
+		if s >= int(b):
+			k *= 1.0 + float(STAR_BREAK[b][3])
+	return k
+
+
+## 失败最多掉到哪（突破过的保底）
+func star_floor(s: int) -> int:
+	var f := 0
+	for b in STAR_BREAK:
+		if s >= int(b):
+			f = maxi(f, int(b))
+	return f
+
+
+## 几星的光是什么颜色（0 = 没有）
+func star_color(s: int) -> Color:
+	var c := Color(0, 0, 0, 0)
+	for b in STAR_BREAK:
+		if s >= int(b):
+			c = STAR_BREAK[b][2]
+	return c
+
+
 ## 灵主血量下限：全队最强暗器持续开火至少这么多秒（再乘人数、重数）。用户："打完了都只砸了一下"——强暗器几秒就打死，招都出不来
 const BOSS_TTK := 55.0
 const ELITE_FLOOR := 12.0              # 灵兽王 / 秘境之主的下限倍数
