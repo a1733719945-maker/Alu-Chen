@@ -2691,6 +2691,10 @@ func _run_bossshot() -> void:
 				if w.island.is_land(st.x, st.z):
 					break
 			st += dir * 3.0
+			# 大个子（朱厌二十多米高）站远一点才拍得全
+			var far := maxf(w.boss.size.x, maxf(w.boss.size.y, w.boss.size.z)) * 1.3 + 8.0
+			if Vector3(st.x - c.x, 0, st.z - c.z).length() < far:
+				st = Vector3(c.x, 0, c.z) + dir * far
 			st.y = w.island.height_at(st.x, st.z) + 0.3
 			p.teleport(st)
 			p.hp = 99999.0
