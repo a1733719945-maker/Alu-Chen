@@ -2,19 +2,19 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://dkoj1o15wvr6p"
-path="res://.godot/imported/titan_tripo_mat_7994458b-114a-4ae1-852e-5f70d0c760a7_albedo.jpg-f55bf31fffb0d4d9b09c6606bce6d438.ctex"
+uid="uid://ct7x0acvfhfu1"
+path="res://.godot/imported/titan_Material_001_orm.jpg-859fdd338510a9dbff09981832f946aa.ctex"
 metadata={
 "vram_texture": false
 }
 generator_parameters={
-"md5": "0f5119e1051f6e9ac3250d957fb236e6"
+"md5": "1a638ae3c869aee6c4159b38b68e1be3"
 }
 
 [deps]
 
-source_file="res://assets/models/bosses/titan_tripo_mat_7994458b-114a-4ae1-852e-5f70d0c760a7_albedo.jpg"
-dest_files=["res://.godot/imported/titan_tripo_mat_7994458b-114a-4ae1-852e-5f70d0c760a7_albedo.jpg-f55bf31fffb0d4d9b09c6606bce6d438.ctex"]
+source_file="res://assets/models/bosses/titan_Material_001_orm.jpg"
+dest_files=["res://.godot/imported/titan_Material_001_orm.jpg-859fdd338510a9dbff09981832f946aa.ctex"]
 
 [params]
 

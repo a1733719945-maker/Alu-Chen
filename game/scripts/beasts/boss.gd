@@ -80,6 +80,9 @@ var _pose_t := 0.0               # 起手：还有几秒砸下来（身子往后
 var _pose_dur := 0.0
 var _slam_t := 0.0               # 砸下去那一下往前一顿
 var _model_y0 := 0.0
+var _static_model := false        # 没有骨骼动画的模型（程序步态，见 _update_visual）
+var _gait := 0.0                   # 步态相位（一步 = PI）
+var _gait_k := 0.0                 # 走起来的程度 0~1（平滑过渡）
 
 const HOLY_SHADER := """shader_type spatial;
 render_mode unshaded, blend_add, depth_draw_never, cull_back, shadows_disabled;
@@ -220,6 +223,8 @@ func _build() -> void:
 	model = BeastModels.instance_custom(custom, cfg) if _custom else BeastModels.instance_model(cfg)
 	head.add_child(model)
 	_model_y0 = model.position.y
+	# AI 生成的模型大多没有骨骼动画：用代码让整个身子动（走路一步一沉、左右晃、跑起来前倾、站着喘气）
+	_static_model = not model.has_meta("ap")
 	FxLib.no_decals(model)
 	var d := BeastModels._dims(str(cfg["model"]))
 	var k := BeastModels._model_scale(cfg)
@@ -1380,6 +1385,19 @@ func _update_visual(dt: float) -> void:
 	var fwd := maxf(_slam_t, 0.0) / 0.3
 	model.rotation.x = 0.2 * lift - 0.12 * fwd
 	model.position.y = _model_y0 + size.y * 0.05 * lift
+	if _static_model and ai == "land" and dt > 0.0:
+		# 程序步态：一步一沉（和下面震地的步子同一个步长）、身子左右晃、跑起来前倾；站着的时候慢慢喘气
+		var moving := 0.0 if airborne else clampf(_speed / 6.0, 0.0, 1.0)
+		_gait_k = lerpf(_gait_k, moving, 1.0 - exp(-4.0 * dt))
+		_gait += _speed * dt / maxf(size.y * 0.3, 0.5) * PI
+		var run_k := clampf((_speed - 8.0) / 10.0, 0.0, 1.0)
+		var bob := absf(sin(_gait))
+		model.position.y += size.y * (0.028 + 0.02 * run_k) * (1.0 - bob) * -_gait_k
+		model.rotation.z = sin(_gait) * (0.06 + 0.03 * run_k) * _gait_k
+		model.rotation.x += -(0.05 + 0.12 * run_k) * _gait_k
+		var breathe := sin(_t * 1.7) * 0.015 * (1.0 - _gait_k)
+		model.scale = Vector3(1.0 - breathe * 0.4, 1.0 + breathe, 1.0 - breathe * 0.4)
+		model.rotation.y = sin(_t * 0.45) * 0.06 * (1.0 - _gait_k)
 	# 巨兽（朱厌）走路、冲锋：每一步地面一震，近处镜头跟着晃
 	if ai == "land" and size.y > 12.0 and not airborne and _speed > 1.0:
 		_step_d += _speed * dt
