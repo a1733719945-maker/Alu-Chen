@@ -124,21 +124,23 @@ func cancel() -> void:
 
 # ------------------------------------------------------------------ 打架（Beast._elite 调）
 
-var _ticked := 0.0
+var _since_tick := 0.0
 
 
-## 保险：Beast._elite 有一阵没调我（掉进水里在游、被打飞到空中），手上的招就作废，别卡在半截
-func _physics_process(_dt: float) -> void:
+## 保险：Beast._elite 有一阵（游戏时间 1 秒）没调我（掉进水里在游、被打飞到空中），手上的招就作废，别卡在半截。
+## 按游戏时间算：以前按真实时间，机器一卡（截图时一帧好几秒）每招都被当成卡住作废了
+func _physics_process(dt: float) -> void:
 	# 在巢穴里醒了（偷袭 / 回够了血）：第三回合，巢穴决战
 	if b._rested and act < 3:
 		act = 3
 		cd = 1.0
-	if not cur.is_empty() and Time.get_ticks_msec() / 1000.0 - _ticked > 1.0 / maxf(Engine.time_scale, 0.1):
+	_since_tick += dt
+	if not cur.is_empty() and _since_tick > 1.0:
 		cancel()
 
 
 func host_tick(delta: float, tp: Dictionary, m: String, touching: bool) -> void:
-	_ticked = Time.get_ticks_msec() / 1000.0
+	_since_tick = 0.0
 	# 普通的扑咬 / 冲锋不放了：所有攻击都走这里（有起手、有预警、能躲）
 	b._atk_cd = 99.0
 	var tpos: Vector3 = tp["pos"]
@@ -166,17 +168,21 @@ var _target_dry := true
 
 ## 从 g 往 dir 走 L 米，到水边就停（陆地的冲锋不冲进水里），前面有石头 / 树也在它前面停——地上的预警画多长就冲多长
 func _land_len(g: Vector3, dir: Vector3, L: float) -> float:
+	# 一段一段贴着地面往前看（整条一根射线的话，上坡会撞到坡面，冲锋被截得很短）
+	var space := b.get_world_3d().direct_space_state
 	var d := 0.0
+	var prev := Vector3(g.x, world.island.height_at(g.x, g.z) + 1.0, g.z)
 	while d < L:
 		var q := g + dir * (d + 2.0)
 		if not world.island.is_land(q.x, q.z):
 			break
+		q.y = world.island.height_at(q.x, q.z) + 1.0
+		var hit: Dictionary = space.intersect_ray(PhysicsRayQueryParameters3D.create(prev, q, U.LAYER_WORLD))
+		if not hit.is_empty() and absf((hit["normal"] as Vector3).y) < 0.7:
+			d = maxf(d - 1.0, 0.0)
+			break
+		prev = q
 		d += 2.0
-	var from := g + Vector3.UP * 1.0
-	var rq := PhysicsRayQueryParameters3D.create(from, from + dir * d, U.LAYER_WORLD)
-	var hit: Dictionary = b.get_world_3d().direct_space_state.intersect_ray(rq)
-	if not hit.is_empty():
-		d = minf(d, from.distance_to(hit["position"]) - 1.5)
 	return maxf(d, 6.0)
 
 
