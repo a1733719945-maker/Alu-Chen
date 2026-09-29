@@ -20,6 +20,10 @@ func _init() -> void:
 		print("用法：-- out.glb 贴图边长 名字=文件.fbx ...")
 		quit(1)
 		return
+	# --notail：不修尾巴（人形角色：长衫后摆会被当成尾巴改绑到胯上，跑起来脚边拉出长条）
+	var notail := a.has("--notail")
+	if notail:
+		a.erase("--notail")
 	var out_path := a[0]
 	var tex := int(a[1])
 	var pairs: Array = []
@@ -68,7 +72,7 @@ func _init() -> void:
 		if n is ImporterMeshInstance3D:
 			var imi := n as ImporterMeshInstance3D
 			var sk := imi.get_node_or_null(imi.skeleton_path) as Skeleton3D
-			if imi.skin and sk:
+			if imi.skin and sk and not notail:
 				imi.mesh = _fix_tail(imi.mesh, imi.skin, sk)
 			for i in imi.mesh.get_surface_count():
 				_shrink_textures(imi.mesh.get_surface_material(i), tex)
@@ -80,7 +84,7 @@ func _init() -> void:
 			for i in am.get_surface_count():
 				im.add_surface(am.surface_get_primitive_type(i), am.surface_get_arrays(i), [], {}, am.surface_get_material(i), am.surface_get_name(i), am.surface_get_format(i) & Mesh.ARRAY_FLAG_USE_8_BONE_WEIGHTS)
 			var sk2 := mi.get_node_or_null(mi.skeleton) as Skeleton3D
-			if mi.skin and sk2:
+			if mi.skin and sk2 and not notail:
 				im = _fix_tail(im, mi.skin, sk2)
 			for i in im.get_surface_count():
 				_shrink_textures(im.get_surface_material(i), tex)

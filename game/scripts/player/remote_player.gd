@@ -44,6 +44,11 @@ var _skin_mat: Material
 var _t := 0.0
 var _custom: Node3D               # 自定义模型（没有就是 null）
 var _custom_role := ""
+# 混元人物（assets/models/player/player.glb，带骨骼和六段动作）：胳膊用 IK 端着暗器，暗器挂在 _gun_root 上每帧摆到右手
+var _skel: Skeleton3D
+var _ik: AimIK
+var _chest_bone := -1
+var _gun_root: Node3D
 
 
 func setup(p_world: Node, id: int, p_info: Dictionary) -> void:
@@ -152,6 +157,20 @@ func setup(p_world: Node, id: int, p_info: Dictionary) -> void:
 		_custom.position.y = 0.925
 		body.add_child(_custom)
 		FxLib.no_decals(_custom)
+		var sks := _custom.find_children("*", "Skeleton3D", true, false)
+		if sks.size() > 0:
+			_skel = sks[0]
+			_chest_bone = _skel.find_bone("Spine2")
+			if _skel.find_bone("RightArm") >= 0 and _skel.find_bone("LeftArm") >= 0:
+				_ik = AimIK.new()
+				_skel.add_child(_ik)
+				_gun_root = Node3D.new()
+				_gun_root.name = "GunRoot"
+				add_child(_gun_root)
+		if _custom.has_meta("ap"):
+			var ap0: AnimationPlayer = _custom.get_meta("ap")
+			if ap0.has_animation("sprint"):
+				ap0.get_animation("sprint").loop_mode = Animation.LOOP_LINEAR
 	_hat = Node3D.new()
 	head.add_child(_hat)
 	var coil := U.part(_elbow_l, U.torus(0.06, 0.08, 20, 6), U.glow(Color(0.45, 0.8, 1.0), 2.5), Vector3(0, -0.14, 0))
@@ -223,9 +242,12 @@ func _apply_look(outfit: String, skin: String, skins := {}) -> void:
 	weapons.clear()
 	for id2 in Data.WEAPON_ORDER:
 		var w := WeaponModels.build_small(id2, str(skins.get(id2, skin)))
-		w.position = Vector3(0, -0.52, -0.15)
 		w.visible = false
-		arm_r.add_child(w)
+		if _gun_root:
+			_gun_root.add_child(w)
+		else:
+			w.position = Vector3(0, -0.52, -0.15)
+			arm_r.add_child(w)
 		weapons[id2] = w
 
 
@@ -360,24 +382,72 @@ func _process(dt: float) -> void:
 	_cape.rotation.x = -(0.06 + run_k * 0.7 + sin(_t * 6.0) * 0.06 * (0.3 + run_k)) - (0.4 if air else 0.0)
 	_ribbon.rotation.x = -(0.25 + run_k * 0.9) + sin(_t * 9.0) * 0.12
 	_tassel.rotation.x = sin(_walk_t * 2.0) * 0.35 * run_k
-	body.position.y = (-0.3 if crouch else 0.0) + absf(sin(_walk_t)) * 0.03 * run_k
+	# 混元人物自己有蹲、冲刺的动作，不用再压低 / 前倾
+	var own_anim := _skel != null
+	body.position.y = (-0.3 if crouch and not own_anim else 0.0) + (0.0 if own_anim else absf(sin(_walk_t)) * 0.03 * run_k)
 	if _dead:
 		body.rotation.x = -PI / 2
 		body.position.y = 0.3
 	else:
 		# 冲刺时身子往前倾
-		body.rotation.x = lerp_angle(body.rotation.x, -0.18 if (flags & 2) else 0.0, 1.0 - exp(-8.0 * dt))
+		body.rotation.x = lerp_angle(body.rotation.x, -0.18 if (flags & 2) and not own_anim else 0.0, 1.0 - exp(-8.0 * dt))
 	lure.hand = _elbow_l.global_transform * Vector3(0, -0.3, 0)
 	lure.apply_remote(int(s1[6]), s1[7], dt)
 	if _custom and _custom.has_meta("ap"):
 		var ap: AnimationPlayer = _custom.get_meta("ap")
 		var roles: Dictionary = _custom.get_meta("roles")
 		var role := "idle"
+		var anim := ""
 		if air and str(roles.get("air", "")) != "":
 			role = "air"
+		elif crouch and ap.has_animation("crouch"):
+			role = "crouch"
+			anim = "crouch"
+		elif speed > 0.6 and (flags & 2) and ap.has_animation("sprint"):
+			role = "sprint"
+			anim = "sprint"
+		elif speed > 0.6 and speed < 2.6 and str(roles.get("walk", "")) != "":
+			role = "walk"
 		elif speed > 0.6 and str(roles.get("run", "")) != "":
 			role = "run"
-		ap.speed_scale = clampf(speed / 4.0, 0.7, 1.6) if role == "run" else 1.0
-		if role != _custom_role and str(roles.get(role, "")) != "":
+		if anim == "":
+			anim = str(roles.get(role, ""))
+		match role:
+			"run":
+				ap.speed_scale = clampf(speed / 5.0, 0.7, 1.6)
+			"sprint":
+				ap.speed_scale = clampf(speed / 7.5, 0.8, 1.5)
+			"walk":
+				ap.speed_scale = clampf(speed / 1.6, 0.7, 1.6)
+			_:
+				ap.speed_scale = 1.0
+		if role != _custom_role and anim != "":
 			_custom_role = role
-			ap.play(str(roles[role]), 0.2)
+			ap.play(anim, 0.2)
+	_update_aim()
+
+
+## 混元人物端暗器：按朝向和抬头低头算两只手的位置（相对胸口），交给 AimIK；暗器摆到右手
+func _update_aim() -> void:
+	if _ik == null:
+		return
+	var holding := not _dead and (_flags & 128) == 0 and _gun_root != null
+	_ik.active = holding
+	_gun_root.visible = holding
+	if not holding:
+		return
+	var bx := body.global_transform
+	var yb := bx.basis.orthonormalized()
+	var f := yb * Vector3(0, sin(pitch), -cos(pitch))
+	var up := yb * Vector3(0, cos(pitch), sin(pitch))
+	var right := yb * Vector3.RIGHT
+	var chest := bx * Vector3(0, 1.38, 0)
+	if _chest_bone >= 0:
+		chest = _skel.global_transform * _skel.get_bone_global_pose(_chest_bone).origin
+	var s := _scale
+	var r := chest + (right * 0.12 + f * 0.3 + up * 0.06) * s
+	_ik.r_target = r
+	_ik.l_target = r + (f * 0.3 - right * 0.07 - up * 0.03) * s
+	_ik.r_pole = chest + (right * 0.5 - yb.y * 0.6 - f * 0.2) * s
+	_ik.l_pole = chest + (-right * 0.5 - yb.y * 0.6) * s
+	_gun_root.global_transform = Transform3D(Basis(yb.x, up, -f).orthonormalized().scaled(Vector3.ONE * s), r + f * 0.08 * s)
