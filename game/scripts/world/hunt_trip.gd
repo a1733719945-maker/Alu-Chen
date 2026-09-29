@@ -235,6 +235,18 @@ func _on_done(r: Dictionary) -> void:
 	Profile.count("hunts")
 	if bool(r["captured"]):
 		Profile.count("captures")
+		# 灵宠：活捉的灵兽王驯成灵宠（没带灵宠的话马上带上）
+		var psp := str(r["species"])
+		if Data.BEASTS.has(psp):
+			var first := not Profile.pets.has(psp)
+			Profile.pets[psp] = maxi(int(Profile.pets.get(psp, 0)), int(r["age"]))
+			if Profile.pet == "":
+				Profile.pet = psp
+				world.refresh_pet()
+				world._broadcast_prog()
+			Profile.mark_dirty()
+			if first:
+				world.hud.toast("%s驯成了灵宠" % str(Data.BEASTS[psp]["name"]), Color(0.6, 0.9, 1.0), 4.0)
 	# 灵核（装备树第五品要）：每人自己掷，连着没掉有保底
 	var sp := str(r["species"])
 	var tempered := bool(r.get("tempered", false))

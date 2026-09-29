@@ -6,7 +6,7 @@ extends ColorRect
 
 signal closed
 
-const TABS := [["weapons", "暗器"], ["attach", "配件"], ["upgrades", "升级"], ["stars", "升星"], ["forge", "锻造"], ["enchant", "附魔"], ["items", "道具 · 鱼饵"], ["looks", "外观"], ["decor", "装饰"]]
+const TABS := [["weapons", "暗器"], ["attach", "配件"], ["upgrades", "升级"], ["stars", "升星"], ["forge", "锻造"], ["pets", "灵宠"], ["enchant", "附魔"], ["items", "道具 · 鱼饵"], ["looks", "外观"], ["decor", "装饰"]]
 
 var world: Node
 var _tab := "weapons"
@@ -90,6 +90,8 @@ func refresh() -> void:
 			_stars_tab()
 		"forge":
 			_forge_tab()
+		"pets":
+			_pets_tab()
 		"upgrades":
 			if Profile.loadout.is_empty():
 				_list.add_child(UiKit.label("身上没有暗器。先买一把", 18, UiKit.MIST))
@@ -420,6 +422,46 @@ func _star_reveal(id: String, res: Dictionary) -> void:
 
 
 # ------------------------------------------------------------------ 装饰：码头、船、暗器铺、营地（Decor）
+
+# ------------------------------------------------------------------ 灵宠（Pet）：活捉过的灵兽王，挑一只带着
+
+func _pets_tab() -> void:
+	_list.add_child(UiKit.section("灵宠：一个人的时候最有用——打架帮你咬、隔一阵放一次本事，倒下时会把海鸥撞下来；人多了它只跟着跑", UiKit.GOLD))
+	if Profile.pets.is_empty():
+		var l := UiKit.label("还没有灵宠。猎场里把灵兽王打累了、血也不多了，用引魂索捆住它活捉，它就跟你回来", 16, UiKit.MIST)
+		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_list.add_child(l)
+		return
+	for sp in Profile.pets:
+		var sk := Pet.skill_of(str(sp))
+		var on := Profile.pet == str(sp)
+		var col: Color = Gear.SKILLS[Pet.kind(str(sp))]["color"]
+		var h := _row(col if on else Color(0, 0, 0, 0))
+		var v := VBoxContainer.new()
+		v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		v.add_theme_constant_override("separation", 3)
+		h.add_child(v)
+		var top := HBoxContainer.new()
+		top.add_theme_constant_override("separation", 10)
+		v.add_child(top)
+		top.add_child(UiKit.bold("%s%s" % [Data.age_name(int(Profile.pets[sp])), str(Data.BEASTS[sp]["name"])], 20, UiKit.MOON))
+		top.add_child(UiKit.chip(str(sk["name"]), col, 13, true))
+		if on:
+			top.add_child(UiKit.chip("带着", UiKit.JADE, 12))
+		v.add_child(UiKit.label(str(sk["desc"]), 14, UiKit.MIST))
+		var spid := str(sp)
+		var b := UiKit.button("让它回去" if on else "带上", 17, not on)
+		b.custom_minimum_size.x = 150
+		b.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		b.pressed.connect(func():
+			Profile.pet = "" if Profile.pet == spid else spid
+			Profile.mark_dirty()
+			Sfx.play("switch", -4.0)
+			world.refresh_pet()
+			world._broadcast_prog()
+			refresh())
+		h.add_child(b)
+
 
 # ------------------------------------------------------------------ 锻造（装备树 Gear）：护具 + 暗器锻造
 

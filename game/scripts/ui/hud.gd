@@ -525,6 +525,9 @@ func _king_row(d: Dictionary) -> Dictionary:
 	p.add_child(h)
 	var arrow := _painter(Vector2(26, 26), func(c: Control):
 		var a := float(c.get_meta("a", 0.0))
+		# 被海鸥叼着的时候方向会算出 NaN（画出来的多边形是坏的，引擎报 triangulation failed）
+		if is_nan(a) or is_inf(a):
+			a = 0.0
 		var ctr := Vector2(13, 13)
 		c.draw_circle(ctr, 12.0, Color(0, 0, 0, 0.35))
 		if not c.get_meta("alive", true):

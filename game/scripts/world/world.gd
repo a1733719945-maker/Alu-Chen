@@ -195,6 +195,8 @@ func _ready() -> void:
 	decor = Decor.new()
 	decor.world = self
 	add_child(decor)
+	# 灵宠（第 7.5 节第四根柱子）
+	refresh_pet.call_deferred()
 	Sfx.play_ambient("ambient", -16.0)
 	capture_mouse(true)
 	_last_prog = [Profile.level, Profile.rings.size()]
@@ -240,7 +242,7 @@ func _exit_tree() -> void:
 
 func _my_info() -> Dictionary:
 	var o := Profile.output()
-	return {"name": Settings.display_name(), "wuhun": Settings.wuhun, "level": Profile.level, "rings": _ring_summary(), "outfit": Profile.outfit, "skin": Profile.skin, "out": [o.x, o.y], "skins": Profile.skin_of.duplicate(), "decor": Profile.decor_on(), "gear": Gear.worn()}
+	return {"name": Settings.display_name(), "wuhun": Settings.wuhun, "level": Profile.level, "rings": _ring_summary(), "outfit": Profile.outfit, "skin": Profile.skin, "out": [o.x, o.y], "skins": Profile.skin_of.duplicate(), "decor": Profile.decor_on(), "gear": Gear.worn(), "pet": Profile.pet}
 
 
 ## 队伍里最强的输出（灵兽血量下限按它算）
@@ -581,6 +583,50 @@ func local_fire(g: Gun, origin: Vector3, dirs: Array[Vector3], muzzle: Vector3, 
 				get_tree().create_timer(0.25 + i * 0.1).timeout.connect(func(): _lay_mine(g, cp, sd * 0.45 * MINE_K))
 	Net.send(0, "shot", [g.id, muzzle, ends])
 	_apply_hits(g, per_beast, boss_dmg, boss_weak, true, k > 1.5, "full" if pierce_over > 0 else "")
+
+
+## 灵宠（Pet）咬了一口：算我的伤害（飘小字，不算连击、不出命中音）；fl 是它的本事（GunArts 里 pet_*）
+func pet_hit(b: Beast, dmg: float, fl: String) -> void:
+	if not b.alive():
+		return
+	var imp := Vector3.UP * 0.5
+	if Net.is_host():
+		var before := b.alive()
+		var real := b.take_hit(dmg, imp, Vector3.ZERO, false, Net.my_id, 2.0, false, "pet", fl)
+		fx.damage_number(b.global_position + Vector3(0, 0.3, 0), real, false, before and b.hp <= 0.0)
+		if before and b.hp <= 0.0:
+			_host_kill(b)
+	else:
+		fx.damage_number(b.global_position + Vector3(0, 0.3, 0), dmg * b.armor_factor(false), false)
+		Net.send(1, "hit", [b.id, dmg, imp, Vector3.ZERO, false, 2.0, "pet", fl])
+
+
+## 灵宠：自己的跟着自己，队友的跟着队友（peer_info.pet）
+var pet: Pet
+var _remote_pets := {}
+
+
+## force：自动测试里一般不带灵宠（会去咬测试里的灵兽，结果对不上），测试灵宠时传 true
+func refresh_pet(force := false) -> void:
+	if pet and is_instance_valid(pet):
+		pet.queue_free()
+	pet = null
+	if Data.autotest and not force:
+		return
+	if Profile.pet != "" and Data.BEASTS.has(Profile.pet):
+		pet = Pet.spawn(self, player, Profile.pet, true)
+
+
+func _refresh_remote_pet(peer: int) -> void:
+	var want := str(peer_info.get(peer, {}).get("pet", ""))
+	var cur: Pet = _remote_pets.get(peer)
+	if cur and is_instance_valid(cur) and cur.species == want:
+		return
+	if cur and is_instance_valid(cur):
+		cur.queue_free()
+	_remote_pets.erase(peer)
+	if want != "" and Data.BEASTS.has(want) and remotes.has(peer):
+		_remote_pets[peer] = Pet.spawn(self, remotes[peer], want, false)
 
 
 ## 护具（Gear）打中灵兽时的加成：缠魂两件打捆住的更痛，追猎四件离得越远越痛
@@ -2654,7 +2700,7 @@ func _on_quest_done(msg: Array) -> void:
 func _broadcast_prog() -> void:
 	peer_info[Net.my_id] = _my_info()
 	var o := Profile.output()
-	var p := [Profile.level, _ring_summary(), Profile.outfit, Profile.skin, [snappedf(o.x, 0.1), snappedf(o.y, 0.1)], Profile.skin_of.duplicate(), Profile.decor_on(), Gear.worn()]
+	var p := [Profile.level, _ring_summary(), Profile.outfit, Profile.skin, [snappedf(o.x, 0.1), snappedf(o.y, 0.1)], Profile.skin_of.duplicate(), Profile.decor_on(), Gear.worn(), Profile.pet]
 	if p == _last_prog:
 		return
 	_last_prog = p
@@ -3456,6 +3502,7 @@ func _on_peer_left(id: int) -> void:
 		hud.feed("%s 离开了" % peer_name(id), Color(0.8, 0.8, 0.8))
 		remotes[id].queue_free()
 		remotes.erase(id)
+		_refresh_remote_pet(id)
 	peer_info.erase(id)
 	if decor:
 		decor.refresh.call_deferred()
@@ -3481,12 +3528,13 @@ func _add_remote(id: int, info: Dictionary) -> void:
 	r.set_camera(player.cam)
 	remotes[id] = r
 	_stat(id)
+	_refresh_remote_pet(id)
 	hud.feed("%s 加入了" % str(info.get("name", "修士")), Color(0.6, 0.95, 0.7))
 
 
 func hello_payload(want_reply: bool) -> Array:
 	var o := Profile.output()
-	return [Settings.display_name(), Settings.wuhun, want_reply, Profile.level, _ring_summary(), Profile.outfit, Profile.skin, [o.x, o.y], Profile.skin_of.duplicate(), Profile.decor_on(), Gear.worn()]
+	return [Settings.display_name(), Settings.wuhun, want_reply, Profile.level, _ring_summary(), Profile.outfit, Profile.skin, [o.x, o.y], Profile.skin_of.duplicate(), Profile.decor_on(), Gear.worn(), Profile.pet]
 
 
 func _info_from_hello(d: Array) -> Dictionary:
@@ -3523,6 +3571,9 @@ func on_message(from: int, type: String, data: Variant) -> void:
 						decor.refresh()
 				if d.size() > 7:
 					peer_info[from]["gear"] = d[7]
+				if d.size() > 8:
+					peer_info[from]["pet"] = str(d[8])
+					_refresh_remote_pet(from)
 				if remotes.has(from):
 					remotes[from].set_info(peer_info[from])
 			if Net.is_host():

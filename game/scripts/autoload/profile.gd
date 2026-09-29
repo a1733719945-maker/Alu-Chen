@@ -50,6 +50,9 @@ var decor := {}                     # 装饰 id -> 摆没摆上（买了就有�
 var gear := {}
 var gear_on := {}
 var forge := {}
+## 灵宠（Pet）：活捉过的灵兽王 物种 -> 年份、带着哪只（"" = 不带）
+var pets := {}
+var pet := ""
 var chapter := 1
 var quest := 0              # 当前章节的任务进度
 var quest_count := 0        # 当前任务的计数（击杀数等）
@@ -135,6 +138,8 @@ func load_profile() -> void:
 	gear = d.get("gear", {})
 	gear_on = d.get("gear_on", {})
 	forge = d.get("forge", {})
+	pets = d.get("pets", {})
+	pet = str(d.get("pet", ""))
 	star_bless = d.get("star_bless", {})
 	skin = str(d.get("skin", "default"))
 	outfit = str(d.get("outfit", "default"))
@@ -192,7 +197,7 @@ func save_profile() -> void:
 		"version": VERSION, "money": money, "xp": xp, "level": level, "weapons": weapons,
 		"upgrades": upgrades, "items": items, "rings": rings, "bones": bones, "equipped": equipped, "bag": bag, "food": food, "bait": bait, "bounties": bounties, "skins": skins, "skin": skin, "outfits": outfits, "outfit": outfit, "codex": codex,
 		"skin_of": skin_of, "charms": charms, "charm_of": charm_of, "mastery": mastery, "paint": paint,
-		"skill_slots": skill_slots, "ring_hole": ring_hole, "attach_owned": attach_owned, "attach_on": attach_on, "stats": stats, "achieved": achieved, "god": god, "max_chapter": max_chapter, "rebirth": rebirth, "boss_tier": boss_tier, "materials": materials, "parts": parts, "enchant": enchant, "stars": stars, "star_bless": star_bless, "decor": decor, "gear": gear, "gear_on": gear_on, "forge": forge,
+		"skill_slots": skill_slots, "ring_hole": ring_hole, "attach_owned": attach_owned, "attach_on": attach_on, "stats": stats, "achieved": achieved, "god": god, "max_chapter": max_chapter, "rebirth": rebirth, "boss_tier": boss_tier, "materials": materials, "parts": parts, "enchant": enchant, "stars": stars, "star_bless": star_bless, "decor": decor, "gear": gear, "gear_on": gear_on, "forge": forge, "pets": pets, "pet": pet,
 		"chapter": chapter, "quest": quest, "quest_count": quest_count, "kills": kills, "loadout": loadout,
 	}
 	var f := FileAccess.open(path, FileAccess.WRITE)
@@ -278,7 +283,7 @@ func do_rebirth() -> bool:
 		return false
 	var keep := {"skins": skins, "skin": skin, "outfits": outfits, "outfit": outfit, "achieved": achieved, "stats": stats,
 		"codex": codex, "attach_owned": attach_owned, "money": money / 10, "rebirth": rebirth + 1,
-		"skin_of": skin_of, "charms": charms, "charm_of": charm_of, "mastery": mastery, "paint": paint, "stars": stars, "star_bless": star_bless, "decor": decor, "gear": gear, "gear_on": gear_on, "forge": forge}
+		"skin_of": skin_of, "charms": charms, "charm_of": charm_of, "mastery": mastery, "paint": paint, "stars": stars, "star_bless": star_bless, "decor": decor, "gear": gear, "gear_on": gear_on, "forge": forge, "pets": pets, "pet": pet}
 	_defaults()
 	for k in keep:
 		set(k, keep[k])
@@ -330,6 +335,8 @@ func _defaults() -> void:
 	gear = {}
 	gear_on = {}
 	forge = {}
+	pets = {}
+	pet = ""
 	chapter = 1
 	quest = 0
 	quest_count = 0

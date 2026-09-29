@@ -64,6 +64,26 @@ static func host_hit(b: Beast, gun: String, fl: String, real: float, lp: Vector3
 	if f and head and Gear.peer_n(b.world, shooter, "breaker") >= 4:
 		f.add_stun(real * Gear.BREAKER_STUN)
 	match gun:
+		"pet":
+			# 灵宠的本事（Pet._skill）
+			match fl:
+				"pet_stun":
+					if f:
+						f.add_stun(f.stun_max * 0.25)
+				"pet_bind":
+					if f:
+						f.pin(3.0)
+					else:
+						_root(b, 1.5)
+				"pet_mark":
+					b.mark_t = maxf(b.mark_t, 8.0)
+					b.mark_mult = maxf(b.mark_mult, 1.2)
+					fx_event(b, "star", "")
+				"pet_slow":
+					if f:
+						f.pin(2.5)
+					else:
+						_root(b, 0.8)
 		"meihua":
 			var key := "%d:%d" % [b.id, shooter]
 			var now := _now()
