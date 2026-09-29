@@ -41,6 +41,14 @@ var _mm: MultiMesh
 var _mmi: MultiMeshInstance3D
 var _fx_budget := 0
 var textured := false                      # 用的是 AI 生成的跳尸模型（assets/models/horde/jiangshi.glb）
+## 受击反馈（2026-09-29，用户："僵尸受击之后没有后退"）：以前是瞬移一小段，看不出来。
+## 现在：往后的速度（u["kb"]，很快衰减）+ 上半身往后一仰（按 hurt）+ 打断正在跳的那一下（僵直）；
+## 死了不直接消失：仰面倒下、往后滑一段、沉进地里（_corpses，只画不参与命中）
+const KB_SPEED := 7.5          # 挨一枪满伤（伤害 ≥ 四成血）时的后退初速度（米/秒）
+const KB_DAMP := 9.0           # 每秒衰减
+const MASS := [0.9, 1.0, 0.45, 0.12, 1.1]   # 越小越推不动（铁尸、尸王）
+const CORPSE_MAX := 40
+var _corpses: Array = []                   # {"p","yaw","k","t","kb","ph"}
 
 ## AI 生成的跳尸（Meshy，用户 2026-09-29 给的）：tools/pose_jiangshi.py 已经把胳膊掰成向前平伸、
 ## 转成朝 -Z、脚底在 0、1.9 米高；tools/shrink_glb.gd 减到约 6000 面（尸群一次上百只）
@@ -68,7 +76,7 @@ func _ready() -> void:
 	else:
 		_mm.mesh = _build_mesh()
 		m.shader.code = SHADER
-	_mm.instance_count = MAX
+	_mm.instance_count = MAX + CORPSE_MAX
 	_mm.visible_instance_count = 0
 	var mmi := MultiMeshInstance3D.new()
 	mmi.multimesh = _mm
@@ -88,6 +96,7 @@ func alive_count() -> int:
 func clear() -> void:
 	units.clear()
 	by_id.clear()
+	_corpses.clear()
 	_mm.visible_instance_count = 0
 
 
@@ -129,31 +138,46 @@ func apply_hits(list: Array) -> void:
 		if u.is_empty():
 			continue
 		var dmg := float(e[1])
+		var k := int(u["kind"])
 		u["hp"] = float(u["hp"]) - dmg
-		u["hurt"] = 1.0
 		u["hit_t"] = 0.0
-		if float(u["hp"]) <= 0.0:
-			_die(u, int(e[2]))
-			continue
+		# 往哪边退：背对开枪的人
+		var away := Vector3.ZERO
 		var src: Variant = where.get(int(e[2]), null)
 		if src != null:
-			var away: Vector3 = (u["p"] as Vector3) - (src as Vector3)
+			away = (u["p"] as Vector3) - (src as Vector3)
 			away.y = 0.0
-			var k := int(u["kind"])
-			var back := clampf(dmg / maxf(float(u["max"]), 1.0) * 2.4, 0.12, 1.4) * (0.15 if k == 3 else (0.5 if k == 2 else 1.0))
-			if away.length() > 0.01:
-				var push := away.normalized() * back
-				u["from"] = _push_out((u["from"] as Vector3) + push, SCALE[k])
-				u["to"] = _push_out((u["to"] as Vector3) + push, SCALE[k])
-				# 打断这一跳：落地多歇一下
-				u["rest"] = maxf(float(u["rest"]), 0.12)
+			away = away.normalized() if away.length() > 0.01 else Vector3.ZERO
+		# 这一下有多重：按占最大血量的比例（一枪四成血以上算满）
+		var heavy := clampf(dmg / maxf(float(u["max"]), 1.0) * 2.5, 0.3, 1.0)
+		var mass: float = MASS[k]
+		if float(u["hp"]) <= 0.0:
+			_die(u, int(e[2]), away * KB_SPEED * (0.6 + heavy * 0.6) * maxf(mass, 0.3))
+			continue
+		u["hurt"] = maxf(float(u["hurt"]), 0.55 + heavy * 0.45)
+		u["lean"] = clampf(float(u.get("lean", 0.0)) + (0.35 + heavy * 0.45) * mass, 0.0, 0.8)
+		if away != Vector3.ZERO:
+			u["kb"] = (u.get("kb", Vector3.ZERO) as Vector3) * 0.4 + away * KB_SPEED * heavy * mass
+		# 打断正在跳的那一下：原地落下，僵直一会儿（越重越久；尸王几乎不停）
+		var stag := (0.1 + heavy * 0.25) * mass
+		if float(u["t"]) < float(u["len"]):
+			var here: Vector3 = u["p"]
+			u["from"] = here
+			u["to"] = here
+			u["t"] = float(u["len"])
+		u["rest"] = maxf(float(u["rest"]), stag)
 
 
-func _die(u: Dictionary, peer: int) -> void:
+func _die(u: Dictionary, peer: int, kb := Vector3.ZERO) -> void:
 	units.erase(u)
 	by_id.erase(int(u["id"]))
 	var p: Vector3 = u["p"]
 	var s: float = SCALE[int(u["kind"])]
+	# 尸体：仰面倒下、往后滑、沉进地里（离得远的、太多的时候不留）
+	if _corpses.size() < CORPSE_MAX and world.player.global_position.distance_to(p) < 80.0:
+		# 脸朝打它的人、往后倒（kb 是往后的速度）
+		var cyaw := atan2(kb.x, kb.z) if kb.length() > 0.01 else float(u["yaw"])
+		_corpses.append({"p": p, "yaw": cyaw, "k": int(u["kind"]), "t": 0.0, "kb": kb, "ph": float(u["ph"])})
 	if _fx_budget < 10 and world.player.global_position.distance_to(p) < 70.0:
 		_fx_budget += 1
 		world.fx._flash(p + Vector3.UP * s, Color(0.5, 1.0, 0.6), 1.4 * s, 0.12)
@@ -257,7 +281,7 @@ func pos_of(id: int) -> Vector3:
 
 func _process(dt: float) -> void:
 	_fx_budget = 0
-	if units.is_empty():
+	if units.is_empty() and _corpses.is_empty():
 		_mm.visible_instance_count = 0
 		return
 	var pls: Array = world.alive_players()
@@ -279,6 +303,14 @@ func _process(dt: float) -> void:
 		u["cd"] = float(u["cd"]) - dt
 		u["hurt"] = maxf(float(u["hurt"]) - dt * 4.0, 0.0)
 		u["hit_t"] = float(u["hit_t"]) + dt
+		# 被打退：往后滑（起跳点和落点一起挪），速度很快衰减；后仰慢慢回正
+		var kbv: Vector3 = u.get("kb", Vector3.ZERO)
+		if kbv.length_squared() > 0.0004:
+			var dpos := kbv * dt
+			u["from"] = _push_out((u["from"] as Vector3) + dpos, s)
+			u["to"] = _push_out((u["to"] as Vector3) + dpos, s)
+			u["kb"] = kbv * exp(-KB_DAMP * dt)
+		u["lean"] = maxf(float(u.get("lean", 0.0)) - dt * 2.6, 0.0)
 		var p: Vector3 = u["p"]
 		# 目标：身边有人追人，没有就去砸阵眼（割草：追最近的人）
 		var tgt := goal
@@ -357,12 +389,41 @@ func _process(dt: float) -> void:
 		var squash := 0.0
 		if float(u["t"]) >= float(u["len"]):
 			squash = 0.12
-		var bs := Basis(Vector3.UP, float(u["yaw"])) * Basis(Vector3.RIGHT, -0.12 * hop)
+		# 挨打往后仰（绕脚底；lean 衰减时有一点回弹）
+		var ln := float(u.get("lean", 0.0))
+		var tilt := ln * (1.0 + 0.25 * sin(ln * 9.0))
+		var bs := Basis(Vector3.UP, float(u["yaw"])) * Basis(Vector3.RIGHT, -0.12 * hop + tilt)
 		bs = bs.scaled(Vector3(s * (1.0 + squash), s * (1.0 - squash + 0.06 * hop), s * (1.0 + squash)))
 		_mm.set_instance_transform(n, Transform3D(bs, Vector3(p.x, y, p.z)))
 		_mm.set_instance_color(n, TEX_TINT[k] if textured else TINT[k])
 		_mm.set_instance_custom_data(n, Color(float(u["ph"]), hop, float(u["hurt"]), float(k)))
 		n += 1
+	# 尸体：0.4 秒仰面倒下（先快后慢，落地弹一下）→ 躺一会儿 → 1.1 秒后沉进地里，2.2 秒消失
+	var ci := 0
+	while ci < _corpses.size():
+		var c: Dictionary = _corpses[ci]
+		var ct := float(c["t"]) + dt
+		c["t"] = ct
+		if ct > 2.2 or n >= _mm.instance_count:
+			_corpses.remove_at(ci)
+			continue
+		var ck := int(c["k"])
+		var ks: float = SCALE[ck]
+		var cv: Vector3 = c["kb"]
+		c["p"] = _push_out((c["p"] as Vector3) + cv * dt, ks)
+		c["kb"] = cv * exp(-5.0 * dt)
+		var fall := ease(clampf(ct / 0.42, 0.0, 1.0), 0.4)
+		var ang := fall * 1.42
+		if ct > 0.42:
+			ang -= sin(clampf((ct - 0.42) / 0.22, 0.0, 1.0) * PI) * 0.1
+		var sink := maxf(ct - 1.1, 0.0) * 0.9 * ks
+		var cp: Vector3 = c["p"]
+		var cb := (Basis(Vector3.UP, float(c["yaw"])) * Basis(Vector3.RIGHT, ang)).scaled(Vector3.ONE * ks)
+		_mm.set_instance_transform(n, Transform3D(cb, Vector3(cp.x, center.y + 0.12 * ks * fall - sink, cp.z)))
+		_mm.set_instance_color(n, TEX_TINT[ck] if textured else TINT[ck])
+		_mm.set_instance_custom_data(n, Color(float(c["ph"]), 0.0, maxf(1.0 - ct * 3.0, 0.0), float(ck)))
+		n += 1
+		ci += 1
 	_mm.visible_instance_count = n
 	# 割草几百只的时候不投影子（贴图模型一只六千面，影子再画一遍太重）
 	if _mmi:

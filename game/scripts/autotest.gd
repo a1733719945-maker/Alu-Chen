@@ -301,6 +301,8 @@ func _process(dt: float) -> void:
 			_run_chase()
 		"chaseshot":
 			_run_chaseshot()
+		"kbshot":
+			_run_kbshot()
 		"musou":
 			_run_musou()
 		"dgshot":
@@ -4139,6 +4141,63 @@ func _trial_enter(w: World, T: Trial, m: String) -> bool:
 			_note("进了试炼 · %s" % Trial.MODES[m]["name"])
 			return true
 	return false
+
+
+## 僵尸受击反馈截图：一排 5 只跳尸，轻打 / 重打 / 打死两只，命中后 0.12 秒（后仰、后退）和 0.47 秒（尸体倒下）各一张
+func _run_kbshot() -> void:
+	var w := _ready_world()
+	if not w:
+		return
+	var T := w.trial
+	var p := w.player
+	p.hp = 99999.0
+	p.invuln_t = 9999.0
+	match _step:
+		0:
+			T.request("chase")
+			_next(1)
+		1:
+			if not T.inside:
+				if _step_t > 4.0:
+					_fail("进不了尸潮追击")
+				return
+			T._phase_t = 999.0
+			T.horde.clear()
+			p.teleport(Trial.CHASE + Vector3(0, 0.5, -2.0))
+			var list: Array = []
+			for i in 5:
+				list.append([0, Trial.CHASE.x - 4.0 + i * 2.0, Trial.CHASE.z - 9.0, 1, 100.0])
+			T.horde.host_spawn(list)
+			_aim(p, Trial.CHASE + Vector3(0, 1.2, -9.0))
+			_next(2)
+		2:
+			if _step_t < 1.2:
+				return
+			var us: Array = T.horde.units
+			if us.size() < 5:
+				_fail("僵尸没出来")
+				return
+			var ids := []
+			for u in us:
+				ids.append(int(u["id"]))
+			var hp0 := float(us[1]["hp"])
+			T.horde.apply_hits([[ids[0], 15.0, Net.my_id], [ids[1], 45.0, Net.my_id], [ids[3], 150.0, Net.my_id], [ids[4], 150.0, Net.my_id]])
+			if not _check(T.horde.units.size() == 3 and (T.horde.by_id[ids[1]] as Dictionary).get("kb", Vector3.ZERO).length() > 1.0, "挨打没有后退速度 / 没打死"):
+				return
+			_note("受击：重打那只 hp %.0f → %.0f，后退初速 %.1f" % [hp0, float(T.horde.by_id[ids[1]]["hp"]), (T.horde.by_id[ids[1]]["kb"] as Vector3).length()])
+			_next(3)
+		3:
+			if _step_t < 0.12:
+				return
+			_next(4)
+			await _shot("kb_hit")
+		4:
+			if _step_t < 0.35:
+				return
+			_next(5)
+			await _shot("kb_fall")
+			T.leave()
+			_next_phase()
 
 
 func _run_chase() -> void:
