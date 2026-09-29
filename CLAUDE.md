@@ -83,7 +83,11 @@
 | 武器要像 2KOL2 那样升星突破（gamble） | 暗器升星（版本历史 27） |
 | 船、帐篷、补给站更豪华，花钱加装饰 | 装饰（版本历史 27） |
 | UI 和地图往国风改 | 版本历史 28。**标题用思源宋体（印刷体），不是毛笔字**——用户以前说过不要毛笔字体 |
-| 人物模型"单机看不到" | 队友模型只有联机时看得到（单机是第一人称）。还没做：灵相面板里放自己的 3D 预览 |
+| 人物模型"单机看不到" | 队友模型只有联机时看得到（单机是第一人称）。已做：灵相面板（K）左上角 `SelfPreview` 转着看自己 |
+| 僵尸模式"图这么小"、僵尸应该过来打人、"直接参考 CF 生化追击"；挨打没伤害数字、不知道僵尸剩多少血；地上捡的枪没有瞄具 | 版本历史 30：尸潮追击（近 500 米古城长街、三道城门守点 + 渡口等船、只追人咬人、伤害数字、头顶血条、尸王大血条、兵器架的枪按品质带配件） |
+| **整个游戏"质感很差"：第一人称的手像"巧克力手"，僵尸、桥是几个形状凑的，枪是几个方块凑的，很多低质模型，很难进入剧情。"要把各个模型都优化，游戏尺寸变大可以接受，但无法接受低质感"** | **还没做，下一步最优先**，见文末"交接"一节。用户说的"整体画风改成修仙国风"指的就是这个：模型和材质的质感，不只是 UI |
+| "国风修仙风的 CG 你还没做，我**不要现在这个西洋风 CG**" | 还没做：序章 / 渡海 / 秘境 / 猎场 / 飞升 / 灵主全部换成 AI 国风图（`tools/boat_anim/ai/01~10`，见交接），西洋名画版以后不用 |
+| 蛛母、玄鲲模型要重做（给了豆包 + Tripo / Meshy 提示词） | 用户用 Meshy 生成了**带贴图**的 GLB，放在 `tools/incoming_models/spider_meshy.glb`、`whale_meshy.glb`（各 12 MB），还没换进游戏（见交接） |
 
 ## 仓库和发布
 
@@ -384,16 +388,30 @@
    - 大地图 / 小地图（`map_view.gd`）：宣纸底、按高度上墨、每 3 米等高线、海岸浓墨、水面淡青晕染和波纹、小路朱砂虚线、地点是方印、自己是朱红箭头
    - 岛上地标（`Decor._landmarks`）：最高的空地一座七层八角宝塔（檐角挂灯、金葫芦顶）、靠海一座六角红柱亭子、小路两边每 26 米一对石灯笼
    - 还没截图检查的：新字体下的各个面板（`uishots`）、宝塔和亭子在岛上的样子
+29. 灵主出场镜头 + 自己的人物预览（`3cc35bf`）：
+   - `world/boss_cine.gd`（`BossCine`，CanvasLayer）：每个灵主每一重天第一次出场（`stats["cine_<kind>_<tier>"]`）播 6.5 秒镜头：仰拍绕转、电影黑边、宋体名号 + 朱印、台词；空格 / Esc / 点击跳过；`World._on_boss_spawn` 调，自动测试 / 秘境里不播
+   - `ui/self_preview.gd`（`SelfPreview`）：SubViewport 里一个 `RemotePlayer`，喂"原地站着"的假快照，拿着手里的暗器，慢慢转、可拖动；放在灵相面板立绘上
+30. 尸潮追击（2026-09-29，交接前最后一轮；本机 `--plan=chase,musou,done` 全过，没截图、没测联机）：
+   - 取代了尸潮守关（siege，小圆场地 + 阵眼）。`world/trial.gd` 重写：MODES 是 `chase` / `musou`（割草没改）
+   - 场地：`CHASE (-900, 420, 0)` 往北（-z）一条长街，半宽 14，北头 z = -470；`Island.add_floor_rect`（新，长方形地面）让高度在这里也对
+     - 两边铺面（飞檐、红灯笼、招牌）+ 暗巷口，整条街两面墙是碰撞；路上板车 / 货箱 / 碎石堆当掩体（`_chase_obst` 给僵尸绕）
+     - 三道城门 `GATES = [-110, -220, -330]`（城墙 + 城楼 + 两扇大门，`_gate_nodes`，开门时禁用门的碰撞），每道门南边一个守点（绿色符阵 + 火盆，`zone_center(i)`），北头渡口 `ESCAPE_Z` 守到渡船划过来
+   - 流程（房主算）：准备 10 秒 → run（边打边往北走，身后 + 前面巷子口出僵尸 `_host_chase_spawn / _spawn_point`）→ 有人走进守点 → hold（守 `HOLD = [30, 35, 40, 45]` 秒，守点里有活人才走时间；第二关和渡口来尸王，≥3 人两只）→ 开门（`_open_gate`：全员回四成血、发钱和修为）→ … → 渡口守满 = 逃出生天
+   - 续命：全队 2 + 人数 次（`run["lives"]`），房主看谁新倒下扣一次（`_was_dead`），扣到负数失败；倒下在最近过的城门后站起来（`cp_spawn`，`on_respawn`）
+   - 僵尸（`horde.gd`）：新增 kind 4 疾尸；只追人（`goal = INF`），除尸王都咬人（`BITE_K`），尸王隔 3 秒砸最近的人（`_host_kings` → `World.boss_telegraph`，消息 trslam）；挨打往后退（`apply_hits`）；`bounds`（Rect2）把僵尸限在"南头到下一道关着的门"之间（`_update_bounds`）；去掉了砸阵眼
+   - 血量 `_unit_hp`：按全队最强暗器一发（跳尸 2.6 发、疾尸 1.8、铁尸 8、尸王 55 × 人数加成），越往后越厚
+   - 伤害数字：追击里每一枪都飘（`Fx.damage_number(..., force=true)`）；割草只飘铁尸和爆头。血条：`Trial._draw_plates`（挨打 4 秒内 / 铁尸，40 米内），尸王在屏幕上方一条大血条
+   - 兵器架：起点 3 个 + 每个守点 2 个，越往后品质越好（凡 / 灵 / 玄 / 天 = 伤害 ×1 / 1.35 / 1.8 / 2.5）；**配件** `Trial.roll_attach(id, q)`：凡品一个瞄具（狙击 / 射手优先高倍镜，其他优先红点 / 全息）、灵品 + 枪口、玄品 + 枪管下 + 弹匣、天品 + 枪托。
+     捡起来：`Player.trial_gun / trial_k / trial_attach` + `ViewModel.attach_override`（模型按这套配件搭），`Profile.weapon_stats(id, on)` 第二个参数传这套配件；出了试炼还回去（`_drop_trial_gun`）
+   - 消息：trst（[mode, phase, cp, hold, t, lives, kills]）/ trenter / trin / trleave / trrack（[[id, q, 配件]]）/ trgate / trhold / trlife / trslam / trburst / trend / hdsp / hdhit
+   - 纪录：`stats["chase_best_<章>"]`（过了几道门，逃出去 = 4）、`stats["chase_time_<章>"]`；`Trial.best_text` 给试炼面板和结算用
+   - 自动测试 `chase`（默认 plan 里代替了 siege）：兵器架配件 → 捡枪带配件 → **站着不动会被咬** → 开枪飘数字、血条 → 三道门守到渡口 → 结算 → 枪还回去 → 第二局续命用完失败
 
 ## 还没做 / 可以继续
 
-- 国风序章：等用户把 AI 图（12 张）传到 GitHub `tools/boat_anim/ai/`（聊天里干活途中发的图存不下来）；`prep_ai.py` 的 CUT_BOTTOM 要改成 0.11 才能裁干净豆包水印
-- 每个灵主一段 CG + 结局完整讲一遍故事的 CG：要 AI 图（提示词写给用户），Remotion 里用 `FilmsCN.tsx` 的做法
+- 国风 CG、模型质感、蛛母 / 玄鲲新模型：见文末"交接"
 - 剧情三：残碑 + 《苍墟志》、天坛结局二选一（重铸 / 安息）、北斗九重轮回篇名
-- 灵相面板里放自己的 3D 人物预览（用户问"人模型单机看不到"）
 - 突围模式、近战模式（用户提过，还没做）
-
-- Boss 写实模型：免费 CC0 里没有合适的，要用户提供素材；现在靠着色器 + 光环 + 死亡神光
 - 数值是按公式估的（见 data.gd 注释），没有真人从 1 级玩到 100 级；等用户反馈再调 `CH_HP / CH_MONEY / KILLS_PER_LEVEL`
 - 第十三版的灵主招式只由自动测试放过一遍，没有真人打过：等用户说哪招太难躲 / 太简单再调（`Boss._art_*` 里的前摇秒数、半径、伤害）
 - 本机全流程超过 10 分钟，工具会在 10 分钟时把后台进程一起杀掉：分两段跑（`--plan` 前半段 + `--chapter=5 --plan=huntrun,huntfail,done`）
@@ -466,3 +484,62 @@ xvfb-run -a -s "-screen 0 1280x720x24" godot --path . --rendering-driver vulkan 
 2. 第五章归墟的画面还没截图检查过；第三章苍梧林海的光照偏白天。
 3. 右下暗器名"袖箭 · 手枪 · 半自动"文字偏长，可以简化成图标 + 名字。
 4. 游戏时长（约 4 小时以上）是按经验曲线估算的，没有真人跑过；等用户和朋友玩完问反馈再调数值。
+
+## 交接（2026-09-29，用户换另一个 Claude 账号继续）
+
+上一个账号 token 用完了。**接手的先读完这一节，按顺序做**。用户原话在反馈表最后几行。
+
+### 1. 最优先：全面提升模型质感（用户"无法接受目前这种低质感游戏"）
+
+用户点名的：
+- **第一人称的手**（`player/viewmodel.gd` 里拼的手臂 / 手掌）——"巧克力手"：方块圆柱拼的、颜色像巧克力。要换成像样的手 + 袖子（修仙风：长袖、护腕、布料褶皱），手指分开有关节，皮肤材质
+- **僵尸**（`world/horde.gd` 的 `_build_mesh`，程序网格拼的清朝跳尸）
+- **桥**（岛上的桥 / 码头，`world/world_builder.gd`，几个方块）
+- **枪 / 暗器**（`player/weapon_models.gd`，每把都是方块圆柱拼的；配件、瞄具也是）
+- 以及"很多东西"：船、帐篷、铺子、祭坛、宝塔 / 亭子 / 装饰（`world/decor.gd`）、追击长街的房子和城门（`world/trial.gd`）、队友（`RemotePlayer`）、青崖子（`world/sage.gd`）
+
+用户接受：**安装包变大没关系**。别找用户要素材（"不要找用户要模型 / 贴图"），但他们自己在用 Meshy / Tripo 生成模型，可以写提示词请他们生成（蛛母 / 玄鲲就是这样来的）。
+
+建议做法（按收益排）：
+1. 先截图看现状（`--autotest=shots`：`hudshot` / `gunshots` / `mateshot` / `decorshot`；xvfb + lavapipe 很慢，一张 1~15 分钟），列一张"丑模型清单"给用户确认先后
+2. 能下到 CC0 高质量素材的先下：Poly Haven 模型（木桥、中式 / 木质道具、石头）、Quaternius（已有 `tools/fetch_models.py`）、Kenney；**ambientCG / Poly Haven 的 PBR 贴图**（木头、石头、瓦、布料、铜、铁）——现在很多零件是纯色材质，换成 PBR 贴图 + 法线质感就能上一大截
+3. 手和暗器：CC0 的第一人称手臂很少，可以写 Meshy / Tripo 提示词请用户生成（例："first-person arms with long flowing sleeves and leather bracers, xianxia style, rigged, game-ready"；"ornate Chinese mechanical crossbow, bronze and dark lacquered wood, game-ready"），放 `assets/models/weapons/<id>.glb`，`WeaponModels.build` 有文件就用文件（仿 Boss 的 `custom_boss_path`），没有就退回程序模型；配件挂点要对上
+4. 僵尸：MultiMesh 需要一个网格——可以用生成的清朝僵尸 GLB 取网格塞进 MultiMesh（动画靠顶点着色器摆，现在就是 UV.x 记部件的做法）
+5. 每做一类就截图发用户对比
+
+### 2. 国风修仙 CG（替换现在所有西洋名画过场）
+
+- 用户用 Dola AI 生成的图在 `tools/boat_anim/ai/`（上传时叫"国风仙侠CG (N).png"，我按剧情顺序改成了数字名，`prep_ai.py` 只认数字名）：
+  - `01.webp` 第一张（九重天 / 天宫，`FilmsCN.tsx` 的 8 秒试片 CNTest 用的它）
+  - `02.png` 叩天之战：天坛前千军万马，天门大开、飞剑雷火
+  - `03.png` 云岫：白衣金冠的星君在天门前张开双臂、火焰飘带（碎身关门那一刻），前景是沈青崖的背影和将士
+  - `04.png` 云海上的天门，五道金光（五块天枢碎片）坠向人间
+  - `05.png` 青崖子：独眼白发老人坐在废墟天坛前，香烛、夕阳，水墨味
+  - `06.png` 碧鳞蛟：月下湖面盘着的青龙
+  - `07.png` 千目蛛母：红叶林里紫光蛛网、网上挂着幽魂女子
+  - `08.png` 朱厌：白毛赤手火猿蹲在山巅，背后火焰
+  - `09.png` 冰螭：冰原白龙，冰窟里躺着一位金甲将军，旁边两个人影
+  - `10.png` 玄鲲：巨浪里紫光鳞甲的巨鲸
+- 每张 2848×1600，右下角"Dola AI"水印：`python3 prep_ai.py`（`CUT_BOTTOM = 0.11` 已经设好）裁掉底部一条 → `public/art/aiNN.jpg` + 尺寸表
+- **聊天里贴的图不会存成文件**；用户会传到 GitHub 这个文件夹（网页上传单个文件别超过 25 MB）
+- 要做的片子（Remotion，照 `tools/boat_anim/src/FilmsCN.tsx`：`cine.tsx` 的 `Shot` 推镜 + 流云 `clouds` + 天光 `rays` + 竖排题字 `VTitle` + 朱印 `Seal` + 衬线字幕）：
+  - **序章**：02 叩天 → 03 云岫碎身 → 04 天枢坠落 → 01 天宫 → 05 青崖子（剧本 `docs/世界观.md`、台词 `scripts/world/story.gd`）
+  - **五个灵主各一段**：06~10，接在 `BossCine`（游戏内出场镜头）前面，或者打倒后的天枢记忆（`Hud.memory`）
+  - 渡海 / 秘境 / 猎场 / 飞升：没有专门的图，先用这些图的局部（04 天门当飞升、01 天宫当九重天），或者写新提示词请用户生成（风格：国风仙侠、电影感、云海金光、写实 CG、16:9）
+  - **渲染好以后把西洋名画版全部换掉**（`assets/cutscene/*.ogv`：`Main._travel` / `Dungeon.enter` / `Main._change_map` / `World._check_god` 播的那些）。渲染见版本历史 21（`render_all.sh`，1920×1080 → 1600×900 Theora 按码率）
+
+### 3. 蛛母 / 玄鲲新模型
+
+- `tools/incoming_models/spider_meshy.glb`（Meshy "Widow of the Violet Veil"）、`whale_meshy.glb`（Meshy "Abyssal Bonemaw"），都**带贴图**，各 12 MB
+- 做法：`tools/shrink_glb.gd` 减面 + 贴图缩到 1K（压到约 3 MB）→ 覆盖 `game/assets/models/bosses/spider.glb`、`whale.glb`（现在这两个没贴图，靠 `Boss.SKIN_SHADER`）→ `--import` → 截图看朝向 / 大小（`BeastModels.instance_custom` 按包围盒自动缩放；有贴图的不叠流光层）→ Meshy 模型多半没骨骼动画，确认 Boss 整体移动 / 摆动正常
+- 换好以后删掉 `tools/incoming_models/`
+
+### 4. 尸潮追击收尾
+
+- 见版本历史 30。交接前本机 `--autotest=solo "--plan=chase,musou,done"` 全过；推送后先看 CI 全流程（里面有 chase）绿没绿，红了就不会发新版本，要先修
+- 还没截图看过长街 / 城门 / 渡口（可以仿 `dgshot` 写 `chaseshot`）；房子和城门也是方块拼的，属于第 1 项
+- 联机没测过（host / client 的 `--dg=1` 里没加追击）
+
+### 5. 其他
+
+- 剧情三（残碑、《苍墟志》、结局二选一、北斗九重篇名）、突围 / 近战模式：见"还没做"

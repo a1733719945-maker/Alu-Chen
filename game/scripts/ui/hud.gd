@@ -2530,7 +2530,7 @@ func open_trial_picker() -> void:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 18)
 	v.add_child(row)
-	for m in ["siege", "musou"]:
+	for m in ["chase", "musou"]:
 		var md: Dictionary = Trial.MODES[m]
 		var card := UiKit.card_button(md["color"])
 		card.custom_minimum_size = Vector2(440, 250)
@@ -2546,7 +2546,7 @@ func open_trial_picker() -> void:
 		dl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		cv.add_child(dl)
 		var b: int = world.trial.best(m)
-		var rec := ("最高撑过 %d 波" % b) if m == "siege" else ("最多 %d 斩" % b)
+		var rec: String = world.trial.best_text(m)
 		cv.add_child(UiKit.label(rec if b > 0 else "还没玩过", 15, UiKit.GOLD if b > 0 else UiKit.MIST))
 		var mm: String = m
 		card.pressed.connect(func():

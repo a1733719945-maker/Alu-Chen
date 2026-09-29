@@ -33,7 +33,7 @@ var skills: SkillSystem
 var combo: Combo                  # 猎灵连击 + 灵相真身（world/combo.gd）
 var hunt: Hunt                    # 猎灵榜的猎物、踪迹、吸收灵环时的护法（world/hunt.gd）
 var dungeon: Dungeon              # 秘境（world/dungeon.gd）
-var trial: Trial                  # 试炼：尸潮守关 / 万兽割草（world/trial.gd）
+var trial: Trial                  # 试炼：尸潮追击 / 万兽割草（world/trial.gd）
 var decor: Decor                  # 码头、船、暗器铺、营地的装饰（world/decor.gd）
 var hunting := {}                 # 在猎场里：{"species", "age", "seed", "by"}（空 = 在岛上）
 var trip: HuntTrip                # 猎场里的这次猎灵（world/hunt_trip.gd）
@@ -1449,7 +1449,7 @@ func _update_music(dt: float) -> void:
 		want = "boss"
 	elif Time.get_ticks_msec() / 1000.0 < _tide_until:
 		want = "event"
-	elif trial.inside and not trial.run.is_empty() and trial.mode() == "siege" and int(trial.run.get("wave", 0)) % 5 == 0 and str(trial.run.get("phase", "")) == "wave":
+	elif trial.inside and not trial.run.is_empty() and trial.mode() == "chase" and str(trial.run.get("phase", "")) == "hold":
 		want = "boss"
 	elif _battle_hold > 0.0 or (dungeon.inside and str(dungeon.run.get("phase", "")) != "clear") or (trial.inside and not trial.run.is_empty()):
 		want = "battle"
@@ -3551,7 +3551,7 @@ func on_message(from: int, type: String, data: Variant) -> void:
 			hunt.on_message(from, type, data)
 		"dgst", "dgenter", "dgin", "dgleave", "dggate", "dgboss", "dgmet", "dgclear", "dgend":
 			dungeon.on_message(from, type, data)
-		"trst", "trenter", "trin", "trleave", "trrack", "trcore", "trwave", "trclear", "trslam", "trburst", "trend", "hdsp", "hdhit":
+		"trst", "trenter", "trin", "trleave", "trrack", "trgate", "trhold", "trlife", "trslam", "trburst", "trend", "hdsp", "hdhit":
 			trial.on_message(from, type, data)
 		"crank":
 			var r := int(data[1])

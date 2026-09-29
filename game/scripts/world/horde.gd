@@ -1,37 +1,39 @@
 class_name Horde
 extends Node3D
-## 僵尸群（试炼用：尸潮守关、万兽割草）。几百只的时候刚体灵兽会卡，这里自己算位置、一个 MultiMesh 画出来。
+## 僵尸群（试炼用：尸潮追击、万兽割草）。几百只的时候刚体灵兽会卡，这里自己算位置、一个 MultiMesh 画出来。
 ##
 ## 样子：清朝官服的跳尸——长袍、补子、马蹄袖伸得笔直、官帽、额头上贴一张黄符、眼睛冒绿光，一蹦一蹦往前跳。
-## 种类 kind：0 小尸（割草：一打就死）、1 跳尸（守关：几枪）、2 铁尸（大一圈、血厚、慢）、3 尸王（很大，砸地）
+## 种类 kind：0 小尸（割草：一打就死）、1 跳尸（几枪）、2 铁尸（大一圈、血厚、慢）、3 尸王（很大，砸地）、4 疾尸（跳得远、比人跑得快）
+## 挨打会被往后打退一点（伤害越高退得越远，尸王几乎不退）；最近挨过打的头上有血条（Trial 画）
 ##
 ## 联机：房主决定出哪些（hdsp：[[id, x, z, kind, hp], ...]），每台电脑自己算它们怎么跳
-##   （目标都是"最近的人 / 阵眼"，大家看到的差不多）；谁打中了发 hdhit [[id, 伤害, 是谁打的], ...]，
+##   （目标都是"最近的人"，大家看到的差不多）；谁打中了发 hdhit [[id, 伤害, 是谁打的], ...]，
 ##   每台电脑扣一样的血，扣到 0 就死；是自己那一下打死的，算自己的击杀。
-##   咬人：每台电脑只算咬没咬到自己；砸阵眼：只有房主算。
+##   咬人：每台电脑只算咬没咬到自己。
 
 signal killed(id: int, peer: int, kind: int, pos: Vector3)
 
 const MAX := 360
-const SCALE := [0.9, 1.0, 1.3, 2.6]
-const STEP := [1.5, 1.25, 1.0, 1.7]        # 一跳多远
-const HOP := [0.36, 0.46, 0.58, 0.8]       # 一跳多久
-const REST := [0.05, 0.14, 0.2, 0.35]      # 落地歇多久
-const HOP_H := [0.4, 0.45, 0.4, 0.9]
-const TINT := [Color(0.34, 0.4, 0.36), Color(0.14, 0.2, 0.36), Color(0.36, 0.28, 0.18), Color(0.55, 0.08, 0.08)]
-const ATK_CD := [0.9, 1.1, 1.4, 2.5]
-const BITE_K := [0.035, 0.06, 0.09, 0.0]   # 咬一口掉最大体力的多少
+const SCALE := [0.9, 1.0, 1.3, 2.6, 0.95]
+const STEP := [1.5, 1.7, 1.2, 2.0, 2.4]    # 一跳多远（跳尸约 3.5 米/秒，比人走路慢一点；疾尸约 6 米/秒，跑不过它）
+const HOP := [0.36, 0.42, 0.56, 0.75, 0.34]  # 一跳多久
+const REST := [0.05, 0.07, 0.18, 0.3, 0.03]  # 落地歇多久
+const HOP_H := [0.4, 0.5, 0.4, 0.9, 0.6]
+const TINT := [Color(0.34, 0.4, 0.36), Color(0.14, 0.2, 0.36), Color(0.36, 0.28, 0.18), Color(0.55, 0.08, 0.08), Color(0.22, 0.3, 0.22)]
+const ATK_CD := [0.9, 1.0, 1.4, 2.5, 0.8]
+const BITE_K := [0.035, 0.06, 0.09, 0.0, 0.05]   # 咬一口掉最大体力的多少
+const NAMES := ["小尸", "跳尸", "铁尸", "尸王", "疾尸"]
 
 var world: World
 var trial: Node
 var center := Vector3.ZERO                 # 场地中间（地面高度 center.y）
 var radius := 30.0
-var goal := Vector3.INF                    # 守关：阵眼（没人在身边就去砸它）
+var goal := Vector3.INF                    # 没人可追时去的地方（现在都是 INF：只追人）
 var goal_r := 2.6
-var chase_r := 1e9                         # 多近的人会被追（守关 9 米；割草追最近的人）
+var chase_r := 1e9                         # 多近的人会被追（追击、割草都追最近的人）
 var obstacles: Array = []                  # [[Vector2 中心, 半径], ...]
-var dmg_k := 1.0                           # 咬人加成（守关后面几波）
-var core_dmg := 10.0                       # 砸阵眼一下
+var bounds := Rect2()                      # 长方形场地（xz）；size 为 0 时用 center + radius 的圆
+var dmg_k := 1.0                           # 咬人倍数（割草 0.6）
 var units: Array = []                      # 活着的：{"id","p","hp","max","kind","from","to","t","len","rest","cd","yaw","hurt"}
 var by_id := {}
 var next_id := 1
@@ -90,7 +92,7 @@ func spawn(list: Array) -> void:
 		var p := Vector3(float(e[1]), center.y, float(e[2]))
 		var k := int(e[3])
 		var u := {"id": id, "p": p, "hp": float(e[4]), "max": float(e[4]), "kind": k, "from": p, "to": p, "t": 0.0,
-			"len": HOP[k], "rest": randf() * 0.4, "cd": 1.0, "yaw": randf() * TAU, "hurt": 0.0, "ph": randf()}
+			"len": HOP[k], "rest": randf() * 0.4, "cd": 1.0, "yaw": randf() * TAU, "hurt": 0.0, "ph": randf(), "hit_t": 99.0}
 		units.append(u)
 		by_id[id] = u
 		if _fx_budget < 6 and world.player.global_position.distance_to(p) < 60.0:
@@ -98,16 +100,34 @@ func spawn(list: Array) -> void:
 			world.fx._smoke(p + Vector3.UP * 0.3, Color(0.3, 0.45, 0.35, 0.55), 5, 1.5, 0.8, 1.2, 0.4)
 
 
-## 大家都调：同样的伤害（hdhit）。自己那一下打死的算自己的
+## 大家都调：同样的伤害（hdhit）。自己那一下打死的算自己的；挨打往后退一点（背对开枪的人）
 func apply_hits(list: Array) -> void:
+	var where := {}
+	for pl in world.all_players():
+		where[int(pl["peer"])] = pl["pos"]
 	for e in list:
 		var u: Dictionary = by_id.get(int(e[0]), {})
 		if u.is_empty():
 			continue
-		u["hp"] = float(u["hp"]) - float(e[1])
+		var dmg := float(e[1])
+		u["hp"] = float(u["hp"]) - dmg
 		u["hurt"] = 1.0
+		u["hit_t"] = 0.0
 		if float(u["hp"]) <= 0.0:
 			_die(u, int(e[2]))
+			continue
+		var src: Variant = where.get(int(e[2]), null)
+		if src != null:
+			var away: Vector3 = (u["p"] as Vector3) - (src as Vector3)
+			away.y = 0.0
+			var k := int(u["kind"])
+			var back := clampf(dmg / maxf(float(u["max"]), 1.0) * 2.4, 0.12, 1.4) * (0.15 if k == 3 else (0.5 if k == 2 else 1.0))
+			if away.length() > 0.01:
+				var push := away.normalized() * back
+				u["from"] = _push_out((u["from"] as Vector3) + push, SCALE[k])
+				u["to"] = _push_out((u["to"] as Vector3) + push, SCALE[k])
+				# 打断这一跳：落地多歇一下
+				u["rest"] = maxf(float(u["rest"]), 0.12)
 
 
 func _die(u: Dictionary, peer: int) -> void:
@@ -224,7 +244,6 @@ func _process(dt: float) -> void:
 	var pls: Array = world.alive_players()
 	var me: Vector3 = world.player.global_position
 	var me_ok: bool = not world.player.dead and not world.player.untargetable()
-	var host := Net.is_host()
 	# 挤在一起的推开：按 2 米一格分桶
 	var grid := {}
 	for i in units.size():
@@ -240,6 +259,7 @@ func _process(dt: float) -> void:
 		var s: float = SCALE[k]
 		u["cd"] = float(u["cd"]) - dt
 		u["hurt"] = maxf(float(u["hurt"]) - dt * 4.0, 0.0)
+		u["hit_t"] = float(u["hit_t"]) + dt
 		var p: Vector3 = u["p"]
 		# 目标：身边有人追人，没有就去砸阵眼（割草：追最近的人）
 		var tgt := goal
@@ -306,17 +326,12 @@ func _process(dt: float) -> void:
 		p.y = center.y
 		u["p"] = p
 		# 咬自己（每台电脑只算自己）
-		if me_ok and float(u["cd"]) <= 0.0 and k < 3:
+		if me_ok and float(u["cd"]) <= 0.0 and k != 3:
 			var md := Vector2(me.x - p.x, me.z - p.z).length()
 			if md < 0.75 + 0.45 * s and absf(me.y - p.y) < 2.2 * s:
 				u["cd"] = float(ATK_CD[k])
 				world.player.take_damage(Profile.max_hp() * float(BITE_K[k]) * dmg_k, p)
 				Sfx.play_at("bite", p, -4.0, 0.15, 0.8)
-		# 砸阵眼（房主算）
-		if host and goal != Vector3.INF and float(u["cd"]) <= 0.0 and trial:
-			if Vector2(goal.x - p.x, goal.z - p.z).length() < goal_r + 0.9 * s:
-				u["cd"] = float(ATK_CD[k])
-				trial.host_core_hit(core_dmg * (1.0 + k * 0.8), p)
 		# 画：跳起来的高度、往前倾、落地压扁
 		var hop := sin(kk * PI)
 		var y := p.y + hop * float(HOP_H[k]) * s
@@ -341,6 +356,10 @@ func _push_out(p: Vector3, s: float) -> Vector3:
 		if d.length() < r:
 			var v := d.normalized() * r if d.length() > 0.01 else Vector2(r, 0)
 			p = Vector3(c.x + v.x, p.y, c.y + v.y)
+	if bounds.size != Vector2.ZERO:
+		p.x = clampf(p.x, bounds.position.x + 0.8, bounds.end.x - 0.8)
+		p.z = clampf(p.z, bounds.position.y + 0.8, bounds.end.y - 0.8)
+		return p
 	var off := Vector2(p.x - center.x, p.z - center.z)
 	if off.length() > radius - 1.0:
 		off = off.normalized() * (radius - 1.0)
@@ -391,7 +410,7 @@ void fragment() {
 	ROUGHNESS = rough;
 	METALLIC = metal;
 	// 挨打：红光一闪；尸王身上一层暗红
-	EMISSION = em + vec3(1.0, 0.35, 0.2) * cd.z * 1.6 + (cd.w > 2.5 && part < 0.5 ? vec3(0.25, 0.02, 0.02) : vec3(0.0));
+	EMISSION = em + vec3(1.0, 0.35, 0.2) * cd.z * 1.6 + (cd.w > 2.5 && cd.w < 3.5 && part < 0.5 ? vec3(0.25, 0.02, 0.02) : vec3(0.0));
 }
 """
 

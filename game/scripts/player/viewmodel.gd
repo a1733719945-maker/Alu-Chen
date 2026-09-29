@@ -32,6 +32,7 @@ const SPRING_K := 300.0
 const SPRING_C := 22.0
 
 var models := {}
+var attach_override := {}       # 暗器 -> 配件（试炼里捡的暗器用它自己的配件，不用存档里的）
 var cur := "xiujian"
 var left_arm: Node3D
 var left_hand: Node3D
@@ -94,7 +95,7 @@ func _on_node_added(n: Node) -> void:
 
 func _build_models() -> void:
 	for id in Data.WEAPON_ORDER + ["fist"]:
-		var m := WeaponModels.build(id)
+		var m := WeaponModels.build(id, "", "", attach_override.get(id, null))
 		m.visible = false
 		add_child(m)
 		models[id] = m

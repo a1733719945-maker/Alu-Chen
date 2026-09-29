@@ -57,7 +57,7 @@ func _ready() -> void:
 			_plan = ["phys", "hunt:burrow,meadow,flowers,water,reel", "shop", "recoil", "sniper", "ring", "boss", "boat", "hunt:den,swamp,mud", "boss", "boat",
 				"hunt:glade,roost,thicket,nest,bog", "boss", "boat",
 				"hunt:snowden,frostgrove,icefield,icecave,icelake", "boss", "boat",
-				"hunt:beach,cliff,reef,deep,abyss", "boss", "dungeon", "siege", "musou", "huntrun", "huntfail", "touch", "done"]
+				"hunt:beach,cliff,reef,deep,abyss", "boss", "dungeon", "chase", "musou", "huntrun", "huntfail", "touch", "done"]
 			# 新暗器测试放在第一章买完暗器后面（要第一章的草地摆靶子；第五章归墟没有草地）
 			_plan.insert(_plan.find("shop") + 1, "guns2")
 			_plan.insert(_plan.find("guns2") + 1, "pills")
@@ -297,8 +297,8 @@ func _process(dt: float) -> void:
 			_run_decor()
 		"decorshot":
 			_run_decorshot()
-		"siege":
-			_run_siege()
+		"chase":
+			_run_chase()
 		"musou":
 			_run_musou()
 		"dgshot":
@@ -4097,86 +4097,168 @@ func _trial_enter(w: World, T: Trial, m: String) -> bool:
 	return false
 
 
-func _run_siege() -> void:
+func _run_chase() -> void:
 	var w := _ready_world()
 	if not w:
 		return
 	var T := w.trial
 	var p := w.player
 	if _step < 3:
-		if _trial_enter(w, T, "siege"):
+		if _trial_enter(w, T, "chase"):
 			_next(3)
 		return
-	p.hp = 99999.0
+	if _step != 5 and _step < 12:
+		p.hp = 99999.0
 	match _step:
 		3:
 			if T.racks.is_empty() or str(T.racks[0]["id"]) == "":
 				if _step_t > 3.0:
 					_fail("兵器架上没有暗器")
 				return
+			if not _check(T.racks.size() == 3 + 2 * (Trial.GATES.size() + 1), "兵器架数量不对（%d）" % T.racks.size()):
+				return
+			# 每个架子的暗器都带瞄具；后面守点的品质更高、配件更多
+			for r in T.racks:
+				var on: Dictionary = r["on"]
+				if not _check(on.has("sight"), "兵器架上的 %s 没有瞄具（%s）" % [str(r["id"]), str(on)]):
+					return
+			var last: Dictionary = T.racks[T.racks.size() - 1]
+			if not _check(int(last["q"]) >= 2 and (last["on"] as Dictionary).size() >= 2, "渡口的兵器架品质 / 配件太少（%s）" % str(last)):
+				return
 			var id := str(T.racks[0]["id"])
 			T.pick_rack(0)
-			if not _check(p.trial_gun == id and p.guns.any(func(g): return g.id == id), "捡了兵器架上的 %s，手里没有它" % id):
+			if not _check(p.trial_gun == id and p.gun.id == id, "捡了兵器架上的 %s，手里没有它" % id):
 				return
-			_note("捡起兵器架上的%s · %s（伤害 ×%.2f）" % [Trial.QUALITY[int(T.racks[0]["q"])][0], Data.WEAPONS[id]["name"], p.trial_k])
+			if not _check(p.trial_attach == T.racks[0]["on"] and p.viewmodel.attach_override.has(id), "捡的暗器没带上配件（%s）" % str(p.trial_attach)):
+				return
+			_note("捡起%s%s" % [T.rack_name(0), T.rack_attach_text(0)])
+			_note("渡口兵器架：%s%s" % [T.rack_name(T.racks.size() - 1), T.rack_attach_text(T.racks.size() - 1)])
+			T._phase_t = 0.0
+			p.invuln_t = 0.0     # 无敌（进场时测试开的）的人不算"能打的人"，不刷僵尸
 			_next(4)
 		4:
-			if str(T.run.get("phase", "")) != "wave" or T.horde.alive_count() == 0:
-				if _step_t > 20.0:
-					_fail("第一波僵尸没出来（%s）" % str(T.run))
+			if str(T.run.get("phase", "")) != "run" or T.horde.alive_count() == 0:
+				if _step_t > 12.0:
+					_fail("僵尸没出来（%s）" % str(T.run))
 				return
-			_note("第 1 波：%d 只跳尸从尸门跳出来了" % T.horde.alive_count())
-			_mem["k0"] = T.my_kills
+			_note("开跑：%d 只僵尸冒出来了" % T.horde.alive_count())
+			p.hp = Profile.max_hp()
+			p.invuln_t = 0.0
+			_mem["hp"] = p.hp
 			_next(5)
 		5:
-			# 站在阵眼旁边开枪：跳尸冲过来，一枪枪打
-			_horde_shoot(p, T)
-			if T.my_kills > int(_mem["k0"]) + 2:
-				_note("开枪打死了 %d 只（第 %d 波，还剩 %d）" % [T.my_kills, int(T.run.get("wave", 0)), int(T.run.get("left", 0))])
+			# 站着不动：僵尸会跳过来咬人
+			if p.hp < float(_mem["hp"]) - 0.5 or p.dead:
+				_note("僵尸扑过来咬人了：体力 %d → %d" % [int(_mem["hp"]), int(p.hp)])
+				p.hp = 99999.0
 				_next(6)
-			elif _step_t > 25.0:
-				_fail("打了 25 秒只打死 %d 只（场上 %d 只）" % [T.my_kills, T.horde.alive_count()])
+			elif _step_t > 30.0:
+				_fail("30 秒没有僵尸咬到人（场上 %d 只）" % T.horde.alive_count())
 		6:
-			# 剩下的直接清掉，看这一波能不能结算
-			var list: Array = []
+			# 开枪：挨打的僵尸飘伤害数字、头上有血条（hit_t 归零）
+			var labels := w.fx.get_children().filter(func(c): return c is Label3D).size()
+			_mem["lab"] = labels
+			_horde_shoot(p, T)
+			var hit := false
 			for u in T.horde.units:
-				list.append([int(u["id"]), 1e9, Net.my_id])
-			T._send_hits(list)
-			T._queue.clear()
-			if str(T.run.get("phase", "")) == "break":
-				_note("第 1 波守住了：阵眼 %d / %d" % [int(T.run["core"]), int(Trial.CORE_HP)])
-				# 站到箭楼上（离阵眼远），看僵尸会不会去砸阵眼
-				var tw := Trial.SIEGE + Vector3(cos(PI / 4.0), 0, sin(PI / 4.0)) * 22.0
-				p.teleport(tw + Vector3(0, 3.2, 0))
-				_next(7)
-			elif _step_t > 5.0:
-				_fail("清完一波没结算（%s）" % str(T.run))
-		7:
-			if float(T.run.get("core", Trial.CORE_HP)) < Trial.CORE_HP - 1.0:
-				_note("僵尸没人拦就去砸阵眼：阵眼 %d / %d" % [int(T.run["core"]), int(Trial.CORE_HP)])
-				_next(8)
-			elif _step_t > 40.0:
-				_fail("40 秒没有僵尸砸阵眼（%s，场上 %d 只）" % [str(T.run), T.horde.alive_count()])
-		8:
-			# 阵眼碎了：结算
-			if not T.run.is_empty():
-				T.run["core"] = 1.0
-				T.host_core_hit(100.0, Trial.SIEGE)
-			if T.run.is_empty():
-				if not _check(T._result != null and T._result.visible and T.best("siege") >= 1, "阵眼碎了没有结算 / 纪录（%d）" % T.best("siege")):
+				if float(u["hit_t"]) < 0.5 and float(u["hp"]) < float(u["max"]):
+					hit = true
+			var labels2 := w.fx.get_children().filter(func(c): return c is Label3D).size()
+			if hit or T.my_kills > 0:
+				if not _check(labels2 > 0, "打中僵尸没飘伤害数字"):
 					return
-				_note("阵眼碎了：撑过 %d 波，结算面板出来了" % T.best("siege"))
+				_note("打中僵尸：飘了伤害数字，血条出来了（斩 %d）" % T.my_kills)
+				_next(7)
+			elif _step_t > 20.0:
+				_fail("打了 20 秒没打中僵尸")
+		7:
+			# 走进第一关守点：开始守
+			p.teleport(T.zone_center(0) + Vector3(0, 0.5, 0))
+			if str(T.run.get("phase", "")) == "hold":
+				_note("到了第一道城门前：开始守（要守 %d 秒）" % int(Trial.HOLD[0]))
+				_next(8)
+			elif _step_t > 5.0:
+				_fail("走进守点没开始守（%s）" % str(T.run))
+		8:
+			var cp := int(T.run.get("cp", 0))
+			if not T.run.is_empty() and str(T.run.get("phase", "")) == "hold":
+				T.run["hold"] = maxf(float(T.run["hold"]), float(Trial.HOLD[mini(cp, 3)]) - 0.3)
+			if cp >= 1:
+				var sb: StaticBody3D = T._gate_nodes[0][2]
+				if not _check((sb.get_child(0) as CollisionShape3D).disabled, "守住了城门没打开（碰撞还在）"):
+					return
+				if not _check(T.horde.bounds.position.y < Trial.GATES[1] + 1.0, "开了门，僵尸的活动范围没往前挪（%s）" % str(T.horde.bounds)):
+					return
+				_note("第一道城门开了：现在第 %d 关" % (cp + 1))
 				_next(9)
-			elif _step_t > 3.0:
-				_fail("阵眼 0 血没结束")
+			elif _step_t > 8.0:
+				_fail("守够时间城门没开（%s）" % str(T.run))
 		9:
+			# 第二关：有尸王
+			var cp2 := int(T.run.get("cp", 0))
+			p.teleport(T.zone_center(cp2) + Vector3(0, 0.5, 0))
+			if str(T.run.get("phase", "")) == "hold":
+				var kings := T.horde.units.filter(func(u): return int(u["kind"]) == 3).size()
+				if not _check(kings >= 1, "第二关守点没有尸王"):
+					return
+				_note("第二关：尸王来了（%d 只）" % kings)
+				_next(10)
+			elif _step_t > 5.0:
+				_fail("第二关守点没开始守（%s）" % str(T.run))
+		10:
+			# 一路守到渡口
+			var cp3 := int(T.run.get("cp", 0))
+			if T.run.is_empty():
+				if not _check(T._result != null and T._result.visible and T.best("chase") == Trial.GATES.size() + 1, "逃出去了没结算 / 纪录（%d）" % T.best("chase")):
+					return
+				_note("守到渡船靠岸：逃出生天！纪录「%s」" % T.best_text("chase"))
+				_next(11)
+				return
+			p.teleport(T.zone_center(cp3) + Vector3(0, 0.5, 0))
+			if str(T.run.get("phase", "")) == "hold":
+				T.run["hold"] = maxf(float(T.run["hold"]), float(Trial.HOLD[mini(cp3, 3)]) - 0.3)
+			if _step_t > 25.0:
+				_fail("25 秒没守到渡口（%s）" % str(T.run))
+		11:
 			if T.inside:
 				if _step_t > 9.0:
 					_fail("结算完没送回岛上")
 				return
-			if not _check(p.trial_gun == "" and not p.guns.any(func(g): return g.id == str(T.racks[0]["id"]) and not Profile.loadout.has(g.id)), "出了试炼，捡的暗器没还回去"):
+			if not _check(p.trial_gun == "" and p.viewmodel.attach_override.is_empty(), "出了试炼，捡的暗器没还回去"):
 				return
 			_note("送回试炼碑，捡的暗器还回去了")
+			T.request("chase")
+			_next(12)
+		12:
+			# 再来一局：续命用完就失败
+			if not T.inside or str(T.run.get("phase", "")) == "":
+				if _step_t > 4.0:
+					_fail("第二局没进去")
+				return
+			T._phase_t = 0.0
+			# 准备阶段倒下不扣续命：等开跑了再倒
+			if str(T.run.get("phase", "")) != "run":
+				return
+			T.run["lives"] = 0
+			p.invuln_t = 0.0
+			p.hp = 1.0
+			p.take_damage(1e6, p.global_position + Vector3(0, 0, -2))
+			_next(13)
+		13:
+			if T.run.is_empty():
+				if not _check(T._result != null and T._result.visible, "续命用完没结算"):
+					return
+				_note("续命用完：失败结算（倒在第一关）")
+				_next(14)
+			elif _step_t > 10.0:
+				_fail("续命用完没结束（%s，倒下 %s）" % [str(T.run), str(p.dead)])
+		14:
+			if p.dead or p.carried:
+				w._respawn_at_dock()
+			if T.inside:
+				if _step_t > 12.0:
+					_fail("失败以后没送回岛上")
+				return
 			_next_phase()
 
 

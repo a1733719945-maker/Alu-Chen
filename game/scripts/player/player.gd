@@ -116,6 +116,7 @@ var borrowed := {}
 # 试炼（尸潮守关）里从兵器架捡的暗器：出了试炼就还回去；trial_k 是它的品质加成（伤害倍数）
 var trial_gun := ""
 var trial_k := 1.0
+var trial_attach := {}      # 它自带的配件 {部位: 配件}（兵器架上的暗器按品质带瞄具、枪口、握把……）
 # 物品栏（数字键）：1 主暗器（再按 1 换别的主暗器）/ 2 袖箭 / 3 九转雷莲 / 4 丹药（再按 4 换下一种）/ 5 没装上的灵骨
 const SLOT_NAMES := ["主暗器", "袖箭", "九转雷莲", "丹药", "灵骨"]
 var slot := 1
@@ -196,7 +197,7 @@ func rebuild_guns() -> void:
 		ids.insert(0, trial_gun)
 	ids.append("fist")     # 空手一直都在：按 X 收起暗器，跑得快
 	for id in ids:
-		var stats := Profile.weapon_stats(id)
+		var stats := Profile.weapon_stats(id, trial_attach if id == trial_gun else null)
 		if id == trial_gun and trial_k != 1.0:
 			stats = stats.duplicate()
 			stats["damage"] = float(stats["damage"]) * trial_k

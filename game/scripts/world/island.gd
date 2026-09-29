@@ -386,11 +386,24 @@ func add_floor(center: Vector3, radius: float) -> void:
 	floors.append({"c": Vector2(center.x, center.z), "r2": radius * radius, "y": center.y})
 
 
+## 长方形的平台（试炼 · 尸潮追击的长街）：half = 半宽（x）、半长（z）
+func add_floor_rect(center: Vector3, half: Vector2) -> void:
+	floors.append({"c": Vector2(center.x, center.z), "r2": -1.0, "h": half, "y": center.y})
+
+
+func _in_floor(f: Dictionary, x: float, z: float, pad := 0.0) -> bool:
+	var c: Vector2 = f["c"]
+	if float(f["r2"]) < 0.0:
+		var h: Vector2 = f["h"]
+		return absf(x - c.x) < h.x + pad and absf(z - c.y) < h.y + pad
+	var r := sqrt(float(f["r2"])) + pad
+	return (x - c.x) * (x - c.x) + (z - c.y) * (z - c.y) < r * r
+
+
 ## 任意位置的地面高度（和碰撞体一致的双线性插值）
 func height_at(x: float, z: float) -> float:
 	for f in floors:
-		var c: Vector2 = f["c"]
-		if (x - c.x) * (x - c.x) + (z - c.y) * (z - c.y) < float(f["r2"]):
+		if _in_floor(f, x, z):
 			return float(f["y"])
 	var fx := clampf(x + half, 0.0, size - 1.001)
 	var fz := clampf(z + half, 0.0, size - 1.001)
@@ -418,8 +431,7 @@ func is_land(x: float, z: float) -> bool:
 ## 这个点在不在额外加的平台上（秘境场地）——野外刷怪、摆东西要避开
 func on_floor(x: float, z: float) -> bool:
 	for f in floors:
-		var c: Vector2 = f["c"]
-		if (x - c.x) * (x - c.x) + (z - c.y) * (z - c.y) < float(f["r2"]) + 400.0:
+		if _in_floor(f, x, z, 20.0):
 			return true
 	return false
 
