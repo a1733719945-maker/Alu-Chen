@@ -13,6 +13,15 @@ const PAT := {"plain": 0, "wood": 1, "fade": 2, "damascus": 3, "carbon": 4, "mar
 	"scales": 9, "pearl": 10, "circuit": 11, "ice": 12, "smoke": 13, "caustic": 14, "aurora": 15, "brushed": 16, "web": 17}
 const PAINT_W := 512
 const PAINT_H := 256
+## 每种表面用哪张真实贴图（MatLib）：[贴图名, 贴图平均亮度, 每米重复, 明暗强度, 法线强度]
+const DETAIL := {
+	"wood": ["wood", 0.264, 3.0, 0.9, 1.2],
+	"lacquer": ["lacquer", 0.72, 4.0, 0.45, 0.6],
+	"black": ["leather", 0.72, 7.0, 0.6, 1.0],
+	"bronze": ["bronze", 0.548, 4.0, 0.7, 0.9],
+	"gold": ["gold", 0.887, 5.0, 0.5, 0.7],
+	"iron": ["iron", 0.379, 4.0, 0.7, 0.9],
+}
 
 const SHADER := """shader_type spatial;
 render_mode blend_mix, cull_back, diffuse_burley, specular_schlick_ggx;
@@ -33,6 +42,16 @@ uniform vec4 paint_box = vec4(-0.4, -0.15, 0.4, 0.15);
 uniform float paint_metal = 0.0;
 uniform float paint_rough = 0.45;
 uniform float paint_coat = 0.0;
+// 真实材质细节（2026-09-29）：木纹 / 漆面 / 皮革 / 青铜 / 金 / 乌铁贴图，只取明暗 + 法线 + 粗糙度，颜色还是皮肤的
+uniform sampler2D d_alb : source_color, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D d_nrm : hint_normal, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform sampler2D d_rgh : hint_default_white, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform float d_on = 0.0;
+uniform float d_scale = 4.0;
+uniform float d_mean = 0.5;
+uniform float d_alb_k = 0.8;
+uniform float d_nrm_k = 1.0;
+uniform float d_rgh_k = 0.8;
 
 instance uniform vec3 rp_x = vec3(1.0, 0.0, 0.0);
 instance uniform vec3 rp_y = vec3(0.0, 1.0, 0.0);
@@ -228,6 +247,32 @@ void fragment() {
 		alb = base_col + col2 * web * 0.4;
 		em = col3 * web * pulse * glow;
 	}
+	if (d_on > 0.5) {
+		// 三向投影（暗器根节点坐标，零件之间纹理连着）+ Whiteout 法线混合
+		vec3 bw = pow(abs(rn), vec3(4.0));
+		bw /= (bw.x + bw.y + bw.z);
+		vec2 ux = rp.zy * d_scale;
+		vec2 uy = rp.xz * d_scale;
+		vec2 uz = rp.xy * d_scale;
+		vec3 dal = texture(d_alb, ux).rgb * bw.x + texture(d_alb, uy).rgb * bw.y + texture(d_alb, uz).rgb * bw.z;
+		float lum = dot(dal, vec3(0.299, 0.587, 0.114)) / max(d_mean, 0.01);
+		alb *= mix(1.0, lum, d_alb_k);
+		float drg = texture(d_rgh, ux).r * bw.x + texture(d_rgh, uy).r * bw.y + texture(d_rgh, uz).r * bw.z;
+		r = mix(r, r * (0.45 + drg * 1.1), d_rgh_k);
+		vec3 tx = texture(d_nrm, ux).xyz * 2.0 - 1.0;
+		vec3 ty = texture(d_nrm, uy).xyz * 2.0 - 1.0;
+		vec3 tz = texture(d_nrm, uz).xyz * 2.0 - 1.0;
+		tx.xy *= d_nrm_k;
+		ty.xy *= d_nrm_k;
+		tz.xy *= d_nrm_k;
+		tx = vec3(tx.xy + rn.zy, abs(tx.z) * rn.x);
+		ty = vec3(ty.xy + rn.xz, abs(ty.z) * rn.y);
+		tz = vec3(tz.xy + rn.xy, abs(tz.z) * rn.z);
+		vec3 nr = normalize(tx.zyx * bw.x + ty.xzy * bw.y + tz.xyz * bw.z);
+		// 根节点坐标 → 零件自己的坐标 → 视图坐标
+		vec3 ln = inverse(mat3(rp_x, rp_y, rp_z)) * nr;
+		NORMAL = normalize((VIEW_MATRIX * MODEL_MATRIX * vec4(ln, 0.0)).xyz);
+	}
 	if (paint_on > 0.5) {
 		vec2 puv = vec2((paint_box.z - rp.z) / (paint_box.z - paint_box.x), (paint_box.w - rp.y) / (paint_box.w - paint_box.y));
 		vec4 pc = texture(paint_tex, clamp(puv, vec2(0.001), vec2(0.999)));
@@ -281,6 +326,18 @@ static func material(sk: Dictionary, role: String, base: Color, weapon := "") ->
 	m.set_shader_parameter("pscale", float(sk.get("scale", 30.0)))
 	m.set_shader_parameter("glow", float(sk.get("glow_k", 1.0)) * (0.5 if trim else 1.0))
 	m.set_shader_parameter("speed", float(sk.get("speed", 1.0)))
+	var det: Array = DETAIL.get(role, [])
+	if not det.is_empty() and MatLib.tex(str(det[0]) + "_albedo"):
+		m.set_shader_parameter("d_on", 1.0)
+		m.set_shader_parameter("d_alb", MatLib.tex(str(det[0]) + "_albedo"))
+		m.set_shader_parameter("d_nrm", MatLib.tex(str(det[0]) + "_normal"))
+		m.set_shader_parameter("d_rgh", MatLib.tex(str(det[0]) + "_rough"))
+		m.set_shader_parameter("d_mean", float(det[1]))
+		m.set_shader_parameter("d_scale", float(det[2]))
+		# 花纹皮肤（发光、星河、熔岩……）细节淡一点，别把花纹盖掉
+		var k := 1.0 if pat in ["plain", "wood", "brushed", "damascus", "scales"] else 0.45
+		m.set_shader_parameter("d_alb_k", float(det[3]) * k)
+		m.set_shader_parameter("d_nrm_k", float(det[4]))
 	if bool(sk.get("paint", false)) and weapon != "":
 		var tex := paint_texture(weapon)
 		if tex:

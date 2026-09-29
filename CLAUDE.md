@@ -8,6 +8,8 @@
 - 用户在德国工作，这个游戏是业余做来**和朋友们一起联机玩**的。
 - 用户会说 token 不够、让"快速处理"：这时只做必要的检查（`--check-only`、相关的一小段自动测试或一张截图），不要把五章全流程全跑一遍。CI 推送后会自动跑全流程。
 - 做完一轮就提交、推送，然后告诉用户改了什么、有什么没做完。
+- **用户完全信任你来做决定，别问选择题**。拿不准时自己选"玩家手上、眼睛里感受变化最大"的方案，做完告诉用户选了什么、为什么。只有真正要用户动手的事（Meshy / Tripo 生成模型、Dola 生成图）才找用户，而且一次列全。
+- 2026-09-29 起用户换了一个 Claude 账号，在**本机 Windows 桌面**上做（仓库在 `C:\Users\zlche\OneDrive\文档\Alu-Chen`）。本机工具：Godot `%LOCALAPPDATA%\Programs\Godot\Godot_v4.7.2-stable_win64_console.exe`、Python 3.12、Node 24、ffmpeg（winget 装的）、git、gh。有独立显卡：开窗口截图很快（29 张约 2 分钟），截图输出放 `%TEMP%\claude\shots*`（短路径、没有中文）
 
 ## 用户提过的要求（别再犯）
 
@@ -411,7 +413,17 @@
    - `Horde._load_model()` 读 `assets/models/horde/jiangshi.glb` 的网格和贴图，`SHADER_TEX`（颜色 / 法线 / ORM 贴图，`TEX_TINT` 按种类调色，下摆跳起来往后飘、伸直的手上下晃，轮廓淡绿尸气、尸王暗红，挨打红闪）；没文件就退回程序模型 `_build_mesh`；场上超过 140 只关影子
    - 截图阶段 `chaseshot`（近看一排僵尸、挨打血条、长街远景）
    - **这套流程可以复用**：AI 模型 → shrink_glb 减面 → 必要时 numpy 改姿势 / 朝向 → 预览图（xvfb + 一个 SubViewport 脚本，三个角度拼一张，约 1 分钟）→ 接进游戏 → 截图
-   - 截图里还能看到的问题：起点兵器架的光柱太粗太亮挡视线；第一人称"巧克力手"；街边房子是方块
+   - 截图里还能看到的问题：起点兵器架的光柱太粗太亮挡视线（`99d8a02` 改细了）；第一人称"巧克力手"、街边房子是方块（32 改了）
+32. 质感第一轮（2026-09-29，换账号后第一轮，小号在本机 Windows 做的；和 31 同时进行）：纯色方块 → 真 PBR 材质
+   - `scripts/mat_lib.gd`（`MatLib`）：21 种 CC0 贴图（`tools/fetch_materials.py` 从 ambientCG 下，`assets/textures/mat`，约 31 MB）：瓦 roof、漆 lacquer（带清漆）、木 wood / hardwood / planks、金 gold、青铜 bronze、黄铜 brass、乌铁 iron、布 cloth / canvas、皮 leather、花岗岩 stone、石板路 cobble、青砖 brick、汉白玉 marble、白墙 plaster、麻绳 rope、竹 bamboo、茅草 thatch、灯笼纸 paper_lamp（透光发光）。
+     全部三向投影不用 UV；world = true 按世界坐标（建筑），false 按模型坐标（船、暗器、手）。去色贴图（瓦、漆、布、皮、纸、墙）靠 tint 上色，传进去的就是想要的颜色
+   - `world/props.gd`（`Props`）：`rbox` 倒角方块（边上接高光，暗器全部零件、牌坊、铺子、长街都换了）、`lathe` 旋转体、`lantern` 中式灯笼（竹骨纸灯身 + 漆木盖 + 金穗）
+   - `WorldBuilder._wood / _stone / _cloth` 改走 MatLib（以前木头是**树皮贴图**、石头和瓦是悬崖岩石），新增 `_tiles(c)` 青瓦；`_surface("rock", …)` 当瓦的地方都换了
+   - 暗器：`GunSkin` 着色器加真实细节层（`DETAIL`：木件紫檀木纹、漆件漆面、黑件皮革、包边青铜 / 金 / 乌铁；只取明暗 + 法线 + 粗糙度，颜色还是皮肤的，花纹皮肤细节减半）
+   - 手：`WeaponModels.fist / sleeve` 重做——半指皮手套、手指三节绕握把弯、露出的指节是皮肤（`_skin_mat` 次表面散射）、皮护腕 + 两道青铜箍、布料袖子
+   - 装饰 / 铺子 / 牌坊（斗拱、青绿彩画、鸱吻、柱础、金箍）/ 宝塔（白墙）/ 亭子 / 收购箱（铜包角）/ 长街（白墙木框铺面、木格窗、石板路、青砖城墙、九路门钉朱红城门）都换了材质；长街小零件 70 米外不画
+   - 3D 模型提示词一次列全在 `docs/3D模型提示词.md`（混元 3D Studio 用的中文提示词：朱厌、玩家人物（也当第一人称的手）、三把暗器、青崖子、乌篷船、石狮子），用户生成后放 `tools/incoming_models/`
+   - **截图要把窗口放到屏幕外**：`--position 2500,0`（用户只有一块 1920×1080 屏幕，窗口弹在桌面上会打扰用户，用户点到窗口（比如开了暂停菜单）自动测试会停住，看起来像卡死）。别用 `--always-on-top`。用 `Start-Process … -PassThru` + `WaitForExit(毫秒)`，超时就 Kill
 
 ## 还没做 / 可以继续
 
@@ -496,6 +508,10 @@ xvfb-run -a -s "-screen 0 1280x720x24" godot --path . --rendering-driver vulkan 
 上一个账号 token 用完了。**接手的先读完这一节，按顺序做**。用户原话在反馈表最后几行。
 
 ### 1. 最优先：全面提升模型质感（用户"无法接受目前这种低质感游戏"）
+
+**进度（2026-09-29）**：第一轮做完（版本历史 31）：材质库 + 倒角 + 手 + 暗器细节 + 建筑 / 码头 / 长街。还差：
+等用户用 Meshy 生成 `docs/Meshy提示词.md` 里的模型（手、暗器、人物、青崖子、跳尸、船、石狮子）再接进游戏；队友 `RemotePlayer` 和青崖子 `Sage` 的程序模型还没换材质；
+兵器架、祭坛、秘境、猎场营地还是 U.mat 纯色（`grep "U.mat(" game/scripts` 能找到剩下的）
 
 用户点名的：
 - **第一人称的手**（`player/viewmodel.gd` 里拼的手臂 / 手掌）——"巧克力手"：方块圆柱拼的、颜色像巧克力。要换成像样的手 + 袖子（修仙风：长袖、护腕、布料褶皱），手指分开有关节，皮肤材质

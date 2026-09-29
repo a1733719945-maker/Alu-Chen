@@ -104,12 +104,9 @@ func _light(parent: Node3D, pos: Vector3, c: Color, energy := 1.4, rng := 7.0) -
 	parent.add_child(l)
 
 
-## 一盏红灯笼：灯身 + 上下黑盖 + 金穗子
+## 一盏红灯笼：竹骨纸灯身 + 上下漆木盖 + 金穗子（Props.lantern）
 func _lamp(parent: Node3D, p: Vector3, c: Color, s := 1.0) -> void:
-	U.part(parent, U.sphere(0.22 * s, 12, 8), U.glow(c, 3.0), p, Vector3.ZERO, Vector3(1, 1.2, 1), false)
-	for dy in [0.27, -0.27]:
-		U.part(parent, U.cyl(0.09 * s, 0.09 * s, 0.06 * s, 8), U.mat(Color(0.12, 0.07, 0.04)), p + Vector3(0, dy * s, 0))
-	U.part(parent, U.cyl(0.015 * s, 0.03 * s, 0.3 * s, 5), U.mat(Color(0.95, 0.75, 0.3), 0.4, 0.0, 0.6), p + Vector3(0, -0.45 * s, 0))
+	Props.lantern(parent, p, c, s * 1.1)
 
 
 ## 码头的方向（岸 → 海）、右手边、岸上那一头、海上那一头
@@ -135,17 +132,17 @@ func _base() -> void:
 	var isl := world.island
 	if not isl.hunting and b.boat:
 		# 船：两舷一道朱漆 + 金边，船尾两盏灯，船头一面小三角旗
-		var red := U.mat(Color(0.55, 0.08, 0.06), 0.45)
-		var gold := U.mat(Color(0.95, 0.72, 0.3), 0.3, 0.0, 0.8)
+		var red := MatLib.lacquer(Color(0.55, 0.08, 0.06), false)
+		var gold := MatLib.gold()
 		for sx in [-1.0, 1.0]:
-			U.part(b.boat, U.box(Vector3(0.05, 0.14, 5.6)), red, Vector3(sx * 0.93, 0.72, 0))
-			U.part(b.boat, U.box(Vector3(0.055, 0.03, 5.6)), gold, Vector3(sx * 0.935, 0.8, 0))
+			U.part(b.boat, Props.rbox(Vector3(0.05, 0.14, 5.6)), red, Vector3(sx * 0.93, 0.72, 0))
+			U.part(b.boat, Props.rbox(Vector3(0.055, 0.03, 5.6)), gold, Vector3(sx * 0.935, 0.8, 0))
 			U.part(b.boat, U.cyl(0.03, 0.03, 1.1, 5), b._wood(Color(0.4, 0.28, 0.18)), Vector3(sx * 0.6, 1.1, 3.1))
 			_lamp(b.boat, Vector3(sx * 0.6, 1.75, 3.1), Color(1.0, 0.4, 0.2), 0.8)
 		var flag := Node3D.new()
 		flag.position = Vector3(0, 2.05, -3.15)
 		b.boat.add_child(flag)
-		U.part(flag, U.cyl(0.0, 0.35, 0.02, 3), U.mat(Color(0.8, 0.12, 0.1), 0.7), Vector3(0, 0, 0.3), Vector3(PI * 0.5, 0, PI * 0.5), Vector3(1, 1, 1.6))
+		U.part(flag, U.cyl(0.0, 0.35, 0.02, 3), MatLib.canvas(Color(0.75, 0.1, 0.08)), Vector3(0, 0, 0.3), Vector3(PI * 0.5, 0, PI * 0.5), Vector3(1, 1, 1.6))
 		_flags.append(flag)
 		_light(b.boat, Vector3(0, 1.8, 3.1), Color(1.0, 0.55, 0.3), 1.0, 6.0)
 	if not isl.hunting and isl.shop_pos != Vector3.ZERO:
@@ -160,8 +157,8 @@ func _base() -> void:
 		var flag2 := Node3D.new()
 		flag2.position = Vector3(-3.35, 5.65, 3.3)
 		n.add_child(flag2)
-		U.part(flag2, U.box(Vector3(0.9, 2.6, 0.03)), U.mat(Color(0.62, 0.1, 0.08), 0.8), Vector3(0, -1.3, 0))
-		U.part(flag2, U.box(Vector3(0.95, 0.12, 0.035)), U.mat(Color(0.1, 0.08, 0.06), 0.8), Vector3(0, -2.62, 0))
+		U.part(flag2, U.box(Vector3(0.9, 2.6, 0.03)), MatLib.canvas(Color(0.6, 0.09, 0.07)), Vector3(0, -1.3, 0))
+		U.part(flag2, Props.rbox(Vector3(0.95, 0.12, 0.05)), MatLib.lacquer(Color(0.08, 0.06, 0.05), false), Vector3(0, -2.62, 0))
 		var tx := U.label3d("暗\n器", 90, Color(1.0, 0.95, 0.85), 0)
 		tx.billboard = BaseMaterial3D.BILLBOARD_DISABLED
 		tx.pixel_size = 0.006
@@ -185,7 +182,7 @@ func _base() -> void:
 			U.part(n2, U.cyl(0.06, 0.06, 1.6, 6), wood, Vector3(sx, 0.8, 0))
 		for k in 3:
 			U.part(n2, U.cyl(0.025, 0.025, 2.6, 5), wood, Vector3(-0.5 + k * 0.5, 1.3, 0.05), Vector3(0.12, 0, 0))
-			U.part(n2, U.cyl(0.0, 0.06, 0.3, 5), U.mat(Color(0.7, 0.7, 0.72), 0.3, 0.0, 0.9), Vector3(-0.5 + k * 0.5 , 2.72, 0.2), Vector3(0.12, 0, 0))
+			U.part(n2, U.cyl(0.0, 0.06, 0.3, 5), MatLib.iron(Color(1.6, 1.6, 1.6)), Vector3(-0.5 + k * 0.5 , 2.72, 0.2), Vector3(0.12, 0, 0))
 		for sx in [-4.0, 4.0]:
 			var tp := Vector3(c.x + sx, isl.height_at(c.x + sx, c.z - 4.0), c.z - 4.0)
 			U.part(self, U.cyl(0.05, 0.07, 2.2, 6), wood, tp + Vector3(0, 1.1, 0))
@@ -246,12 +243,12 @@ func _d_banners() -> void:
 			var p: Vector3 = a - dir * (2.0 + k * 2.6) + right * (7.2 + k * 0.4) * s
 			p.y = world.island.height_at(p.x, p.z)
 			U.part(_live, U.cyl(0.05, 0.07, 5.5, 6), pole, p + Vector3(0, 2.75, 0))
-			U.part(_live, U.sphere(0.09, 8, 6), U.mat(Color(0.95, 0.75, 0.3), 0.3, 0.0, 0.8), p + Vector3(0, 5.55, 0))
+			U.part(_live, U.sphere(0.09, 8, 6), MatLib.gold(), p + Vector3(0, 5.55, 0))
 			var fl := Node3D.new()
 			fl.position = p + Vector3(0, 5.3, 0)
 			_live.add_child(fl)
-			U.part(fl, U.box(Vector3(0.8, 3.0, 0.03)), U.mat(cols[i % cols.size()], 0.8), Vector3(0.45, -1.5, 0))
-			U.part(fl, U.box(Vector3(0.85, 0.1, 0.035)), U.mat(Color(0.95, 0.75, 0.3), 0.4, 0.0, 0.6), Vector3(0.45, -3.0, 0))
+			U.part(fl, U.box(Vector3(0.8, 3.0, 0.03)), MatLib.canvas(cols[i % cols.size()]), Vector3(0.45, -1.5, 0))
+			U.part(fl, Props.rbox(Vector3(0.85, 0.1, 0.04)), MatLib.gold(), Vector3(0.45, -3.0, 0))
 			_flags.append(fl)
 			_col(_live, _boxs(Vector3(0.15, 5.5, 0.15)), Transform3D(Basis(), p + Vector3(0, 2.75, 0)))
 			i += 1
@@ -290,34 +287,50 @@ func _d_paifang() -> void:
 	var n := Node3D.new()
 	_live.add_child(n)
 	n.global_transform = Transform3D(Basis(Vector3.UP, yaw), c)
-	var red := U.mat(Color(0.62, 0.08, 0.06), 0.45)
+	var red := MatLib.lacquer(Color(0.58, 0.07, 0.05))
 	var dark := _b()._stone(Color(0.25, 0.24, 0.26))
-	var gold := U.mat(Color(0.95, 0.72, 0.3), 0.3, 0.0, 0.8)
-	var green := U.mat(Color(0.1, 0.35, 0.3), 0.6)
-	var tiles := _b()._surface("rock", Color(0.3, 0.3, 0.33), 1.6, 0.7)
+	var gold := MatLib.gold(true)
+	var green := MatLib.lacquer(Color(0.08, 0.3, 0.26))
+	var blue := MatLib.lacquer(Color(0.07, 0.16, 0.34))
+	var tiles := _b()._tiles(Color(0.26, 0.27, 0.3))
 	for x in [-5.2, -2.4, 2.4, 5.2]:
 		var h := 6.4 if absf(x) < 3.0 else 4.8
 		var gy := world.island.height_at((n.global_transform * Vector3(x, 0, 0)).x, (n.global_transform * Vector3(x, 0, 0)).z) - c.y
-		U.part(n, U.box(Vector3(0.8, 0.6, 0.8)), dark, Vector3(x, gy + 0.3, 0))
-		U.part(n, U.cyl(0.24, 0.26, h - gy, 12), red, Vector3(x, gy + (h - gy) * 0.5, 0))
+		# 柱础：方座 + 鼓形石墩；柱子上下各一道金箍
+		U.part(n, Props.rbox(Vector3(0.9, 0.5, 0.9), 0.06), dark, Vector3(x, gy + 0.25, 0))
+		U.part(n, U.cyl(0.34, 0.38, 0.35, 16), dark, Vector3(x, gy + 0.65, 0))
+		U.part(n, U.cyl(0.24, 0.26, h - gy, 16), red, Vector3(x, gy + (h - gy) * 0.5, 0))
+		for yy in [gy + 0.9, h - 1.25]:
+			U.part(n, U.cyl(0.27, 0.27, 0.08, 16), gold, Vector3(x, yy, 0))
 		_col(_live, _boxs(Vector3(0.6, h, 0.6)), n.global_transform * Transform3D(Basis(), Vector3(x, h * 0.5, 0)))
-	# 横梁：中间高、两边低，青绿彩画 + 金边
+	# 横梁：中间高、两边低，青绿彩画（青、绿两道 + 金线）+ 斗拱 + 瓦顶
 	for bay in [[0.0, 4.8, 6.2], [-3.8, 2.8, 4.6], [3.8, 2.8, 4.6]]:
 		var bx := float(bay[0])
 		var bw := float(bay[1]) + 0.8
 		var by := float(bay[2])
-		U.part(n, U.box(Vector3(bw, 0.35, 0.5)), green, Vector3(bx, by - 0.9, 0))
-		U.part(n, U.box(Vector3(bw, 0.5, 0.55)), red, Vector3(bx, by - 0.3, 0))
-		U.part(n, U.box(Vector3(bw + 0.05, 0.06, 0.6)), gold, Vector3(bx, by - 0.05, 0))
+		U.part(n, Props.rbox(Vector3(bw, 0.35, 0.5)), green, Vector3(bx, by - 0.9, 0))
+		U.part(n, Props.rbox(Vector3(bw - 0.3, 0.12, 0.54)), blue, Vector3(bx, by - 0.9, 0))
+		U.part(n, Props.rbox(Vector3(bw, 0.5, 0.55)), red, Vector3(bx, by - 0.3, 0))
+		for yy in [by - 0.72, by - 1.08, by - 0.05]:
+			U.part(n, Props.rbox(Vector3(bw + 0.05, 0.04, 0.58), 0.01), gold, Vector3(bx, yy, 0))
+		# 斗拱：一排小木托，把屋檐撑出去
+		var nb := int(bw / 0.55)
+		for k in nb:
+			var kx := bx - bw * 0.5 + (k + 0.5) * bw / nb
+			for zz in [-0.34, 0.34]:
+				U.part(n, Props.rbox(Vector3(0.22, 0.14, 0.26), 0.02), red, Vector3(kx, by + 0.05, zz))
+				U.part(n, Props.rbox(Vector3(0.3, 0.08, 0.32), 0.015), green, Vector3(kx, by + 0.15, zz * 1.1))
 		var roof := PrismMesh.new()
 		roof.size = Vector3(bw + 1.4, 1.0, 1.9)
-		U.part(n, roof, tiles, Vector3(bx, by + 0.55, 0))
-		U.part(n, U.box(Vector3(bw + 1.6, 0.14, 0.2)), dark, Vector3(bx, by + 1.05, 0))
+		U.part(n, roof, tiles, Vector3(bx, by + 0.7, 0))
+		# 屋脊 + 两头的鸱吻
+		U.part(n, Props.rbox(Vector3(bw + 1.3, 0.18, 0.24), 0.04), dark, Vector3(bx, by + 1.22, 0))
 		for sx in [-1.0, 1.0]:
-			U.part(n, U.cyl(0.02, 0.12, 0.7, 5), tiles, Vector3(bx + sx * (bw * 0.5 + 0.7), by + 0.2, 0), Vector3(0, 0, -0.9 * sx))
+			U.part(n, U.cyl(0.02, 0.12, 0.7, 6), tiles, Vector3(bx + sx * (bw * 0.5 + 0.7), by + 0.35, 0), Vector3(0, 0, -0.9 * sx))
+			U.part(n, Props.rbox(Vector3(0.18, 0.4, 0.2), 0.04), dark, Vector3(bx + sx * (bw * 0.5 + 0.55), by + 1.4, 0), Vector3(0, 0, 0.25 * sx))
 	# 匾：金字「苍墟」
-	U.part(n, U.box(Vector3(2.2, 1.0, 0.12)), U.mat(Color(0.06, 0.12, 0.2), 0.5), Vector3(0, 5.2, 0.32))
-	U.part(n, U.box(Vector3(2.35, 1.12, 0.08)), gold, Vector3(0, 5.2, 0.28))
+	U.part(n, Props.rbox(Vector3(2.2, 1.0, 0.12), 0.03), MatLib.lacquer(Color(0.05, 0.1, 0.18)), Vector3(0, 5.2, 0.32))
+	U.part(n, Props.rbox(Vector3(2.35, 1.12, 0.08), 0.03), gold, Vector3(0, 5.2, 0.28))
 	for side in [1.0, -1.0]:
 		var l := U.label3d("苍 墟", 120, Color(1.0, 0.82, 0.4), 0)
 		l.billboard = BaseMaterial3D.BILLBOARD_DISABLED
@@ -336,9 +349,8 @@ func _d_sail() -> void:
 	var n := Node3D.new()
 	boat.add_child(n)
 	var wood := _b()._wood(Color(0.35, 0.24, 0.15))
-	var cloth := U.mat(Color(0.7, 0.1, 0.08), 0.8)
-	cloth.cull_mode = BaseMaterial3D.CULL_DISABLED
-	var gold := U.mat(Color(0.95, 0.72, 0.3), 0.35, 0.0, 0.7)
+	var cloth := MatLib.canvas(Color(0.66, 0.1, 0.07))
+	var gold := MatLib.gold()
 	U.part(n, U.cyl(0.06, 0.08, 6.0, 8), wood, Vector3(0, 3.4, 0.9))
 	U.part(n, U.cyl(0.04, 0.04, 2.8, 6), wood, Vector3(0, 5.6, 0.95), Vector3(0, 0, PI * 0.5))
 	U.part(n, U.cyl(0.04, 0.04, 2.6, 6), wood, Vector3(0, 2.3, 0.95), Vector3(0, 0, PI * 0.5))
@@ -353,7 +365,7 @@ func _d_sail() -> void:
 	var flag := Node3D.new()
 	flag.position = Vector3(0, 6.35, 0.9)
 	n.add_child(flag)
-	U.part(flag, U.box(Vector3(0.9, 0.35, 0.02)), U.mat(Color(0.95, 0.75, 0.25), 0.6), Vector3(0.45, 0, 0))
+	U.part(flag, U.box(Vector3(0.9, 0.35, 0.02)), MatLib.canvas(Color(0.92, 0.7, 0.22)), Vector3(0.45, 0, 0))
 	_flags.append(flag)
 	# 船是基础场景里的，重建装饰时这一套也要跟着删
 	_live.tree_exiting.connect(func():
@@ -368,8 +380,8 @@ func _d_dragon() -> void:
 	var n := Node3D.new()
 	n.position = Vector3(0, 0.75, -3.45)
 	boat.add_child(n)
-	var gold := U.mat(Color(1.0, 0.76, 0.3), 0.28, 0.0, 0.9)
-	var red := U.mat(Color(0.7, 0.1, 0.06), 0.5)
+	var gold := MatLib.gold()
+	var red := MatLib.lacquer(Color(0.7, 0.1, 0.06), false)
 	# 脖子往上往前弯，头朝前（-z）
 	for k in 4:
 		var t := float(k) / 3.0
@@ -432,7 +444,7 @@ func _d_censer() -> void:
 				p = q
 				break
 	p.y = world.island.height_at(p.x, p.z)
-	var bronze := U.mat(Color(0.35, 0.5, 0.38), 0.4, 0.0, 0.85)
+	var bronze := MatLib.bronze(Color(0.7, 0.95, 0.8))
 	var n := Node3D.new()
 	_live.add_child(n)
 	n.global_position = p
@@ -472,9 +484,9 @@ func _d_tiger() -> void:
 	var n := Node3D.new()
 	_live.add_child(n)
 	n.global_position = p
-	var orange := U.mat(Color(0.85, 0.5, 0.15), 0.8)
-	var black := U.mat(Color(0.08, 0.06, 0.05), 0.8)
-	var cream := U.mat(Color(0.9, 0.85, 0.7), 0.8)
+	var orange := MatLib.canvas(Color(0.82, 0.48, 0.14))
+	var black := MatLib.canvas(Color(0.08, 0.06, 0.05))
+	var cream := MatLib.canvas(Color(0.88, 0.83, 0.68))
 	var wood := _b()._wood(Color(0.35, 0.24, 0.15))
 	# 十二面的帐墙（虎纹：橙黑相间）+ 尖顶 + 门帘
 	for k in 12:
@@ -489,10 +501,10 @@ func _d_tiger() -> void:
 	var fl := Node3D.new()
 	fl.position = Vector3(0, 7.3, 0)
 	n.add_child(fl)
-	U.part(fl, U.box(Vector3(1.4, 0.8, 0.03)), U.mat(Color(0.75, 0.1, 0.08), 0.8), Vector3(0.7, 0, 0))
+	U.part(fl, U.box(Vector3(1.4, 0.8, 0.03)), MatLib.canvas(Color(0.72, 0.1, 0.07)), Vector3(0.7, 0, 0))
 	_flags.append(fl)
 	for sx in [-1.8, 1.8]:
-		U.part(n, U.cyl(0.35, 0.25, 0.9, 8), U.mat(Color(0.3, 0.3, 0.32), 0.5, 0.0, 0.7), Vector3(sx, 0.45, 4.2))
+		U.part(n, U.cyl(0.35, 0.25, 0.9, 12), MatLib.iron(), Vector3(sx, 0.45, 4.2))
 		U.part(n, U.sphere(0.3, 8, 6), U.glow(Color(1.0, 0.55, 0.2), 5.0), Vector3(sx, 1.0, 4.2), Vector3.ZERO, Vector3(1, 1.6, 1), false)
 		_light(n, Vector3(sx, 1.6, 4.4), Color(1.0, 0.6, 0.3), 1.4, 9.0)
 	var cyl := CylinderShape3D.new()
@@ -593,10 +605,10 @@ func _pagoda(p: Vector3) -> void:
 	n.name = "Pagoda"
 	add_child(n)
 	n.global_position = p
-	var wall := _b()._stone(Color(0.85, 0.82, 0.76))
-	var red := U.mat(Color(0.55, 0.1, 0.07), 0.55)
-	var tiles := _b()._surface("rock", Color(0.28, 0.28, 0.3), 1.6, 0.7)
-	var gold := U.mat(Color(0.95, 0.72, 0.3), 0.3, 0.0, 0.85)
+	var wall := MatLib.plaster(Color(0.84, 0.8, 0.72))
+	var red := MatLib.lacquer(Color(0.55, 0.1, 0.07))
+	var tiles := _b()._tiles(Color(0.25, 0.26, 0.29))
+	var gold := MatLib.gold(true)
 	U.part(n, U.cyl(4.2, 4.6, 1.2, 8), _b()._stone(Color(0.55, 0.53, 0.5)), Vector3(0, 0.4, 0))
 	var y := 1.0
 	var r := 3.2
@@ -616,7 +628,7 @@ func _pagoda(p: Vector3) -> void:
 			var tip := Vector3(cos(a), 0, sin(a)) * (r + 1.45)
 			U.part(n, U.cyl(0.03, 0.14, 0.9, 5), tiles, tip + Vector3(0, y + 0.1, 0), Vector3(sin(a) * 0.7, 0, -cos(a) * 0.7))
 			if f % 2 == 0:
-				U.part(n, U.sphere(0.12, 8, 6), U.glow(Color(1.0, 0.55, 0.25), 3.0), tip + Vector3(0, y - 0.35, 0), Vector3.ZERO, Vector3(1, 1.3, 1), false)
+				Props.lantern(n, tip + Vector3(0, y - 0.45, 0), Color(1.0, 0.5, 0.22), 0.5, 0.15)
 		y += 0.6
 		r *= 0.86
 	U.part(n, U.cyl(0.08, 0.12, 3.0, 8), gold, Vector3(0, y + 1.5, 0))
@@ -636,9 +648,9 @@ func _pavilion(p: Vector3, yaw: float) -> void:
 	add_child(n)
 	n.global_transform = Transform3D(Basis(Vector3.UP, yaw), p)
 	var stone := _b()._stone(Color(0.7, 0.68, 0.64))
-	var red := U.mat(Color(0.6, 0.1, 0.07), 0.5)
-	var tiles := _b()._surface("rock", Color(0.26, 0.3, 0.3), 1.6, 0.7)
-	var gold := U.mat(Color(0.95, 0.72, 0.3), 0.3, 0.0, 0.85)
+	var red := MatLib.lacquer(Color(0.58, 0.09, 0.06))
+	var tiles := _b()._tiles(Color(0.24, 0.28, 0.28))
+	var gold := MatLib.gold(true)
 	U.part(n, U.cyl(3.4, 3.7, 0.6, 6), stone, Vector3(0, 0.1, 0))
 	for k in 6:
 		var a := TAU * k / 6.0

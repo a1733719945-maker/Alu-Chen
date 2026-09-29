@@ -340,18 +340,23 @@ func _surface(key: String, tint := Color.WHITE, scale := 0.5, rough := 0.9) -> S
 	return m
 
 
-func _wood(tint := Color(1.25, 1.05, 0.85)) -> StandardMaterial3D:
-	return _surface("bark", tint, 0.9, 0.85)
+## 木头、石头、布、瓦都走 MatLib（真 PBR 贴图）。以前木头用的是树皮贴图、石头和瓦用的是悬崖岩石。
+## tint 保持以前的写法：树皮和新木纹平均亮度差不多，直接用；岩石比花岗岩暗，乘 0.66
+func _wood(tint := Color(0.78, 0.66, 0.55)) -> StandardMaterial3D:
+	return MatLib.wood(Color(tint.r * 0.8, tint.g * 0.8, tint.b * 0.8))
 
 
 func _stone(tint := Color(1.1, 1.08, 1.02)) -> StandardMaterial3D:
-	return _surface("rock", tint, 0.6, 0.85)
+	return MatLib.stone(Color(tint.r * 0.66, tint.g * 0.66, tint.b * 0.66))
 
 
 func _cloth(color: Color) -> StandardMaterial3D:
-	var m := U.mat(color, 0.95)
-	m.cull_mode = BaseMaterial3D.CULL_DISABLED
-	return m
+	return MatLib.canvas(color, true)
+
+
+## 青瓦屋顶（以前是 _surface("rock", …)）
+func _tiles(c := Color(0.32, 0.33, 0.36)) -> StandardMaterial3D:
+	return MatLib.roof(c)
 
 
 # ------------------------------------------------------------------ 小路
@@ -2016,7 +2021,7 @@ func _dock() -> void:
 			U.part(root, U.cyl(0.14, 0.14, 3.2, 8), dark, p)
 			# 桩子上的缆绳
 			if k % 2 == 1:
-				U.part(root, U.torus(0.12, 0.2, 12, 6), U.mat(Color(0.7, 0.62, 0.45)), p + Vector3(0, 1.25, 0), Vector3(PI * 0.5, 0, 0))
+				U.part(root, U.torus(0.12, 0.2, 12, 6), MatLib.rope(), p + Vector3(0, 1.25, 0), Vector3(PI * 0.5, 0, 0))
 	# 码头上的灯笼杆
 	for k in 2:
 		var lp := Vector3(a.x - 1.4, island.dock_y, a.z + len * (0.35 + k * 0.5))
@@ -2025,8 +2030,7 @@ func _dock() -> void:
 
 
 func _lantern(p: Vector3, color: Color) -> void:
-	U.part(root, U.sphere(0.2, 10, 8), U.glow(color, 3.0), p, Vector3.ZERO, Vector3(1, 1.25, 1), false)
-	U.part(root, U.cyl(0.08, 0.08, 0.06, 8), U.mat(Color(0.15, 0.1, 0.05)), p + Vector3(0, 0.27, 0))
+	Props.lantern(root, p, color, 0.9)
 	var l := OmniLight3D.new()
 	l.light_color = color.lerp(Color(1, 0.8, 0.6), 0.4)
 	l.light_energy = 1.4
@@ -2043,8 +2047,7 @@ func _boat() -> void:
 	boat.name = "Boat"
 	boat.position = boat_pos
 	root.add_child(boat)
-	var hull_mat := _wood(Color(0.75, 0.55, 0.38)).duplicate() as StandardMaterial3D
-	hull_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	var hull_mat := MatLib.variant(MatLib.planks(Color(1.35, 1.2, 1.05), false), true)
 	var L := 7.0
 	var W := 1.9
 	var st := SurfaceTool.new()
@@ -2083,15 +2086,15 @@ func _boat() -> void:
 		for idx in [k, k + seg + 1, k + 1, k + 1, k + seg + 1, k + seg + 2]:
 			sp.add_index(idx)
 	sp.generate_normals()
-	var canopy := _surface("bark", Color(0.35, 0.3, 0.26), 2.0, 0.9).duplicate() as StandardMaterial3D
-	canopy.cull_mode = BaseMaterial3D.CULL_DISABLED
+	# 乌篷：黑色竹篾
+	var canopy := MatLib.variant(MatLib.bamboo(Color(0.3, 0.27, 0.35), false), true)
 	U.part(boat, sp.commit(), canopy, Vector3(0, 0, -0.3))
 	# 座板、船桨、船头灯笼
 	U.part(boat, U.box(Vector3(W * 0.8, 0.08, 0.4)), hull_mat, Vector3(0, 0.5, 2.0))
 	U.part(boat, U.box(Vector3(W * 0.8, 0.08, 0.4)), hull_mat, Vector3(0, 0.5, -2.4))
 	U.part(boat, U.cyl(0.03, 0.03, 3.2, 5), hull_mat, Vector3(0.7, 0.9, 2.6), Vector3(0.9, 0, 0.3))
 	U.part(boat, U.cyl(0.03, 0.03, 1.4, 5), hull_mat, Vector3(0, 1.2, -L * 0.45))
-	var lamp := U.part(boat, U.sphere(0.18, 10, 8), U.glow(Color(1.0, 0.45, 0.2), 3.0), Vector3(0, 1.95, -L * 0.45), Vector3.ZERO, Vector3(1, 1.2, 1), false)
+	var lamp := Props.lantern(boat, Vector3(0, 1.95, -L * 0.45), Color(1.0, 0.45, 0.2), 0.75, 0.0)
 	lamp.name = "Lamp"
 	var sh := BoxShape3D.new()
 	sh.size = Vector3(W, 0.6, L)
@@ -2109,8 +2112,8 @@ func _shop() -> void:
 	root.add_child(hut)
 	var wood := _wood()
 	var dark := _wood(Color(0.65, 0.5, 0.38))
-	var red := U.mat(Color(0.62, 0.14, 0.1), 0.7)
-	var gold := U.mat(Color(0.95, 0.75, 0.35), 0.4, 0.0, 0.6)
+	var red := MatLib.lacquer(Color(0.58, 0.1, 0.07))
+	var gold := MatLib.gold(true)
 	if forest or biome == "snow":
 		# 商人帐篷：四根杆子 + 布顶 + 货箱
 		var cloth := _cloth(Color(0.62, 0.2, 0.12))
@@ -2129,15 +2132,25 @@ func _shop() -> void:
 		_lantern(hut.transform * Vector3(-2.6, 2.6, 2.1), Color(1.0, 0.5, 0.2))
 		_lantern(hut.transform * Vector3(2.6, 2.6, 2.1), Color(1.0, 0.5, 0.2))
 	else:
-		# 千机阁小屋：木墙、红柱、灰瓦翘檐，门前一张柜台
-		U.part(hut, U.box(Vector3(6.0, 3.0, 4.6)), wood, Vector3(0, 1.5, 0))
-		U.part(hut, U.box(Vector3(6.4, 0.3, 5.0)), _stone(), Vector3(0, 0.1, 0))
+		# 千机阁小屋：白墙木框、红柱、青瓦翘檐，门前一张柜台
+		U.part(hut, U.box(Vector3(6.0, 3.0, 4.6)), MatLib.plaster(Color(0.84, 0.8, 0.72)), Vector3(0, 1.5, 0))
+		# 墙上的木框：上下两道横枋 + 竖的木柱
+		for z in [-2.32, 2.32]:
+			for yy in [0.35, 2.85]:
+				U.part(hut, Props.rbox(Vector3(6.05, 0.22, 0.12)), dark, Vector3(0, yy, z))
+			for x in [-1.5, 0.0, 1.5]:
+				U.part(hut, Props.rbox(Vector3(0.16, 3.0, 0.1)), dark, Vector3(x, 1.5, z))
+		for x in [-3.02, 3.02]:
+			for yy in [0.35, 2.85]:
+				U.part(hut, Props.rbox(Vector3(0.12, 0.22, 4.65)), dark, Vector3(x, yy, 0))
+		U.part(hut, Props.rbox(Vector3(6.4, 0.3, 5.0), 0.05), _stone(), Vector3(0, 0.1, 0))
 		for x in [-3.0, 3.0]:
 			for z in [-2.3, 2.3]:
-				U.part(hut, U.cyl(0.16, 0.16, 3.2, 8), red, Vector3(x, 1.6, z))
+				U.part(hut, U.cyl(0.16, 0.16, 3.2, 12), red, Vector3(x, 1.6, z))
+				U.part(hut, U.cyl(0.24, 0.26, 0.22, 12), _stone(), Vector3(x, 0.3, z))
 		var roof := PrismMesh.new()
 		roof.size = Vector3(7.6, 1.9, 6.0)
-		var tiles := _surface("rock", Color(0.42, 0.42, 0.45), 1.6, 0.7)
+		var tiles := _tiles(Color(0.3, 0.31, 0.34))
 		U.part(hut, roof, tiles, Vector3(0, 4.05, 0))
 		# 翘起来的屋檐角
 		for x in [-3.7, 3.7]:
@@ -2196,7 +2209,7 @@ func _board() -> void:
 		U.part(node, U.cyl(0.08, 0.1, 2.6, 6), wood, Vector3(s * 1.0, 1.3, 0))
 	U.part(node, U.box(Vector3(2.4, 1.4, 0.1)), wood, Vector3(0, 1.75, 0))
 	U.part(node, U.box(Vector3(2.7, 0.14, 0.3)), wood, Vector3(0, 2.55, 0.05))
-	var paper := U.mat(Color(0.93, 0.88, 0.76), 0.95)
+	var paper := MatLib.surf("paper", Color(0.93, 0.88, 0.76), 3.0, false)
 	var pr := RandomNumberGenerator.new()
 	pr.seed = island.map_seed + 31
 	for k in 5:

@@ -32,10 +32,14 @@ static func _mats(skin := "", outfit := "", weapon := "") -> Dictionary:
 	var sleeve: Color = Color(0.1, 0.11, 0.17) if outfit == "default" else (of["robe"] as Color)
 	var cuff: Color = of.get("accent", Color(0.85, 0.66, 0.3))
 	var m := {
-		"skin": U.mat(Color(0.2, 0.15, 0.12), 0.55),
-		"sleeve": U.mat(sleeve, 0.85),
+		# 手（2026-09-29 重做，用户说以前是"巧克力手"）：半指皮手套 + 露出来的手指是皮肤（带透光）
+		"skin": _skin_mat(),
+		"glove": MatLib.leather(Color(0.2, 0.13, 0.09)),
+		"bracer": MatLib.leather(Color(0.13, 0.09, 0.07)),
+		"trim": MatLib.bronze(),
+		"sleeve": MatLib.cloth(sleeve, false, 9.0),
 		"cuff": U.mat(cuff, 0.35, 0.0, 0.7),
-		"inner": U.mat(Color(0.86, 0.84, 0.78), 0.8),
+		"inner": MatLib.cloth(Color(0.86, 0.84, 0.78), false, 9.0),
 		"string": U.mat(Color(0.9, 0.88, 0.8), 0.8),
 		"jade": U.glow(glow, 1.6 if skin == "default" else 2.4),
 		# 翎羽：有明暗的发光材质（纯发光的看起来是一块平的色块）
@@ -67,26 +71,74 @@ static func _p(parent: Node3D, mesh: Mesh, mat: Material, pos := Vector3.ZERO, r
 	return mi
 
 
-## 一只握拳的手：手掌 + 四根弯着的手指 + 大拇指。side = 1 右手，-1 左手
-## 手的本地坐标：-Z 朝前，手指从右往左（右手）包住握把
+static var _skin: StandardMaterial3D
+
+
+## 皮肤：暖色、有一点透光（次表面散射）和边缘光，不再是一坨深棕色
+static func _skin_mat() -> StandardMaterial3D:
+	if _skin == null:
+		_skin = StandardMaterial3D.new()
+		_skin.albedo_color = Color(0.62, 0.43, 0.32)
+		_skin.roughness = 0.6
+		_skin.subsurf_scatter_enabled = true
+		_skin.subsurf_scatter_strength = 0.2
+		_skin.rim_enabled = true
+		_skin.rim = 0.08
+		_skin.rim_tint = 0.8
+		_skin.normal_enabled = true
+		_skin.normal_texture = MatLib.tex("leather_normal")
+		_skin.normal_scale = 0.15
+		_skin.uv1_triplanar = true
+		_skin.uv1_scale = Vector3.ONE * 30.0
+	return _skin
+
+
+## 一节手指 / 指骨：从 a 到 b 的胶囊
+static func _seg(parent: Node3D, a: Vector3, b: Vector3, r: float, mat: Material) -> MeshInstance3D:
+	var d := b - a
+	var mi := _p(parent, U.capsule(r, d.length() + r * 2.0), mat, (a + b) * 0.5)
+	mi.basis = Basis(Quaternion(Vector3.UP, d.normalized()))
+	return mi
+
+
+## 一只握拳的手（半指皮手套）：手背、四根三节的手指绕着握把弯过去、大拇指压在上面。side = 1 右手，-1 左手
+## 手的本地坐标：-Z 朝前，握把是竖着的（Y 轴），手指从右往左（右手）包住握把
 static func fist(parent: Node3D, m: Dictionary, pos: Vector3, rot: Vector3, side := 1.0) -> Node3D:
 	var h := Node3D.new()
 	h.position = pos
 	h.rotation = rot
 	parent.add_child(h)
-	# 手掌（稍扁的圆角块）
-	_p(h, U.sphere(0.03, 12, 8), m["skin"], Vector3(0.012 * side, 0, 0.012), Vector3.ZERO, Vector3(0.95, 1.35, 1.35))
-	# 四根手指：横着包在握把前面，紧挨着（戴着皮手套）
+	var gc := Vector3(-0.004 * side, 0, -0.004)      # 握把中心
+	# 手背 + 手掌（手套）
+	_p(h, U.sphere(0.03, 16, 12), m["glove"], Vector3(0.015 * side, -0.002, 0.012), Vector3.ZERO, Vector3(0.85, 1.4, 1.25))
+	_p(h, U.sphere(0.026, 12, 8), m["glove"], Vector3(0.006 * side, 0.018, 0.018), Vector3.ZERO, Vector3(1.0, 0.8, 1.0))
+	# 手指：每根三节，按角度绕着握把（右边 → 前面 → 左边 → 往回收）
+	var ys := [0.026, 0.009, -0.008, -0.024]
+	var rs := [0.0092, 0.0096, 0.009, 0.0079]
+	var angs := [deg_to_rad(-12.0), deg_to_rad(-80.0), deg_to_rad(-148.0), deg_to_rad(-200.0)]
 	for k in 4:
-		var y := 0.024 - k * 0.0158
-		var r := 0.0098 - k * 0.0006
-		_p(h, U.capsule(r, 0.052), m["skin"], Vector3(-0.002 * side, y, -0.024), Vector3(0, 0, PI / 2), Vector3.ONE)
-	# 大拇指：从手掌左上方伸向前
-	_p(h, U.capsule(0.011, 0.05), m["skin"], Vector3(-0.018 * side, 0.034, -0.012), Vector3(PI / 2 - 0.35, 0, 0.5 * side))
+		var r: float = rs[k]
+		var R := 0.017 + r
+		var pts: Array[Vector3] = []
+		for i in 4:
+			var a: float = angs[i]
+			var rr := R * (1.0 - 0.06 * i)
+			pts.append(gc + Vector3(cos(a) * rr * side, float(ys[k]) - i * 0.0012, sin(a) * rr))
+		_seg(h, pts[0], pts[1], r, m["glove"])            # 第一节在手套里
+		_seg(h, pts[1], pts[2], r * 0.93, m["skin"])
+		_seg(h, pts[2], pts[3], r * 0.85, m["skin"])
+		# 指关节（手套上鼓起来的一圈）
+		_p(h, U.sphere(r * 1.18, 10, 6), m["glove"], pts[0] + Vector3(0.002 * side, 0, 0.001))
+	# 大拇指：根部在手套里，从手背上方压过握把，指尖朝前下
+	var t0 := Vector3(0.012 * side, 0.036, 0.008)
+	var t1 := Vector3(-0.004 * side, 0.04, -0.014)
+	var t2 := Vector3(-0.015 * side, 0.034, -0.03)
+	_seg(h, t0, t1, 0.0125, m["glove"])
+	_seg(h, t1, t2, 0.0105, m["skin"])
 	return h
 
 
-## 袖子：深色千机阁长袍，手腕一圈金边，里面露一点白色里衣
+## 袖子：千机阁长袍（布料贴图），手腕一圈皮护腕 + 两道青铜箍，里面露一点白色里衣，袖口一道彩边
 ## elbow：从手腕指向手肘的方向（前臂斜着往下、往外、往后伸出画面，像 CS 里的手臂）
 static func sleeve(parent: Node3D, m: Dictionary, wrist: Vector3, elbow: Vector3) -> Node3D:
 	var s := Node3D.new()
@@ -94,11 +146,15 @@ static func sleeve(parent: Node3D, m: Dictionary, wrist: Vector3, elbow: Vector3
 	parent.add_child(s)
 	# 让本地 +Z 指向手肘
 	s.basis = Basis.looking_at(-elbow.normalized(), Vector3.UP if absf(elbow.normalized().y) < 0.95 else Vector3.FORWARD)
-	_p(s, U.cyl(0.024, 0.026, 0.03, 12), m["skin"], Vector3(0, 0, -0.005), Vector3(PI / 2, 0, 0))
-	_p(s, U.cyl(0.031, 0.031, 0.02, 14), m["inner"], Vector3(0, 0, 0.016), Vector3(PI / 2, 0, 0))
-	_p(s, U.cyl(0.04, 0.038, 0.026, 16), m["cuff"], Vector3(0, 0, 0.036), Vector3(PI / 2, 0, 0))
+	var rx := Vector3(PI / 2, 0, 0)
+	_p(s, U.cyl(0.023, 0.025, 0.03, 16), m["glove"], Vector3(0, 0, -0.008), rx)
+	_p(s, U.cyl(0.029, 0.033, 0.07, 18), m["bracer"], Vector3(0, 0, 0.026), rx)
+	for zz in [-0.004, 0.056]:
+		_p(s, U.cyl(0.0335, 0.0335, 0.008, 18), m["trim"], Vector3(0, 0, zz), rx)
+	_p(s, U.cyl(0.035, 0.036, 0.016, 18), m["inner"], Vector3(0, 0, 0.068), rx)
+	_p(s, U.cyl(0.041, 0.04, 0.014, 20), m["cuff"], Vector3(0, 0, 0.08), rx)
 	# 袖子往手肘方向越来越宽（Y 轴转到 +Z 后，cyl 的 top 在 -Z 端）
-	_p(s, U.cyl(0.037, 0.05, 0.42, 16), m["sleeve"], Vector3(0, 0, 0.26), Vector3(-PI / 2, 0, 0))
+	_p(s, U.cyl(0.039, 0.055, 0.42, 20), m["sleeve"], Vector3(0, 0, 0.295), Vector3(-PI / 2, 0, 0))
 	return s
 
 
@@ -129,8 +185,8 @@ static func _bow(root: Node3D, m: Dictionary, front: Vector3, span: float, thick
 		arm.position = front + Vector3(0.018 * side, 0, 0)
 		arm.rotation.y = -0.32 * side
 		root.add_child(arm)
-		_p(arm, U.box(Vector3(span, thick, thick * 1.6)), m["wood"], Vector3(span * 0.5 * side, 0, 0))
-		_p(arm, U.box(Vector3(span * 0.35, thick * 1.2, thick * 1.8)), m["gold"], Vector3(span * 0.18 * side, 0, 0))
+		_p(arm, Props.rbox(Vector3(span, thick, thick * 1.6)), m["wood"], Vector3(span * 0.5 * side, 0, 0))
+		_p(arm, Props.rbox(Vector3(span * 0.35, thick * 1.2, thick * 1.8)), m["gold"], Vector3(span * 0.18 * side, 0, 0))
 		_p(arm, U.sphere(thick * 0.9, 8, 6), m["bronze"], Vector3(span * side, 0, 0))
 	# 弓弦：从两边弩臂尖连到机括
 	var tip := span * cos(0.32)
@@ -225,7 +281,7 @@ static func _build(id: String, skin: String, outfit: String, on: Variant, charm:
 			_p(root, U.cyl(0.019, 0.019, 0.025, 12), m["gold"], Vector3(0.0, 0.025, -0.14), Vector3(PI / 2, 0, 0))
 			_p(root, U.cyl(0.019, 0.019, 0.02, 12), m["gold"], Vector3(0.0, 0.025, 0.09), Vector3(PI / 2, 0, 0))
 			for zz in [0.0, 0.07]:
-				_p(root, U.box(Vector3(0.1, 0.012, 0.022)), m["black"], Vector3(0.0, -0.005, zz))
+				_p(root, Props.rbox(Vector3(0.1, 0.012, 0.022)), m["black"], Vector3(0.0, -0.005, zz))
 			var mag := _marker(root, "Mag", Vector3(0.0, 0.025, 0.12))
 			_p(mag, U.cyl(0.012, 0.012, 0.05, 8), m["iron"], Vector3.ZERO, Vector3(PI / 2, 0, 0))
 			_marker(root, "Muzzle", Vector3(0.0, 0.025, -0.19))
@@ -236,20 +292,20 @@ static func _build(id: String, skin: String, outfit: String, on: Variant, charm:
 			_marker(root, "Eject", Vector3(0.015, 0.035, 0.02))
 		"zhuge":
 			_arm_right(root, m, Vector3(0, -0.07, 0.1))
-			_p(root, U.box(Vector3(0.05, 0.055, 0.36)), m["wood"], Vector3(0, 0, 0.0))
-			_p(root, U.box(Vector3(0.036, 0.09, 0.05)), m["wood"], Vector3(0, -0.06, 0.1), Vector3(-0.35, 0, 0))
-			_p(root, U.box(Vector3(0.056, 0.012, 0.37)), m["gold"], Vector3(0, 0.028, 0.0))
+			_p(root, Props.rbox(Vector3(0.05, 0.055, 0.36)), m["wood"], Vector3(0, 0, 0.0))
+			_p(root, Props.rbox(Vector3(0.036, 0.09, 0.05)), m["wood"], Vector3(0, -0.06, 0.1), Vector3(-0.35, 0, 0))
+			_p(root, Props.rbox(Vector3(0.056, 0.012, 0.37)), m["gold"], Vector3(0, 0.028, 0.0))
 			var mag := _marker(root, "Mag", Vector3(0, 0.065, -0.03))
-			_p(mag, U.box(Vector3(0.046, 0.07, 0.2)), m["black"])
-			_p(mag, U.box(Vector3(0.05, 0.008, 0.205)), m["gold"], Vector3(0, 0.036, 0))
+			_p(mag, Props.rbox(Vector3(0.046, 0.07, 0.2)), m["black"])
+			_p(mag, Props.rbox(Vector3(0.05, 0.008, 0.205)), m["gold"], Vector3(0, 0.036, 0))
 			for k in 4:
-				_p(mag, U.box(Vector3(0.004, 0.004, 0.16)), m["jade"], Vector3(-0.012 + k * 0.008, 0.041, 0))
+				_p(mag, Props.rbox(Vector3(0.004, 0.004, 0.16)), m["jade"], Vector3(-0.012 + k * 0.008, 0.041, 0))
 			var lever := _marker(root, "Lever", Vector3(0, 0.1, -0.12))
-			_p(lever, U.box(Vector3(0.012, 0.012, 0.24)), m["bronze"], Vector3(0, 0.0, 0.12), Vector3(0.12, 0, 0))
+			_p(lever, Props.rbox(Vector3(0.012, 0.012, 0.24)), m["bronze"], Vector3(0, 0.0, 0.12), Vector3(0.12, 0, 0))
 			_p(lever, U.cyl(0.012, 0.012, 0.06, 8), m["bronze"], Vector3(0, -0.01, 0.235), Vector3(0, 0, PI / 2))
 			_bow(root, m, Vector3(0, 0.005, -0.17), 0.21, 0.016, 0.03)
 			for k in 8:
-				_p(root, U.box(Vector3(0.05, 0.005, 0.008)), m["iron"], Vector3(0, 0.1, -0.06 + k * 0.016))
+				_p(root, Props.rbox(Vector3(0.05, 0.005, 0.008)), m["iron"], Vector3(0, 0.1, -0.06 + k * 0.016))
 			_arm_left(root, m, Vector3(-0.005, -0.045, -0.11))
 			_marker(root, "Muzzle", Vector3(0, 0.02, -0.26))
 			_optic(root, m, sight, Vector3(0, 0.128, 0.02), 0.103)
@@ -258,21 +314,21 @@ static func _build(id: String, skin: String, outfit: String, on: Variant, charm:
 			_marker(root, "Eject", Vector3(0.03, 0.04, 0.0))
 		"kongque":
 			_arm_right(root, m, Vector3(0, -0.075, 0.14))
-			_p(root, U.box(Vector3(0.046, 0.06, 0.56)), m["lacquer"], Vector3(0, 0, 0.02))
-			_p(root, U.box(Vector3(0.05, 0.1, 0.12)), m["lacquer"], Vector3(0, -0.02, 0.26))
-			_p(root, U.box(Vector3(0.036, 0.09, 0.05)), m["wood"], Vector3(0, -0.07, 0.14), Vector3(-0.3, 0, 0))
-			_p(root, U.box(Vector3(0.05, 0.01, 0.57)), m["gold"], Vector3(0, 0.032, 0.02))
+			_p(root, Props.rbox(Vector3(0.046, 0.06, 0.56)), m["lacquer"], Vector3(0, 0, 0.02))
+			_p(root, Props.rbox(Vector3(0.05, 0.1, 0.12)), m["lacquer"], Vector3(0, -0.02, 0.26))
+			_p(root, Props.rbox(Vector3(0.036, 0.09, 0.05)), m["wood"], Vector3(0, -0.07, 0.14), Vector3(-0.3, 0, 0))
+			_p(root, Props.rbox(Vector3(0.05, 0.01, 0.57)), m["gold"], Vector3(0, 0.032, 0.02))
 			_p(root, U.cyl(0.02, 0.022, 0.24, 12), m["bronze"], Vector3(0, 0.01, -0.34), Vector3(PI / 2, 0, 0))
 			for k in 3:
 				_p(root, U.cyl(0.024, 0.024, 0.012, 12), m["gold"], Vector3(0, 0.01, -0.26 - k * 0.07), Vector3(PI / 2, 0, 0))
 			# 流光翎：一排发光的翎羽
 			for k in 5:
 				var a := (k - 2) * 0.28
-				var f := _p(root, U.box(Vector3(0.006, 0.07, 0.03)), m["feather"], Vector3(sin(a) * 0.03, 0.07, -0.12 + absf(k - 2) * 0.01), Vector3(0, 0, a))
+				var f := _p(root, Props.rbox(Vector3(0.006, 0.07, 0.03)), m["feather"], Vector3(sin(a) * 0.03, 0.07, -0.12 + absf(k - 2) * 0.01), Vector3(0, 0, a))
 				f.name = "Feather"
 				_p(root, U.sphere(0.008, 6, 4), m["jade"], Vector3(sin(a) * 0.058, 0.1, -0.12))
 			var mag := _marker(root, "Mag", Vector3(0, -0.07, -0.02))
-			_p(mag, U.box(Vector3(0.03, 0.1, 0.06)), m["jade"], Vector3(0, -0.02, 0), Vector3(0.15, 0, 0))
+			_p(mag, Props.rbox(Vector3(0.03, 0.1, 0.06)), m["jade"], Vector3(0, -0.02, 0), Vector3(0.15, 0, 0))
 			_bow(root, m, Vector3(0, 0.0, -0.2), 0.14, 0.014, 0.1)
 			_arm_left(root, m, Vector3(-0.005, -0.04, -0.2))
 			_marker(root, "Muzzle", Vector3(0, 0.01, -0.51))
@@ -280,7 +336,7 @@ static func _build(id: String, skin: String, outfit: String, on: Variant, charm:
 			if sight == "":
 				var ring := _p(root, U.torus(0.008, 0.013, 16, 6), m["gold"], Vector3(0, 0.058, 0.17), Vector3(PI / 2, 0, 0))
 				ring.name = "Aperture"
-				_p(root, U.box(Vector3(0.004, 0.028, 0.004)), m["gold"], Vector3(0, 0.046, -0.44))
+				_p(root, Props.rbox(Vector3(0.004, 0.028, 0.004)), m["gold"], Vector3(0, 0.046, -0.44))
 				_marker(root, "Sight", Vector3(0, 0.058, 0.17))
 			# 枪管下战术手电
 			_p(root, U.cyl(0.013, 0.013, 0.07, 12), m["black"], Vector3(0.028, -0.01, -0.3), Vector3(PI / 2, 0, 0))
@@ -288,18 +344,18 @@ static func _build(id: String, skin: String, outfit: String, on: Variant, charm:
 			_marker(root, "Eject", Vector3(0.03, 0.03, 0.05))
 		"baoyu":
 			_arm_right(root, m, Vector3(0, -0.06, 0.07))
-			_p(root, U.box(Vector3(0.1, 0.085, 0.22)), m["lacquer"], Vector3(0, 0, -0.03))
+			_p(root, Props.rbox(Vector3(0.1, 0.085, 0.22)), m["lacquer"], Vector3(0, 0, -0.03))
 			for yy in [0.044, -0.044]:
-				_p(root, U.box(Vector3(0.106, 0.008, 0.226)), m["gold"], Vector3(0, yy, -0.03))
-			_p(root, U.box(Vector3(0.09, 0.075, 0.006)), m["black"], Vector3(0, 0, -0.142))
+				_p(root, Props.rbox(Vector3(0.106, 0.008, 0.226)), m["gold"], Vector3(0, yy, -0.03))
+			_p(root, Props.rbox(Vector3(0.09, 0.075, 0.006)), m["black"], Vector3(0, 0, -0.142))
 			for ix in 4:
 				for iy in 3:
 					_p(root, U.sphere(0.0055, 5, 3), m["gold"], Vector3(-0.03 + ix * 0.02, -0.02 + iy * 0.02, -0.146))
 			var pump := _marker(root, "Lever", Vector3(0, -0.058, -0.06))
-			_p(pump, U.box(Vector3(0.07, 0.03, 0.1)), m["wood"])
-			_p(root, U.box(Vector3(0.02, 0.006, 0.12)), m["gold"], Vector3(0, 0.05, -0.05))
+			_p(pump, Props.rbox(Vector3(0.07, 0.03, 0.1)), m["wood"])
+			_p(root, Props.rbox(Vector3(0.02, 0.006, 0.12)), m["gold"], Vector3(0, 0.05, -0.05))
 			var mag := _marker(root, "Mag", Vector3(0.0, 0.02, 0.09))
-			_p(mag, U.box(Vector3(0.05, 0.03, 0.03)), m["bronze"])
+			_p(mag, Props.rbox(Vector3(0.05, 0.03, 0.03)), m["bronze"])
 			_arm_left(root, m, Vector3(-0.06, -0.06, -0.07))
 			_marker(root, "Muzzle", Vector3(0, 0, -0.16))
 			_optic(root, m, sight, Vector3(0, 0.09, 0.0), 0.05)
@@ -314,21 +370,21 @@ static func _build(id: String, skin: String, outfit: String, on: Variant, charm:
 			_marker(root, "Eject", Vector3(0.05, 0.02, 0.0))
 		"zhuihun":
 			_arm_right(root, m, Vector3(0, -0.08, 0.16))
-			_p(root, U.box(Vector3(0.05, 0.065, 0.66)), m["wood"], Vector3(0, 0, 0.0))
-			_p(root, U.box(Vector3(0.055, 0.11, 0.14)), m["wood"], Vector3(0, -0.025, 0.3))
-			_p(root, U.box(Vector3(0.056, 0.01, 0.67)), m["iron"], Vector3(0, 0.035, 0.0))
-			_p(root, U.box(Vector3(0.036, 0.09, 0.05)), m["black"], Vector3(0, -0.07, 0.16), Vector3(-0.3, 0, 0))
+			_p(root, Props.rbox(Vector3(0.05, 0.065, 0.66)), m["wood"], Vector3(0, 0, 0.0))
+			_p(root, Props.rbox(Vector3(0.055, 0.11, 0.14)), m["wood"], Vector3(0, -0.025, 0.3))
+			_p(root, Props.rbox(Vector3(0.056, 0.01, 0.67)), m["iron"], Vector3(0, 0.035, 0.0))
+			_p(root, Props.rbox(Vector3(0.036, 0.09, 0.05)), m["black"], Vector3(0, -0.07, 0.16), Vector3(-0.3, 0, 0))
 			var lever := _marker(root, "Lever", Vector3(0.035, 0.02, 0.1))
 			_p(lever, U.cyl(0.006, 0.006, 0.06, 6), m["iron"], Vector3(0.03, 0, 0), Vector3(0, 0, PI / 2))
 			_p(lever, U.sphere(0.013, 8, 6), m["bronze"], Vector3(0.062, 0, 0))
 			var mag := _marker(root, "Mag", Vector3(0, -0.06, -0.05))
-			_p(mag, U.box(Vector3(0.03, 0.06, 0.08)), m["iron"])
+			_p(mag, Props.rbox(Vector3(0.03, 0.06, 0.08)), m["iron"])
 			_bow(root, m, Vector3(0, 0.0, -0.3), 0.3, 0.02, 0.12)
 			_arm_left(root, m, Vector3(-0.005, -0.045, -0.2))
 			_marker(root, "Muzzle", Vector3(0, 0.02, -0.34))
 			if sight == "scope":
 				for zz in [-0.04, 0.07]:
-					_p(root, U.box(Vector3(0.012, 0.04, 0.02)), m["iron"], Vector3(0, 0.055, zz))
+					_p(root, Props.rbox(Vector3(0.012, 0.04, 0.02)), m["iron"], Vector3(0, 0.055, zz))
 				_scope(root, m, Vector3(0, 0.085, 0.0))
 			else:
 				_optic(root, m, sight, Vector3(0, 0.1, 0.0), 0.04)
@@ -354,7 +410,7 @@ static func _build(id: String, skin: String, outfit: String, on: Variant, charm:
 				_p(root, U.sphere(0.0065, 8, 6), m["gold"], Vector3(-0.024, 0.025 + sin(a2) * 0.011, -0.02 + cos(a2) * 0.011), Vector3.ZERO, Vector3(0.5, 1, 1))
 			_p(root, U.sphere(0.005, 8, 6), m["jade"], Vector3(-0.026, 0.025, -0.02))
 			for zz in [0.0, 0.07]:
-				_p(root, U.box(Vector3(0.1, 0.012, 0.022)), m["black"], Vector3(0.0, -0.005, zz))
+				_p(root, Props.rbox(Vector3(0.1, 0.012, 0.022)), m["black"], Vector3(0.0, -0.005, zz))
 			var mag := _marker(root, "Mag", Vector3(0.0, 0.025, 0.1))
 			_p(mag, U.cyl(0.014, 0.014, 0.04, 10), m["iron"], Vector3.ZERO, Vector3(PI / 2, 0, 0))
 			_marker(root, "Muzzle", Vector3(0.0, 0.025, -0.16))
@@ -366,11 +422,11 @@ static func _build(id: String, skin: String, outfit: String, on: Variant, charm:
 		"longxu":
 			# 追星针：细长的射手暗器，枪管前面一个金龙头，两根龙须顺着枪管往后飘
 			_arm_right(root, m, Vector3(0, -0.075, 0.14))
-			_p(root, U.box(Vector3(0.042, 0.052, 0.5)), m["lacquer"], Vector3(0, 0, 0.0))
-			_p(root, U.box(Vector3(0.046, 0.1, 0.15)), m["wood"], Vector3(0, -0.022, 0.29))
-			_p(root, U.box(Vector3(0.048, 0.012, 0.16)), m["black"], Vector3(0, -0.075, 0.29))
-			_p(root, U.box(Vector3(0.034, 0.09, 0.05)), m["black"], Vector3(0, -0.07, 0.14), Vector3(-0.3, 0, 0))
-			_p(root, U.box(Vector3(0.046, 0.008, 0.51)), m["gold"], Vector3(0, 0.029, 0.0))
+			_p(root, Props.rbox(Vector3(0.042, 0.052, 0.5)), m["lacquer"], Vector3(0, 0, 0.0))
+			_p(root, Props.rbox(Vector3(0.046, 0.1, 0.15)), m["wood"], Vector3(0, -0.022, 0.29))
+			_p(root, Props.rbox(Vector3(0.048, 0.012, 0.16)), m["black"], Vector3(0, -0.075, 0.29))
+			_p(root, Props.rbox(Vector3(0.034, 0.09, 0.05)), m["black"], Vector3(0, -0.07, 0.14), Vector3(-0.3, 0, 0))
+			_p(root, Props.rbox(Vector3(0.046, 0.008, 0.51)), m["gold"], Vector3(0, 0.029, 0.0))
 			_p(root, U.cyl(0.009, 0.011, 0.34, 12), m["iron"], Vector3(0, 0.012, -0.42), Vector3(PI / 2, 0, 0))
 			# 龙头
 			_p(root, U.sphere(0.022, 12, 8), m["gold"], Vector3(0, 0.012, -0.26), Vector3.ZERO, Vector3(0.9, 0.8, 1.4))
@@ -381,7 +437,7 @@ static func _build(id: String, skin: String, outfit: String, on: Variant, charm:
 				for j in 3:
 					_p(root, U.cyl(0.0018, 0.0018, 0.05, 4), m["gold"], Vector3(0.018 * s + j * 0.004 * s, 0.004 - j * 0.005, -0.3 + j * 0.035), Vector3(PI / 2 + 0.3, 0, 0.35 * s))
 			var mag := _marker(root, "Mag", Vector3(0, -0.055, -0.04))
-			_p(mag, U.box(Vector3(0.026, 0.07, 0.05)), m["iron"], Vector3(0, -0.01, 0), Vector3(0.12, 0, 0))
+			_p(mag, Props.rbox(Vector3(0.026, 0.07, 0.05)), m["iron"], Vector3(0, -0.01, 0), Vector3(0.12, 0, 0))
 			_arm_left(root, m, Vector3(-0.005, -0.04, -0.2))
 			_marker(root, "Muzzle", Vector3(0, 0.012, -0.6))
 			_optic(root, m, sight, Vector3(0, 0.1, 0.05), 0.03)
@@ -391,9 +447,9 @@ static func _build(id: String, skin: String, outfit: String, on: Variant, charm:
 		"zimu":
 			# 子母雷珠：前面一个鼓鼓的"胆"，三道金箍，旁边挂着三颗发光的子胆；泵动上膛
 			_arm_right(root, m, Vector3(0, -0.07, 0.1))
-			_p(root, U.box(Vector3(0.07, 0.08, 0.2)), m["lacquer"], Vector3(0, 0, 0.06))
-			_p(root, U.box(Vector3(0.05, 0.1, 0.12)), m["wood"], Vector3(0, -0.02, 0.2))
-			_p(root, U.box(Vector3(0.036, 0.09, 0.05)), m["black"], Vector3(0, -0.07, 0.1), Vector3(-0.3, 0, 0))
+			_p(root, Props.rbox(Vector3(0.07, 0.08, 0.2)), m["lacquer"], Vector3(0, 0, 0.06))
+			_p(root, Props.rbox(Vector3(0.05, 0.1, 0.12)), m["wood"], Vector3(0, -0.02, 0.2))
+			_p(root, Props.rbox(Vector3(0.036, 0.09, 0.05)), m["black"], Vector3(0, -0.07, 0.1), Vector3(-0.3, 0, 0))
 			_p(root, U.sphere(0.062, 18, 12), m["wood"], Vector3(0, 0.01, -0.1), Vector3.ZERO, Vector3(1, 1, 1.3))
 			for k in 3:
 				_p(root, U.torus(0.058, 0.066, 24, 6), m["gold"], Vector3(0, 0.01, -0.15 + k * 0.05), Vector3(PI / 2, 0, 0), Vector3(1.0 - absf(k - 1) * 0.12, 1.0 - absf(k - 1) * 0.12, 1))
@@ -404,7 +460,7 @@ static func _build(id: String, skin: String, outfit: String, on: Variant, charm:
 				var a := k * TAU / 3.0 + 0.5
 				_p(root, U.sphere(0.012, 10, 6), m["jade"], Vector3(cos(a) * 0.066, 0.01 + sin(a) * 0.066, -0.1))
 			var pump := _marker(root, "Lever", Vector3(0, -0.045, -0.24))
-			_p(pump, U.box(Vector3(0.05, 0.03, 0.09)), m["black"])
+			_p(pump, Props.rbox(Vector3(0.05, 0.03, 0.09)), m["black"])
 			var mag := _marker(root, "Mag", Vector3(0.045, 0.0, 0.06))
 			_p(mag, U.cyl(0.012, 0.012, 0.05, 10), m["bronze"], Vector3.ZERO, Vector3(PI / 2, 0, 0))
 			_arm_left(root, m, Vector3(-0.03, -0.07, -0.24))
@@ -416,14 +472,14 @@ static func _build(id: String, skin: String, outfit: String, on: Variant, charm:
 		"hansha":
 			# 流沙机弩：粗重的机匣，左边一个大弹鼓，枪管外面一圈六根小管，开火时转起来（Rotor）
 			_arm_right(root, m, Vector3(0, -0.085, 0.15))
-			_p(root, U.box(Vector3(0.07, 0.085, 0.3)), m["lacquer"], Vector3(0, 0, 0.06))
-			_p(root, U.box(Vector3(0.05, 0.1, 0.14)), m["wood"], Vector3(0, -0.02, 0.28))
-			_p(root, U.box(Vector3(0.036, 0.09, 0.05)), m["black"], Vector3(0, -0.075, 0.15), Vector3(-0.3, 0, 0))
-			_p(root, U.box(Vector3(0.074, 0.01, 0.31)), m["gold"], Vector3(0, 0.044, 0.06))
+			_p(root, Props.rbox(Vector3(0.07, 0.085, 0.3)), m["lacquer"], Vector3(0, 0, 0.06))
+			_p(root, Props.rbox(Vector3(0.05, 0.1, 0.14)), m["wood"], Vector3(0, -0.02, 0.28))
+			_p(root, Props.rbox(Vector3(0.036, 0.09, 0.05)), m["black"], Vector3(0, -0.075, 0.15), Vector3(-0.3, 0, 0))
+			_p(root, Props.rbox(Vector3(0.074, 0.01, 0.31)), m["gold"], Vector3(0, 0.044, 0.06))
 			# 提把
-			_p(root, U.box(Vector3(0.012, 0.012, 0.12)), m["iron"], Vector3(0, 0.085, 0.05))
+			_p(root, Props.rbox(Vector3(0.012, 0.012, 0.12)), m["iron"], Vector3(0, 0.085, 0.05))
 			for zz in [-0.005, 0.105]:
-				_p(root, U.box(Vector3(0.012, 0.04, 0.012)), m["iron"], Vector3(0, 0.064, zz))
+				_p(root, Props.rbox(Vector3(0.012, 0.04, 0.012)), m["iron"], Vector3(0, 0.064, zz))
 			_p(root, U.cyl(0.03, 0.03, 0.2, 16), m["black"], Vector3(0, 0.012, -0.18), Vector3(PI / 2, 0, 0))
 			var rotor := _marker(root, "Rotor", Vector3(0, 0.012, -0.36))
 			for k in 6:
@@ -444,10 +500,10 @@ static func _build(id: String, skin: String, outfit: String, on: Variant, charm:
 		"guanyin":
 			# 天心泪：白玉金边的弩身，两片莲瓣做弩臂，最前面悬着一滴发光的泪（Tear，蓄力时越来越亮）
 			_arm_right(root, m, Vector3(0, -0.075, 0.13))
-			_p(root, U.box(Vector3(0.042, 0.055, 0.46)), m["lacquer"], Vector3(0, 0, 0.02))
-			_p(root, U.box(Vector3(0.048, 0.1, 0.12)), m["wood"], Vector3(0, -0.022, 0.24))
-			_p(root, U.box(Vector3(0.034, 0.09, 0.05)), m["black"], Vector3(0, -0.07, 0.13), Vector3(-0.3, 0, 0))
-			_p(root, U.box(Vector3(0.046, 0.008, 0.47)), m["gold"], Vector3(0, 0.031, 0.02))
+			_p(root, Props.rbox(Vector3(0.042, 0.055, 0.46)), m["lacquer"], Vector3(0, 0, 0.02))
+			_p(root, Props.rbox(Vector3(0.048, 0.1, 0.12)), m["wood"], Vector3(0, -0.022, 0.24))
+			_p(root, Props.rbox(Vector3(0.034, 0.09, 0.05)), m["black"], Vector3(0, -0.07, 0.13), Vector3(-0.3, 0, 0))
+			_p(root, Props.rbox(Vector3(0.046, 0.008, 0.47)), m["gold"], Vector3(0, 0.031, 0.02))
 			# 莲瓣护手
 			for s in [-1.0, 1.0]:
 				_p(root, U.sphere(0.04, 12, 8), m["bronze"], Vector3(0.03 * s, 0.0, -0.12), Vector3(0, 0.4 * s, 0), Vector3(0.25, 0.7, 1.4))
@@ -461,7 +517,7 @@ static func _build(id: String, skin: String, outfit: String, on: Variant, charm:
 				var a := k * TAU / 3.0
 				_p(root, U.cyl(0.0022, 0.0022, 0.05, 4), m["gold"], Vector3(cos(a) * 0.026, 0.02 + sin(a) * 0.026, -0.27), Vector3(PI / 2, 0, 0))
 			var mag := _marker(root, "Mag", Vector3(0, -0.055, -0.02))
-			_p(mag, U.box(Vector3(0.026, 0.06, 0.06)), m["jade"])
+			_p(mag, Props.rbox(Vector3(0.026, 0.06, 0.06)), m["jade"])
 			_arm_left(root, m, Vector3(-0.005, -0.045, -0.13))
 			_marker(root, "Muzzle", Vector3(0, 0.02, -0.33))
 			_optic(root, m, sight, Vector3(0, 0.1, 0.03), 0.035)
@@ -478,12 +534,12 @@ static func _build(id: String, skin: String, outfit: String, on: Variant, charm:
 ## 机械照门：前面一根准星柱、后面一个缺口。Sight 在缺口
 static func _iron(root: Node3D, m: Dictionary, front: Vector3, rear: Vector3, h: float) -> void:
 	var tritium := U.glow(Color(0.4, 1.0, 0.5), 3.0)
-	_p(root, U.box(Vector3(0.005, h, 0.006)), m["black"], front - Vector3(0, h * 0.5, 0))
+	_p(root, Props.rbox(Vector3(0.005, h, 0.006)), m["black"], front - Vector3(0, h * 0.5, 0))
 	_p(root, U.sphere(0.0026, 6, 4), tritium, front + Vector3(0, -0.002, 0.003))
 	for s in [-1.0, 1.0]:
-		_p(root, U.box(Vector3(0.007, h, 0.008)), m["black"], rear + Vector3(0.0065 * s, -h * 0.5 + 0.002, 0))
+		_p(root, Props.rbox(Vector3(0.007, h, 0.008)), m["black"], rear + Vector3(0.0065 * s, -h * 0.5 + 0.002, 0))
 		_p(root, U.sphere(0.0024, 6, 4), tritium, rear + Vector3(0.0065 * s, -0.003, 0.004))
-	_p(root, U.box(Vector3(0.02, 0.006, 0.01)), m["black"], rear + Vector3(0, -h + 0.003, 0))
+	_p(root, Props.rbox(Vector3(0.02, 0.006, 0.01)), m["black"], rear + Vector3(0, -h + 0.003, 0))
 	_marker(root, "Sight", rear + Vector3(0, 0, 0.004))
 
 
@@ -514,7 +570,7 @@ static func _om(m: Dictionary) -> Dictionary:
 static func _x4(root: Node3D, m: Dictionary, c: Vector3, base_y: float) -> void:
 	m = _om(m)
 	for zz in [-0.035, 0.045]:
-		_p(root, U.box(Vector3(0.014, c.y - base_y, 0.016)), m["black"], Vector3(c.x, (c.y + base_y) * 0.5, c.z + zz))
+		_p(root, Props.rbox(Vector3(0.014, c.y - base_y, 0.016)), m["black"], Vector3(c.x, (c.y + base_y) * 0.5, c.z + zz))
 	var tube := _dbl(m["black"])
 	_p(root, _open_tube(0.018, 0.018, 0.14), tube, c, Vector3(PI / 2, 0, 0))
 	_p(root, _open_tube(0.019, 0.026, 0.045), tube, c + Vector3(0, 0, -0.09), Vector3(PI / 2, 0, 0))
@@ -584,11 +640,11 @@ static func _quad(parent: Node3D, size: float, mat: Material, pos: Vector3, name
 ## 全息瞄具：金属框 + 透明玻璃 + 红色"圈点"准星。Sight 在准星中心
 static func _holo(root: Node3D, m: Dictionary, c: Vector3) -> void:
 	m = _om(m)
-	_p(root, U.box(Vector3(0.05, 0.016, 0.075)), m["black"], c + Vector3(0, -0.028, 0.0))
+	_p(root, Props.rbox(Vector3(0.05, 0.016, 0.075)), m["black"], c + Vector3(0, -0.028, 0.0))
 	for s in [-1.0, 1.0]:
-		_p(root, U.box(Vector3(0.006, 0.05, 0.05)), m["black"], c + Vector3(0.025 * s, -0.002, -0.005))
-	_p(root, U.box(Vector3(0.056, 0.007, 0.05)), m["black"], c + Vector3(0, 0.026, -0.005))
-	_p(root, U.box(Vector3(0.02, 0.012, 0.02)), m["iron"], c + Vector3(0.02, -0.018, 0.03))
+		_p(root, Props.rbox(Vector3(0.006, 0.05, 0.05)), m["black"], c + Vector3(0.025 * s, -0.002, -0.005))
+	_p(root, Props.rbox(Vector3(0.056, 0.007, 0.05)), m["black"], c + Vector3(0, 0.026, -0.005))
+	_p(root, Props.rbox(Vector3(0.02, 0.012, 0.02)), m["iron"], c + Vector3(0.02, -0.018, 0.03))
 	_quad(root, 0.046, _shader_mat(GLASS_SHADER, {}), c + Vector3(0, 0, -0.02))
 	_quad(root, 0.03, _shader_mat(RETICLE_SHADER, {"color": Color(1.0, 0.12, 0.08), "kind": 1}), c + Vector3(0, 0, -0.022), "Reticle")
 	_marker(root, "Sight", c)
@@ -617,7 +673,7 @@ static func _dbl(mat: Material) -> Material:
 static func _reddot(root: Node3D, m: Dictionary, c: Vector3, bot := 0.037) -> void:
 	m = _om(m)
 	var top := c.y - 0.017
-	_p(root, U.box(Vector3(0.03, top - bot, 0.045)), m["black"], Vector3(c.x, (bot + top) * 0.5, c.z))
+	_p(root, Props.rbox(Vector3(0.03, top - bot, 0.045)), m["black"], Vector3(c.x, (bot + top) * 0.5, c.z))
 	_p(root, _open_tube(0.019, 0.02, 0.05), _dbl(m["black"]), c, Vector3(PI / 2, 0, 0))
 	_p(root, U.torus(0.019, 0.023, 24, 6), m["gold"], c + Vector3(0, 0, -0.025), Vector3(PI / 2, 0, 0))
 	_p(root, U.cyl(0.006, 0.006, 0.012, 10), m["black"], c + Vector3(0.024, 0, 0.005), Vector3(0, 0, PI / 2))
@@ -648,14 +704,14 @@ static func _scope(root: Node3D, m: Dictionary, c: Vector3) -> void:
 ## 光学瞄准镜（流光翎，类似 ACOG）：镜筒、前后镜片、金边，镜片里是琥珀色的箭头准星
 static func _acog(root: Node3D, m: Dictionary, c: Vector3) -> void:
 	m = _om(m)
-	_p(root, U.box(Vector3(0.036, 0.022, 0.12)), m["black"], c + Vector3(0, -0.03, 0))
-	_p(root, U.box(Vector3(0.028, c.y - 0.06, 0.05)), m["black"], Vector3(c.x, (c.y + 0.02) * 0.5, c.z))
+	_p(root, Props.rbox(Vector3(0.036, 0.022, 0.12)), m["black"], c + Vector3(0, -0.03, 0))
+	_p(root, Props.rbox(Vector3(0.028, c.y - 0.06, 0.05)), m["black"], Vector3(c.x, (c.y + 0.02) * 0.5, c.z))
 	_p(root, U.cyl(0.02, 0.02, 0.13, 20), m["black"], c + Vector3(0, 0, -0.005), Vector3(PI / 2, 0, 0))
 	_p(root, U.cyl(0.026, 0.021, 0.04, 20), m["black"], c + Vector3(0, 0, -0.085), Vector3(PI / 2, 0, 0))
 	_p(root, U.cyl(0.023, 0.02, 0.03, 20), m["black"], c + Vector3(0, 0, 0.07), Vector3(PI / 2, 0, 0))
 	_p(root, U.torus(0.019, 0.025, 24, 6), m["gold"], c + Vector3(0, 0, 0.086), Vector3(PI / 2, 0, 0))
 	_p(root, U.torus(0.022, 0.028, 24, 6), m["gold"], c + Vector3(0, 0, -0.105), Vector3(PI / 2, 0, 0))
-	_p(root, U.box(Vector3(0.012, 0.014, 0.02)), m["gold"], c + Vector3(0, 0.024, -0.02))
+	_p(root, Props.rbox(Vector3(0.012, 0.014, 0.02)), m["gold"], c + Vector3(0, 0.024, -0.02))
 	_quad(root, 0.05, _shader_mat(GLASS_SHADER, {}), c + Vector3(0, 0, -0.106))
 	_quad(root, 0.04, _shader_mat(GLASS_SHADER, {}), c + Vector3(0, 0, 0.087))
 	_quad(root, 0.03, _shader_mat(RETICLE_SHADER, {"color": Color(1.0, 0.6, 0.1), "kind": 2}), c + Vector3(0, 0, 0.08), "Reticle")
@@ -693,7 +749,7 @@ static func _attachments(root: Node3D, m: Dictionary, id: String, att: Dictionar
 				var cp := mz.position + Vector3(0, 0, -0.015)
 				_p(root, U.cyl(r, r * 1.1, 0.045, 12), m["black"], cp, Vector3(PI / 2, 0, 0))
 				for k in 3:
-					_p(root, U.box(Vector3(r * 1.2, 0.004, 0.006)), m["iron"], cp + Vector3(0, r * 0.95, -0.015 + k * 0.014))
+					_p(root, Props.rbox(Vector3(r * 1.2, 0.004, 0.006)), m["iron"], cp + Vector3(0, r * 0.95, -0.015 + k * 0.014))
 				mz.position.z -= 0.04
 			"silencer":
 				var r2 := 0.017 if small else 0.022
@@ -704,27 +760,27 @@ static func _attachments(root: Node3D, m: Dictionary, id: String, att: Dictionar
 				mz.position.z -= 0.14
 	match str(att.get("under", "")):
 		"grip":
-			_p(root, U.box(Vector3(0.024, 0.07, 0.028)), m["black"], under + Vector3(0, -0.02, 0))
-			_p(root, U.box(Vector3(0.028, 0.008, 0.032)), m["iron"], under + Vector3(0, 0.016, 0))
+			_p(root, Props.rbox(Vector3(0.024, 0.07, 0.028)), m["black"], under + Vector3(0, -0.02, 0))
+			_p(root, Props.rbox(Vector3(0.028, 0.008, 0.032)), m["iron"], under + Vector3(0, 0.016, 0))
 		"angled":
-			_p(root, U.box(Vector3(0.024, 0.05, 0.05)), m["black"], under + Vector3(0, -0.012, 0.01), Vector3(0.7, 0, 0))
-			_p(root, U.box(Vector3(0.028, 0.008, 0.06)), m["iron"], under + Vector3(0, 0.016, 0))
+			_p(root, Props.rbox(Vector3(0.024, 0.05, 0.05)), m["black"], under + Vector3(0, -0.012, 0.01), Vector3(0.7, 0, 0))
+			_p(root, Props.rbox(Vector3(0.028, 0.008, 0.06)), m["iron"], under + Vector3(0, 0.016, 0))
 		"laser":
 			var side := Vector3(0.03, 0.0, 0.0) if not small else Vector3.ZERO
-			_p(root, U.box(Vector3(0.022, 0.018, 0.05)), m["black"], under + side + Vector3(0, 0.012, 0))
+			_p(root, Props.rbox(Vector3(0.022, 0.018, 0.05)), m["black"], under + side + Vector3(0, 0.012, 0))
 			_p(root, U.cyl(0.003, 0.003, 0.004, 8), laser, under + side + Vector3(0, 0.012, -0.027), Vector3(PI / 2, 0, 0))
 	# 弹匣：在原来的弹匣上加东西（弹匣节点换弹时会拆下来，加的东西跟着走）
 	var mag := root.get_node_or_null("Mag") as Node3D
 	if mag:
 		match str(att.get("mag", "")):
 			"extmag":
-				_p(mag, U.box(Vector3(0.03, 0.05, 0.045)), m["black"], Vector3(0, -0.055, 0.0))
-				_p(mag, U.box(Vector3(0.032, 0.006, 0.048)), m["iron"], Vector3(0, -0.08, 0.0))
+				_p(mag, Props.rbox(Vector3(0.03, 0.05, 0.045)), m["black"], Vector3(0, -0.055, 0.0))
+				_p(mag, Props.rbox(Vector3(0.032, 0.006, 0.048)), m["iron"], Vector3(0, -0.08, 0.0))
 			"fastmag":
 				_p(mag, U.torus(0.008, 0.012, 12, 4), U.mat(Color(0.8, 0.12, 0.08), 0.5), Vector3(0, -0.05, 0.0), Vector3(PI / 2, 0, 0))
-				_p(mag, U.box(Vector3(0.034, 0.008, 0.03)), U.mat(Color(0.8, 0.12, 0.08), 0.5), Vector3(0, -0.035, 0.0))
+				_p(mag, Props.rbox(Vector3(0.034, 0.008, 0.03)), U.mat(Color(0.8, 0.12, 0.08), 0.5), Vector3(0, -0.035, 0.0))
 			"soulmag":
-				_p(mag, U.box(Vector3(0.034, 0.012, 0.05)), m["jade"], Vector3(0, -0.03, 0.0))
+				_p(mag, Props.rbox(Vector3(0.034, 0.012, 0.05)), m["jade"], Vector3(0, -0.03, 0.0))
 				_p(mag, U.sphere(0.01, 8, 6), m["jade"], Vector3(-0.02, -0.01, 0.0))
 	# 枪托：接在最后面往后伸
 	var rear: Vector3 = REAR.get(id, Vector3(0, -0.02, 0.25))
@@ -732,11 +788,11 @@ static func _attachments(root: Node3D, m: Dictionary, id: String, att: Dictionar
 		"lstock":
 			for s in [-1.0, 1.0]:
 				_p(root, U.cyl(0.004, 0.004, 0.13, 6), m["iron"], rear + Vector3(0.012 * s, 0.0, 0.065), Vector3(PI / 2, 0, 0))
-			_p(root, U.box(Vector3(0.036, 0.08, 0.012)), m["black"], rear + Vector3(0, -0.01, 0.13))
+			_p(root, Props.rbox(Vector3(0.036, 0.08, 0.012)), m["black"], rear + Vector3(0, -0.01, 0.13))
 		"hstock":
-			_p(root, U.box(Vector3(0.042, 0.075, 0.13)), m["black"], rear + Vector3(0, -0.01, 0.065))
-			_p(root, U.box(Vector3(0.03, 0.02, 0.08)), m["iron"], rear + Vector3(0, 0.035, 0.06))
-			_p(root, U.box(Vector3(0.046, 0.085, 0.016)), U.mat(Color(0.12, 0.1, 0.09), 0.9), rear + Vector3(0, -0.01, 0.135))
+			_p(root, Props.rbox(Vector3(0.042, 0.075, 0.13)), m["black"], rear + Vector3(0, -0.01, 0.065))
+			_p(root, Props.rbox(Vector3(0.03, 0.02, 0.08)), m["iron"], rear + Vector3(0, 0.035, 0.06))
+			_p(root, Props.rbox(Vector3(0.046, 0.085, 0.016)), U.mat(Color(0.12, 0.1, 0.09), 0.9), rear + Vector3(0, -0.01, 0.135))
 
 
 ## 挂件：一根短绳吊着一个小东西，节点叫 Charm（ViewModel 让它像摆一样晃）
@@ -773,7 +829,7 @@ static func _charm(root: Node3D, id: String, ch: String) -> void:
 			var gm := U.mat(Color(1.0, 0.78, 0.3), 0.18, 0.0, 1.0)
 			_p(p, U.torus(0.0015, 0.004, 10, 4), gm, Vector3(0, 0.004, 0), Vector3(0, 0, PI / 2))
 			_p(p, U.sphere(0.011, 14, 10), gm, Vector3(0, -0.008, 0))
-			_p(p, U.box(Vector3(0.0225, 0.0015, 0.004)), U.mat(Color(0.1, 0.07, 0.03), 0.8), Vector3(0, -0.012, 0))
+			_p(p, Props.rbox(Vector3(0.0225, 0.0015, 0.004)), U.mat(Color(0.1, 0.07, 0.03), 0.8), Vector3(0, -0.012, 0))
 		"rabbit":
 			var wm := U.mat(Color(0.97, 0.95, 0.93), 0.9)
 			var pm := U.mat(Color(1.0, 0.55, 0.65), 0.7)
@@ -800,7 +856,7 @@ static func _brake(root: Node3D, m: Dictionary, pos: Vector3, r: float) -> void:
 	_p(root, U.cyl(r, r, 0.06, 12), m["black"], pos, Vector3(PI / 2, 0, 0))
 	for k in 3:
 		for s in [-1.0, 1.0]:
-			_p(root, U.box(Vector3(0.004, r * 1.2, 0.008)), m["iron"], pos + Vector3(r * s, 0, -0.02 + k * 0.018))
+			_p(root, Props.rbox(Vector3(0.004, r * 1.2, 0.008)), m["iron"], pos + Vector3(r * s, 0, -0.02 + k * 0.018))
 
 
 ## 别人手里的小号模型（第三人称）
@@ -813,34 +869,34 @@ static func build_small(id: String, skin := "default") -> Node3D:
 			_p(root, U.cyl(0.024, 0.028, 0.28, 10), m["lacquer"], Vector3.ZERO, Vector3(PI / 2, 0, 0))
 			_p(root, U.cyl(0.03, 0.03, 0.02, 10), m["gold"], Vector3(0, 0, -0.12), Vector3(PI / 2, 0, 0))
 		"longxu":
-			_p(root, U.box(Vector3(0.05, 0.06, 0.62)), m["lacquer"])
+			_p(root, Props.rbox(Vector3(0.05, 0.06, 0.62)), m["lacquer"])
 			_p(root, U.cyl(0.012, 0.012, 0.36, 8), m["iron"], Vector3(0, 0.01, -0.45), Vector3(PI / 2, 0, 0))
 			_p(root, U.sphere(0.026, 8, 6), m["gold"], Vector3(0, 0.01, -0.3))
 		"zimu":
-			_p(root, U.box(Vector3(0.08, 0.09, 0.26)), m["lacquer"], Vector3(0, 0, 0.08))
+			_p(root, Props.rbox(Vector3(0.08, 0.09, 0.26)), m["lacquer"], Vector3(0, 0, 0.08))
 			_p(root, U.sphere(0.075, 10, 8), m["wood"], Vector3(0, 0.01, -0.1), Vector3.ZERO, Vector3(1, 1, 1.3))
 			_p(root, U.cyl(0.035, 0.035, 0.16, 10), m["iron"], Vector3(0, 0.01, -0.25), Vector3(PI / 2, 0, 0))
 		"hansha":
-			_p(root, U.box(Vector3(0.08, 0.1, 0.4)), m["lacquer"], Vector3(0, 0, 0.05))
+			_p(root, Props.rbox(Vector3(0.08, 0.1, 0.4)), m["lacquer"], Vector3(0, 0, 0.05))
 			_p(root, U.cyl(0.035, 0.035, 0.4, 10), m["iron"], Vector3(0, 0.01, -0.35), Vector3(PI / 2, 0, 0))
 			_p(root, U.cyl(0.08, 0.08, 0.06, 12), m["iron"], Vector3(-0.08, -0.03, 0.02), Vector3(0, 0, PI / 2))
 		"guanyin":
-			_p(root, U.box(Vector3(0.05, 0.065, 0.55)), m["lacquer"])
-			_p(root, U.box(Vector3(0.45, 0.02, 0.03)), m["bronze"], Vector3(0, 0, -0.24))
+			_p(root, Props.rbox(Vector3(0.05, 0.065, 0.55)), m["lacquer"])
+			_p(root, Props.rbox(Vector3(0.45, 0.02, 0.03)), m["bronze"], Vector3(0, 0, -0.24))
 			_p(root, U.sphere(0.025, 10, 8), U.glow(Color(0.75, 0.92, 1.0), 2.0), Vector3(0, 0.02, -0.34))
 		"xiujian":
 			_p(root, U.cyl(0.02, 0.024, 0.3, 8), m["bronze"], Vector3.ZERO, Vector3(PI / 2, 0, 0))
 		"zhuge":
-			_p(root, U.box(Vector3(0.06, 0.07, 0.42)), m["wood"])
-			_p(root, U.box(Vector3(0.05, 0.08, 0.22)), m["black"], Vector3(0, 0.07, -0.03))
-			_p(root, U.box(Vector3(0.5, 0.02, 0.03)), m["wood"], Vector3(0, 0, -0.2))
+			_p(root, Props.rbox(Vector3(0.06, 0.07, 0.42)), m["wood"])
+			_p(root, Props.rbox(Vector3(0.05, 0.08, 0.22)), m["black"], Vector3(0, 0.07, -0.03))
+			_p(root, Props.rbox(Vector3(0.5, 0.02, 0.03)), m["wood"], Vector3(0, 0, -0.2))
 		"kongque":
-			_p(root, U.box(Vector3(0.05, 0.07, 0.7)), m["lacquer"])
-			_p(root, U.box(Vector3(0.12, 0.06, 0.03)), m["feather"], Vector3(0, 0.07, -0.15))
+			_p(root, Props.rbox(Vector3(0.05, 0.07, 0.7)), m["lacquer"])
+			_p(root, Props.rbox(Vector3(0.12, 0.06, 0.03)), m["feather"], Vector3(0, 0.07, -0.15))
 		"baoyu":
-			_p(root, U.box(Vector3(0.12, 0.1, 0.26)), m["lacquer"])
+			_p(root, Props.rbox(Vector3(0.12, 0.1, 0.26)), m["lacquer"])
 		"zhuihun":
-			_p(root, U.box(Vector3(0.06, 0.08, 0.8)), m["wood"])
+			_p(root, Props.rbox(Vector3(0.06, 0.08, 0.8)), m["wood"])
 			_p(root, U.cyl(0.025, 0.025, 0.24, 8), m["bronze"], Vector3(0, 0.08, 0), Vector3(PI / 2, 0, 0))
-			_p(root, U.box(Vector3(0.7, 0.025, 0.03)), m["wood"], Vector3(0, 0, -0.36))
+			_p(root, Props.rbox(Vector3(0.7, 0.025, 0.03)), m["wood"], Vector3(0, 0, -0.36))
 	return root

@@ -50,16 +50,18 @@ func _build_box() -> void:
 	add_child(root)
 	root.global_position = p
 	root.look_at(p - away, Vector3.UP)
-	var wood := U.mat(Color(0.34, 0.2, 0.1), 0.7)
-	var dark := U.mat(Color(0.12, 0.08, 0.05), 0.8)
-	var gold := U.mat(Color(0.95, 0.72, 0.28), 0.3, 0.0, 0.9)
-	# 敞口木箱：四面板 + 底 + 金色包边
-	U.part(root, U.box(Vector3(1.9, 0.12, 1.9)), dark, Vector3(0, 0.06, 0))
+	var wood := MatLib.planks(Color(1.25, 1.05, 0.9), false)
+	var dark := MatLib.hardwood(Color(0.45, 0.4, 0.38))
+	var gold := MatLib.brass()
+	# 敞口木箱：四面板 + 底 + 铜包边、四角铜包角
+	U.part(root, Props.rbox(Vector3(1.9, 0.12, 1.9)), dark, Vector3(0, 0.06, 0))
 	for s in [-1.0, 1.0]:
-		U.part(root, U.box(Vector3(2.0, 1.0, 0.1)), wood, Vector3(0, 0.55, 0.95 * s))
-		U.part(root, U.box(Vector3(0.1, 1.0, 2.0)), wood, Vector3(0.95 * s, 0.55, 0))
-		U.part(root, U.box(Vector3(2.1, 0.08, 0.14)), gold, Vector3(0, 1.08, 0.98 * s))
-		U.part(root, U.box(Vector3(0.14, 0.08, 2.1)), gold, Vector3(0.98 * s, 1.08, 0))
+		U.part(root, Props.rbox(Vector3(2.0, 1.0, 0.1), 0.02), wood, Vector3(0, 0.55, 0.95 * s))
+		U.part(root, Props.rbox(Vector3(0.1, 1.0, 2.0), 0.02), wood, Vector3(0.95 * s, 0.55, 0))
+		U.part(root, Props.rbox(Vector3(2.1, 0.08, 0.14), 0.02), gold, Vector3(0, 1.08, 0.98 * s))
+		U.part(root, Props.rbox(Vector3(0.14, 0.08, 2.1), 0.02), gold, Vector3(0.98 * s, 1.08, 0))
+		for s2 in [-1.0, 1.0]:
+			U.part(root, Props.rbox(Vector3(0.16, 1.02, 0.16), 0.02), gold, Vector3(0.97 * s, 0.55, 0.97 * s2))
 	# 箱子里一堆发光的灵石
 	for i in 14:
 		var a := float(i) * 2.4

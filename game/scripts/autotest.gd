@@ -4099,6 +4099,54 @@ func _trial_enter(w: World, T: Trial, m: String) -> bool:
 	return false
 
 
+## 尸潮追击截图：长街起点、第一道城门、回头看尸群（要开窗口）
+func _run_chaseshot() -> void:
+	var w := _ready_world()
+	if not w:
+		return
+	var T := w.trial
+	var p := w.player
+	if _step < 3:
+		if _trial_enter(w, T, "chase"):
+			_next(3)
+		return
+	p.hp = 99999.0
+	var C := Trial.CHASE
+	match _step:
+		3:
+			if _step_t < 2.0:
+				return
+			p.teleport(C + Vector3(4.0, 0.3, -2.0))
+			_aim(p, C + Vector3(0, 3.0, -60.0))
+			_next(4)
+		4:
+			if _step_t < 1.5:
+				return
+			_next(5)
+			await _shot("chase_street")
+			var gz := float(Trial.GATES[0])
+			p.teleport(C + Vector3(-5.0, 0.3, gz + 24.0))
+			_aim(p, C + Vector3(0, 7.0, gz))
+		5:
+			if _step_t < 1.5:
+				return
+			_next(6)
+			await _shot("chase_gate")
+		6:
+			# 等僵尸出来（准备 10 秒），回头看尸群
+			if T.horde.alive_count() < 5 and _step_t < 25.0:
+				return
+			p.teleport(C + Vector3(0, 0.3, -30.0))
+			_aim(p, C + Vector3(0, 1.2, 0))
+			_next(7)
+		7:
+			if _step_t < 2.0:
+				return
+			_next(8)
+			await _shot("chase_horde")
+			_next_phase()
+
+
 func _run_chase() -> void:
 	var w := _ready_world()
 	if not w:

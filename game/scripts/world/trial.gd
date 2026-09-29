@@ -205,11 +205,15 @@ func _build_chase() -> void:
 	var mid := CHASE + Vector3(0, 0, (CHASE_N - 12.0) * 0.5 + 6.0)
 	world.island.add_floor_rect(mid, Vector2(CHASE_W + 3.0, len * 0.5 + 2.0))
 	var b := world.builder
-	var stone := b._stone(Color(0.52, 0.5, 0.47))
-	var dark := b._stone(Color(0.26, 0.25, 0.26))
-	var wood := b._wood(Color(0.5, 0.33, 0.22))
-	var red := U.mat(Color(0.5, 0.09, 0.06), 0.55)
-	var tiles := b._surface("rock", Color(0.24, 0.24, 0.27), 1.6, 0.7)
+	# 质感（2026-09-29）：石板路、白墙木框铺面、青砖城墙、钉铜钉的木城门、纸灯笼（MatLib / Props）
+	var stone := MatLib.brick(Color(0.95, 0.93, 0.9))
+	var dark := MatLib.brick(Color(0.5, 0.49, 0.5))
+	var wood := MatLib.planks(Color(1.4, 1.2, 1.05))
+	var beam := MatLib.hardwood(Color(0.55, 0.5, 0.48), true)
+	var red := MatLib.lacquer(Color(0.5, 0.09, 0.06))
+	var ink := MatLib.lacquer(Color(0.05, 0.04, 0.035))
+	var tiles := b._tiles(Color(0.24, 0.24, 0.27))
+	var walls := [MatLib.plaster(Color(0.82, 0.79, 0.73)), MatLib.plaster(Color(0.72, 0.7, 0.66)), MatLib.plaster(Color(0.78, 0.72, 0.64))]
 	var root := Node3D.new()
 	root.name = "ChaseArena"
 	world.add_child(root)
@@ -219,8 +223,8 @@ func _build_chase() -> void:
 	# 路面：一块长石板地（中间一条车辙色的深色带）
 	U.part(root, U.box(Vector3(CHASE_W * 2.0 + 6.0, 2.0, len)), dark, Vector3(0, -1.0, (CHASE_N - 12.0) * 0.5 + 6.0))
 	b._add_collider(_box_shape(Vector3(CHASE_W * 2.0 + 6.0, 2.0, len)), Transform3D(Basis(), mid + Vector3(0, -1.0, 0)))
-	U.part(root, U.box(Vector3(CHASE_W * 2.0, 0.05, len - 4.0)), stone, Vector3(0, 0.02, (CHASE_N - 12.0) * 0.5 + 6.0), Vector3.ZERO, Vector3.ONE, false)
-	U.part(root, U.box(Vector3(5.0, 0.06, len - 4.0)), b._stone(Color(0.4, 0.38, 0.35)), Vector3(0, 0.035, (CHASE_N - 12.0) * 0.5 + 6.0), Vector3.ZERO, Vector3.ONE, false)
+	U.part(root, U.box(Vector3(CHASE_W * 2.0, 0.05, len - 4.0)), MatLib.cobble(Color(0.85, 0.84, 0.82)), Vector3(0, 0.02, (CHASE_N - 12.0) * 0.5 + 6.0), Vector3.ZERO, Vector3.ONE, false)
+	U.part(root, U.box(Vector3(5.0, 0.06, len - 4.0)), MatLib.cobble(Color(0.6, 0.58, 0.55)), Vector3(0, 0.035, (CHASE_N - 12.0) * 0.5 + 6.0), Vector3.ZERO, Vector3.ONE, false)
 	# 两边的房子：一栋栋铺面，飞檐、灯笼、黑洞洞的窗；隔一段有条巷子（尸群从这里扑出来）
 	for side: float in [-1.0, 1.0]:
 		var z := 8.0
@@ -234,21 +238,33 @@ func _build_chase() -> void:
 				# 巷口：暗的，两边一对白灯笼
 				U.part(root, U.box(Vector3(4.0, 7.0, w * 0.6)), U.mat(Color(0.02, 0.025, 0.02), 1.0), Vector3(x + side * 1.5, 3.5, cz), Vector3.ZERO, Vector3.ONE, false)
 				for s2: float in [-1.0, 1.0]:
-					U.part(root, U.sphere(0.25, 8, 6), U.glow(Color(0.85, 1.0, 0.85), 1.8), Vector3(x - side * 0.3, 3.2, cz + s2 * w * 0.32), Vector3.ZERO, Vector3(1, 1.3, 1), false)
+					Props.lantern(root, Vector3(x - side * 0.3, 3.2, cz + s2 * w * 0.32), Color(0.85, 1.0, 0.85), 0.9, 0.2)
 			else:
-				U.part(root, U.box(Vector3(4.0, h, w - 0.3)), stone if rng.randf() < 0.5 else b._stone(Color(0.62, 0.55, 0.48)), Vector3(x + side * 0.5, h * 0.5, cz))
+				# 铺面：白墙 + 木框（转角柱、楼板梁、檐下梁），一楼是木板门脸
+				var fx := x - side * 1.52      # 临街那一面
+				U.part(root, U.box(Vector3(4.0, h, w - 0.3)), walls[rng.randi() % walls.size()], Vector3(x + side * 0.5, h * 0.5, cz))
+				U.part(root, Props.rbox(Vector3(0.14, 3.0, w - 1.0), 0.03), wood, Vector3(fx, 1.5, cz))
+				for yy in [3.05, h - 0.15]:
+					U.part(root, Props.rbox(Vector3(0.24, 0.26, w - 0.2), 0.05), beam, Vector3(fx - side * 0.06, yy, cz))
+				for s2: float in [-1.0, 1.0]:
+					U.part(root, Props.rbox(Vector3(0.3, h, 0.3), 0.05), beam, Vector3(fx - side * 0.05, h * 0.5, cz + s2 * (w * 0.5 - 0.3)))
 				var roof := PrismMesh.new()
 				roof.size = Vector3(w + 0.6, 1.6, 5.4)
 				U.part(root, roof, tiles, Vector3(x + side * 0.4, h + 0.8, cz), Vector3(0, PI * 0.5, 0))
-				U.part(root, U.box(Vector3(0.3, 0.2, w + 0.8)), dark, Vector3(x - side * 2.2, h + 0.05, cz))
-				# 门和窗
-				U.part(root, U.box(Vector3(0.1, 2.6, 1.6)), wood, Vector3(x - side * 1.55, 1.3, cz))
+				U.part(root, Props.rbox(Vector3(0.3, 0.2, w + 0.8), 0.05), dark, Vector3(x - side * 2.2, h + 0.05, cz))
+				# 门和窗：门是深色漆木 + 门框；楼上的窗是木格子
+				U.part(root, Props.rbox(Vector3(0.12, 2.6, 1.6), 0.03), ink, Vector3(fx - side * 0.04, 1.3, cz))
+				U.part(root, Props.rbox(Vector3(0.1, 2.8, 1.85), 0.03), beam, Vector3(fx - side * 0.01, 1.4, cz))
 				for k in 2:
-					U.part(root, U.box(Vector3(0.1, 1.0, 1.3)), U.mat(Color(0.05, 0.04, 0.03), 0.9), Vector3(x - side * 1.55, h * 0.62, cz + (k - 0.5) * w * 0.5))
+					var wz := cz + (k - 0.5) * w * 0.5
+					U.part(root, Props.rbox(Vector3(0.1, 1.0, 1.3), 0.02), ink, Vector3(fx - side * 0.02, h * 0.62, wz))
+					for gx in 3:
+						U.part(root, U.box(Vector3(0.06, 1.0, 0.05)), beam, Vector3(fx - side * 0.08, h * 0.62, wz - 0.4 + gx * 0.4))
+					U.part(root, U.box(Vector3(0.06, 0.05, 1.3)), beam, Vector3(fx - side * 0.08, h * 0.62, wz))
 				# 招牌 + 红灯笼
-				U.part(root, U.box(Vector3(0.12, 1.8, 0.7)), red, Vector3(x - side * 1.7, 3.6, cz + w * 0.3))
+				U.part(root, Props.rbox(Vector3(0.12, 1.8, 0.7), 0.03), red, Vector3(x - side * 1.7, 3.6, cz + w * 0.3))
 				if rng.randf() < 0.6:
-					U.part(root, U.sphere(0.3, 10, 8), U.glow(Color(1.0, 0.35, 0.2), 2.6), Vector3(x - side * 2.3, 3.0, cz - w * 0.3), Vector3.ZERO, Vector3(1, 1.25, 1), false)
+					Props.lantern(root, Vector3(x - side * 2.3, 3.0, cz - w * 0.3), Color(1.0, 0.35, 0.2), 1.1, 0.3)
 			z -= w
 		# 整条街一面墙的碰撞（房子和巷子都挡着，人和僵尸都出不去）
 		b._add_collider(_box_shape(Vector3(4.0, 14.0, len)), Transform3D(Basis(), mid + Vector3(side * (CHASE_W + 2.0), 7.0, 0)))
@@ -312,10 +328,13 @@ func _build_chase() -> void:
 			var hinge := Node3D.new()
 			hinge.position = Vector3(s4 * 4.3, 0, 0.6)
 			g.add_child(hinge)
-			U.part(hinge, U.box(Vector3(4.2, 7.0, 0.4)), wood, Vector3(-s4 * 2.1, 3.5, 0))
-			for row in 4:
-				for col in 3:
-					U.part(hinge, U.sphere(0.09, 6, 4), U.mat(Color(0.85, 0.65, 0.25), 0.3, 0.0, 0.8), Vector3(-s4 * (0.8 + col * 1.3), 1.3 + row * 1.5, 0.22))
+			U.part(hinge, Props.rbox(Vector3(4.2, 7.0, 0.4), 0.05), red, Vector3(-s4 * 2.1, 3.5, 0))
+			# 城门钉：九路门钉（一扇 5 × 7）+ 一对铺首衔环
+			var stud := MatLib.brass()
+			for row in 7:
+				for col in 5:
+					U.part(hinge, U.sphere(0.075, 8, 6), stud, Vector3(-s4 * (0.45 + col * 0.8), 0.7 + row * 0.95, 0.22), Vector3.ZERO, Vector3(1, 1, 0.6))
+			U.part(hinge, U.torus(0.16, 0.22, 16, 6), stud, Vector3(-s4 * 0.35, 3.2, 0.26), Vector3(PI * 0.5, 0, 0))
 			doors.append(hinge)
 		var sb := StaticBody3D.new()
 		sb.collision_layer = U.LAYER_WORLD
@@ -360,9 +379,9 @@ func _build_chase() -> void:
 	broof.size = Vector3(7.0, 1.2, 4.2)
 	U.part(_boat, broof, tiles, Vector3(0.5, 4.1, 0))
 	U.part(_boat, U.cyl(0.1, 0.12, 8.0, 8), wood, Vector3(-3.5, 5.0, 0))
-	U.part(_boat, U.box(Vector3(0.05, 4.0, 3.0)), U.mat(Color(0.75, 0.15, 0.1), 0.8), Vector3(-3.4, 6.0, 0))
+	U.part(_boat, U.box(Vector3(0.05, 4.0, 3.0)), MatLib.canvas(Color(0.7, 0.14, 0.09)), Vector3(-3.4, 6.0, 0))
 	for s5: float in [-1.0, 1.0]:
-		U.part(_boat, U.sphere(0.3, 10, 8), U.glow(Color(1.0, 0.45, 0.2), 3.0), Vector3(s5 * 5.5, 2.6, 1.6), Vector3.ZERO, Vector3(1, 1.3, 1), false)
+		Props.lantern(_boat, Vector3(s5 * 5.5, 2.6, 1.6), Color(1.0, 0.45, 0.2), 1.2, 0.3)
 	b._motes(CHASE + Vector3(0, 3.0, -230.0), Vector3(CHASE_W, 3.0, 230.0), 160, Color(0.5, 1.0, 0.6) * 0.4, 0.14)
 	# 兵器架：起点三个，每个守点两个（越往后品质越好）
 	for x3: float in [-6.0, 0.0, 6.0]:
@@ -371,6 +390,11 @@ func _build_chase() -> void:
 		var zc2 := zone_center(zi) - CHASE
 		for x4: float in [-9.0, 9.0]:
 			_add_rack(root, zc2 + Vector3(x4, 0, 2.0))
+	# 小零件（窗格、灯笼、门钉、木框）70 米外不画：长街几千个零件，全画会掉帧
+	for mi in root.find_children("*", "MeshInstance3D", true, false):
+		var gi := mi as MeshInstance3D
+		if gi.mesh and gi.visibility_range_end == 0.0 and gi.mesh.get_aabb().size.length() * gi.global_transform.basis.get_scale().length() < 5.0:
+			gi.visibility_range_end = 70.0
 
 
 ## 守点的符阵：地上一个绿光法阵 + 两个火盆
