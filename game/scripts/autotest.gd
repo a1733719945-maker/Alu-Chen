@@ -307,6 +307,8 @@ func _process(dt: float) -> void:
 			_run_feel()
 		"hunt2":
 			_run_hunt2()
+		"hunt2shot":
+			_run_hunt2shot()
 		"fpshot":
 			_run_fpshot()
 		"gripshot":
@@ -4691,6 +4693,69 @@ func _run_hunt2() -> void:
 			if _step_t < 3.0:
 				return
 			_note("逃回巢穴、醒了是第三回合（巢穴决战）；第三回合 3 秒里自己放了 %s" % str(b.arts.moves_done))
+			_next_phase()
+
+
+## 样板狩猎第二步截图：冲锋起手（地上一条预警带）、冲完露破绽（头上「破绽」、猎物卡片）
+func _run_hunt2shot() -> void:
+	var w := _world()
+	match _step:
+		0, 1:
+			_run_hunt2()
+			if _step == 2:
+				_next(10)
+		10:
+			if _step_t < 2.0:
+				return
+			var b: Beast = w.beasts[w.hunt.target_id]
+			b.root_t = 0.0
+			b.hp = b.max_hp * 0.8
+			b.arts.cur.clear()
+			b.arts.cd = 999.0
+			b._sk_cd = 999.0
+			w.player.invuln_t = 9999.0
+			w.player.hp = 99999.0
+			var f := -b.global_basis.z
+			f.y = 0.0
+			var at := b.global_position + f.normalized() * 16.0 + f.cross(Vector3.UP).normalized() * 4.0
+			at.y = w.island.height_at(at.x, at.z) + 0.4
+			w.player.teleport(at)
+			_aim(w.player, b.global_position + Vector3.UP * 1.0)
+			_mem["bid"] = b.id
+			_next(11)
+		11:
+			var b: Beast = w.beasts.get(int(_mem["bid"]))
+			w.player.hp = 99999.0
+			b._aggro_t = 12.0
+			if _step_t < 1.5:
+				_aim(w.player, b.global_position + Vector3.UP * 1.0)
+				return
+			b.arts.cur.clear()
+			b.arts._start("charge", w.player.global_position, Net.my_id, false)
+			b.arts.cur["wind"] = 3.0
+			_next(12)
+		12:
+			if _step_t < 0.8:
+				return
+			_next(13)
+			await _shot("hunt2_charge")
+		13:
+			var b: Beast = w.beasts.get(int(_mem["bid"]))
+			w.player.hp = 99999.0
+			b._aggro_t = 12.0
+			b.arts.cd = 999.0
+			if b.feel.open_t <= 0.0:
+				if _step_t > 12.0:
+					_fail("冲完没露破绽")
+				return
+			_aim(w.player, b.global_position + Vector3.UP * 1.0)
+			_next(14)
+		14:
+			if _step_t < 0.5:
+				return
+			_next(15)
+			await _shot("hunt2_open")
+		15:
 			_next_phase()
 
 
