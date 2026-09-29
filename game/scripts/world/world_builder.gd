@@ -2811,11 +2811,9 @@ func _sign(pos: Vector2, title: String, sub: String, color: Color) -> void:
 		t.position = Vector3(0, 1.0 + ph * 0.5, 0.034 if side == 0 else -0.034)
 		t.rotation.y = 0.0 if side == 0 else PI
 		n.add_child(t)
-	var s := U.label3d(sub, 30, Color(0.95, 0.93, 0.86))
-	s.visibility_range_end = 14.0
-	s.pixel_size = 0.008
-	s.position = Vector3(0, top + 0.7, 0)
-	n.add_child(s)
+	# 牌子上只有名字：以前牌子上方还浮着"抛到这里 · 青鸾（会反击）""按 F 召唤 Boss（要先完成前面的任务）"这种说明（用户：过度描述）
+	if sub != "" and false:
+		n.add_child(U.label3d(sub, 30, Color(0.95, 0.93, 0.86)))
 
 
 func _signs() -> void:

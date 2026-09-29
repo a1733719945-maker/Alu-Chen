@@ -2377,7 +2377,7 @@ func open_boat_picker(dests: Array) -> void:
 	_boat_picker = fs[0]
 	var v: VBoxContainer = fs[1]
 	_panel_head(v, "渡船", "去哪里", "Esc", _close_boat_picker)
-	v.add_child(UiKit.label("所有人都在船边选了同一个地方，人齐了一起出发", 16, UiKit.MIST))
+	v.add_child(UiKit.label("人齐了一起出发", 16, UiKit.MIST))
 	var row := HFlowContainer.new()
 	row.add_theme_constant_override("h_separation", 14)
 	row.add_theme_constant_override("v_separation", 14)

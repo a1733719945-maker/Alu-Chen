@@ -83,7 +83,7 @@ func _ready() -> void:
 	_main.add_child(left)
 	left.add_child(UiKit.kicker("苍墟", UiKit.GOLD, 18))
 	left.add_child(UiKit.title("猎灵", 96, Color.WHITE))
-	var sub := UiKit.label("天门崩碎三万年。猎灵、炼环、破境，夺回五块天枢碎片——飞升。最多 8 人联机", 16, UiKit.MIST)
+	var sub := UiKit.label("天门崩碎三万年", 16, UiKit.MIST)
 	left.add_child(sub)
 	var sp := Control.new()
 	sp.custom_minimum_size.y = 30
@@ -205,10 +205,8 @@ func _ready() -> void:
 	right.add_child(_skills_hint)
 
 	# ---- 底：按键说明和版本
-	var help := UiKit.label("WASD 移动 · 空格 跳 · 左键 射击 · 右键 瞄准 · G 引魂索 · Q / E / F 神通 · F 交互 · L 猎灵榜 · M 地图 · K 灵相 · Esc 暂停（里面有全部按键）", 13, UiKit.DIM)
-	UiKit.place(help, Vector4(0, 1, 1, 1), Vector4(84, -38, -300, -14))
-	_main.add_child(help)
-	var ver := UiKit.label("版本 %s · 第十一版" % ProjectSettings.get_setting("application/config/version", "0"), 13, UiKit.DIM)
+	# 以前这里一整排按键说明（用户：从首页就在过度描述）——按键在 Esc 暂停里有
+	var ver := UiKit.label("v%s" % ProjectSettings.get_setting("application/config/version", "0"), 13, UiKit.DIM)
 	ver.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	UiKit.place(ver, Vector4(1, 1, 1, 1), Vector4(-400, -38, -84, -14))
 	_main.add_child(ver)
@@ -284,20 +282,18 @@ func _pick_wuhun(i: int, silent := false) -> void:
 	_wuhun_kind.text = str(w["kind"])
 	for k in _wuhun_btns.size():
 		_tile_style(_wuhun_btns[k], k == i)
-	var lines := ["神通不固定：吸收哪种灵兽的灵环，就领悟哪种神通——游戏里按 L 打开猎灵榜，每只灵兽会给什么神通都写着。", "同一种灵兽总给同一个神通；灵兽年份越高，神通越强。", "Q / E / F 三个键各放一个神通，在 K 灵相面板里自己选装哪个。"]
-	if not Profile.rings.is_empty():
-		lines.append("（已经有的神通不会因为换灵相而改变）")
-	_skills_hint.text = "\n".join(lines)
+	# 以前三行讲神通怎么来的规则，玩的时候自然就知道了
+	_skills_hint.text = ""
 
 
 func _on_rebirth() -> void:
 	if not _rebirth_armed:
 		_rebirth_armed = true
-		_rebirth_btn.text = "确定轮回？再点一次（等级、灵环、暗器、灵骨清零）"
+		_rebirth_btn.text = "再点一次：从头再修"
 		return
 	_rebirth_armed = false
 	if Profile.do_rebirth():
-		set_status("轮回成功！第%d世 · 第%d重天：伤害、体力 +%d%%，灵兽也凶了 %d%%。可以换一个灵相，领悟全新的神通" % [Profile.rebirth + 1, Profile.rebirth + 1, Profile.rebirth * 25, Profile.rebirth * 30])
+		set_status("第 %d 世" % (Profile.rebirth + 1))
 	_refresh_save()
 	_pick_wuhun(Settings.wuhun, true)
 
@@ -305,7 +301,7 @@ func _on_rebirth() -> void:
 func _refresh_save() -> void:
 	if _rebirth_btn:
 		_rebirth_btn.visible = Profile.god
-		_rebirth_btn.text = "轮回 · 第 %d 世 · 第 %d 重天（永久更强，灵主更凶）" % [Profile.rebirth + 2, Profile.rebirth + 2]
+		_rebirth_btn.text = "轮回 · 第 %d 世" % (Profile.rebirth + 2)
 	for i in _slot_btns.size():
 		var b: Button = _slot_btns[i]
 		var on := Profile.slot == i + 1
@@ -328,7 +324,7 @@ func _refresh_save() -> void:
 		b.add_theme_color_override("font_color", UiKit.GOLD if on else UiKit.MIST)
 		b.add_theme_color_override("font_hover_color", UiKit.GOLD if on else Color.WHITE)
 	if Profile.level <= 1 and Profile.money == 0 and Profile.rings.is_empty() and Profile.chapter == 1:
-		_save_info.text = "新存档：从第一章 · 镜湖开始"
+		_save_info.text = "新存档"
 		_reset_btn.visible = false
 		return
 	_reset_btn.visible = true
