@@ -630,7 +630,9 @@ func _build_ui() -> void:
 	_top = UiKit.bold("", 17, Color(1.0, 0.85, 0.6), 4)
 	_top.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_top.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	UiKit.place(_top, Vector4(0.5, 0, 0.5, 0), Vector4(-420, 92, 420, 118))
+	# 以前在正上方（和灵兽王的大血条叠在一起）：挪到右上小地图和灵石下面，右对齐
+	_top.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	UiKit.place(_top, Vector4(1, 0, 1, 0), Vector4(-420, 232, -18, 256))
 	layer.add_child(_top)
 	_panel = PanelContainer.new()
 	_panel.add_theme_stylebox_override("panel", UiKit.glass_style(0.72, 28, 20))
@@ -656,11 +658,12 @@ func _update_ui(dt: float) -> void:
 	var who := "按 L" if Net.is_host() else "房主按 L"
 	match phase:
 		"hunt":
-			txt = "猎场 · 猎杀%s · 剩余 %s · 倒下 %d/%d · 宝藏 %d/%d%s" % [species_name(), _fmt(LIMIT - t), faints, MAX_FAINTS, _found.size(), _nodes.size(), _guards_left()]
+			# 只写剩多少时间（倒下过才写倒下几次）；以前一行写了猎杀谁、剩余、倒下、宝藏、守宝王（用户：描述得太详细）
+			txt = _fmt(LIMIT - t) + (("  ·  倒下 %d/%d" % [faints, MAX_FAINTS]) if faints > 0 else "")
 		"done":
-			txt = "猎灵完成 · %s 回岛（%s 后自动回）· 宝藏 %d/%d%s" % [who, _fmt(back_t), _found.size(), _nodes.size(), _guards_left()]
+			txt = "%s 回岛" % who
 		"fail":
-			txt = "猎灵失败 · %s 后回岛（%s 马上回）" % [_fmt(back_t), who]
+			txt = "猎灵失败"
 	_top.text = txt
 	if _panel.visible:
 		_panel_t -= dt
