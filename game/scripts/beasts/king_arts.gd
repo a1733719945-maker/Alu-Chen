@@ -139,7 +139,20 @@ func _physics_process(dt: float) -> void:
 		cancel()
 
 
+## 起招还没出手（穿云弩 / 天心泪在这时候射中能打断：GunArts._interrupt）
+func winding() -> bool:
+	return not cur.is_empty() and float(cur.get("t", 0.0)) < float(cur.get("wind", 0.0))
+
+
+## 这一帧放出去的预警都记在这只王名下（打断时 BossArts.cancel_owner 一起收掉）
 func host_tick(delta: float, tp: Dictionary, m: String, touching: bool) -> void:
+	var A: BossArts = world.arts
+	A.art_owner = b.id
+	_host_tick(delta, tp, m, touching)
+	A.art_owner = 0
+
+
+func _host_tick(delta: float, tp: Dictionary, m: String, touching: bool) -> void:
 	_since_tick = 0.0
 	# 普通的扑咬 / 冲锋不放了：所有攻击都走这里（有起手、有预警、能躲）
 	b._atk_cd = 99.0

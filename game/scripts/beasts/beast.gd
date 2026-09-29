@@ -401,7 +401,8 @@ func armor_factor(headshot: bool) -> float:
 ## impulse 是世界坐标下的冲量，local_point 是命中点相对灵兽的位置（灵兽本地坐标）
 ## 返回实际伤害
 ## launch = true 是技能把灵兽挑上天，不受“越打越推不动”的限制
-func take_hit(dmg: float, impulse: Vector3, local_point: Vector3, headshot: bool, shooter: int, dist: float, launch := false) -> float:
+## gun / fl：哪把暗器打的、GunArts 的标记（暗器各有打法）
+func take_hit(dmg: float, impulse: Vector3, local_point: Vector3, headshot: bool, shooter: int, dist: float, launch := false, gun := "", fl := "") -> float:
 	if state == State.GONE:
 		return 0.0
 	last_hit_air = state == State.AIR or (state == State.FLEE and motion() in ["fly", "flutter"])
@@ -413,6 +414,9 @@ func take_hit(dmg: float, impulse: Vector3, local_point: Vector3, headshot: bool
 	_since_hit = 0.0
 	last_dist = dist
 	var real := dmg * armor_factor(headshot) * (mark_mult if mark_t > 0.0 else 1.0)
+	# 暗器的打法（流光翎要看它是不是睡着，放在偷袭前面）
+	if gun != "":
+		real = GunArts.host_hit(self, gun, fl, real, local_point, headshot, dist, shooter)
 	if napping:
 		# 偷袭睡着的猎物
 		real *= 2.5

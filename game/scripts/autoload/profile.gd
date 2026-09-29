@@ -513,7 +513,8 @@ func buy_upgrade(id: String, key: String) -> bool:
 
 ## on：配件（null = 存档里这把装的；试炼里捡的暗器带它自己的配件）
 func weapon_stats(id: String, on: Variant = null) -> Dictionary:
-	var d := Data.weapon_stats(id, upgrades.get(id, {}))
+	# 暗器档次跟着打到第几章（Data.GUN_TIER_DPS）：哪一种都不是最强
+	var d := Data.weapon_stats(id, upgrades.get(id, {}), chapter)
 	d = Data.apply_attach(d, on if on != null else attach_on.get(id, {}))
 	# 灵骨：爆头加成、伤害加成
 	d["headshot"] = d["headshot"] * (1.0 + bone_bonus("headshot"))

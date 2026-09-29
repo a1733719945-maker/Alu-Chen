@@ -56,6 +56,10 @@ var _pose := ""
 var _pose_t := 0.0
 var _pose_len := 1.0
 var _glint: WeakGlint
+## 暗器的打法（GunArts）：追星针的星（部位 -> 剩几秒，全队打这里更痛、部位多掉一截）、穿云弩钉住腿（变慢）
+var stars := {}
+var pin_t := 0.0
+const STAR_PART_K := 1.5
 
 
 ## 房主：给猎物挂上
@@ -165,22 +169,74 @@ func host_hit(real: float, lp: Vector3, headshot: bool) -> float:
 		k *= OPEN_K * (OPEN_HEAD if headshot else 1.0)
 	real *= k
 	var part := "head" if headshot else _part_at(lp)
-	if part != "" and parts.has(part) and not broken(part):
-		parts[part]["hp"] = float(parts[part]["hp"]) - real
-		_dirty = true
-		if float(parts[part]["hp"]) <= 0.0:
-			_host_break(part)
-	if part == "head" and down_t <= 0.0:
-		stun += real * (1.5 if broken("head") else 1.0)
-		_dirty = true
-		if stun >= stun_max:
-			stun = 0.0
-			stuns += 1
-			stun_max *= 1.5
-			_host_down("stun", DOWN_STUN)
+	part_damage(part, real * (STAR_PART_K if starred(part) else 1.0))
+	if part == "head":
+		add_stun(real)
 	if mood == "calm":
 		rage = minf(rage + real / maxf(b.max_hp, 1.0) * 220.0, 100.0)
 	return real
+
+
+## 部位掉血（打够了就断）；GunArts 的千丝雨针 / 寒梅 / 天心泪会多调一次
+func part_damage(part: String, amt: float) -> void:
+	if part == "" or not parts.has(part) or broken(part) or amt <= 0.0:
+		return
+	parts[part]["hp"] = float(parts[part]["hp"]) - amt
+	_dirty = true
+	if float(parts[part]["hp"]) <= 0.0:
+		_host_break(part)
+
+
+## 晕值（打头）；连机神弩多加
+func add_stun(amt: float) -> void:
+	if down_t > 0.0:
+		return
+	stun += amt * (1.5 if broken("head") else 1.0)
+	_dirty = true
+	if stun >= stun_max:
+		stun = 0.0
+		stuns += 1
+		stun_max *= 1.5
+		_host_down("stun", DOWN_STUN)
+
+
+func part_at(lp: Vector3) -> String:
+	return _part_at(lp)
+
+
+func starred(part: String) -> bool:
+	return part != "" and float(stars.get(part, 0.0)) > 0.0
+
+
+## 追星针：给部位落一颗星
+func star(part: String, t: float) -> void:
+	var had := starred(part)
+	stars[part] = t
+	if not had:
+		_event("star", part)
+
+
+## 穿云弩：钉住一条腿，一阵子变慢
+func pin(t: float) -> void:
+	pin_t = maxf(pin_t, t)
+
+
+## 子母雷珠的雷：炸翻
+func knock(why: String, t: float) -> void:
+	_host_down(why, t)
+	_event("down", why)
+
+
+## 部位在世界里的大概位置（星标、梅花跟着它）
+func part_pos(part: String) -> Vector3:
+	match part:
+		"head":
+			return _head_pos()
+		"tail":
+			return b.global_transform * (_center - _front * _half * 0.85)
+		"wing":
+			return b.global_transform * (_center + _front.cross(Vector3.UP) * _half * 0.55 + Vector3.UP * _height * 0.2)
+	return b.global_transform * (_center + Vector3.UP * _height * 0.35)
 
 
 ## Beast._elite 调：倒地计时、怒气 → 暴怒 → 疲劳 → 平静
@@ -192,6 +248,7 @@ func host_tick(dt: float) -> void:
 		down_t = maxf(down_t - dt, 0.0)
 		if down_t <= 0.0:
 			_dirty = true
+	pin_t = maxf(pin_t - dt, 0.0)
 	match mood:
 		"calm":
 			if b._aggro_t > 0.0:
@@ -289,7 +346,7 @@ func pose(kind: String, t: float) -> void:
 
 
 func speed_k() -> float:
-	return 0.55 if mood == "tired" else 1.0
+	return (0.55 if mood == "tired" else 1.0) * (0.6 if pin_t > 0.0 else 1.0)
 
 
 func bind_k() -> float:
@@ -374,6 +431,13 @@ func _on_event(kind: String, arg: String) -> void:
 		"tired":
 			if near:
 				tip(world, "tired", "它累了：捆住它")
+		"star":
+			# 追星针的星：部位上一颗青白的星，一闪一闪（每台电脑自己倒计时）
+			stars[arg] = GunArts.STAR_TIME
+			var p := arg
+			WeakGlint.spawn(world.fx, func() -> Vector3:
+				return part_pos(p) if is_instance_valid(b) and b.alive() and starred(p) else Vector3.INF,
+				GunArts.STAR_TIME, maxf(_height * 0.25, 0.45), Color(0.6, 0.85, 1.0))
 
 
 ## 露破绽：不写字（用户："头上写「破绽」两个字，不是很搞笑么"）——踉跄的动作（_process）+ 头上弱点一团金光 + 一声闷响、喘气；
@@ -494,6 +558,8 @@ func _process(dt: float) -> void:
 		return
 	if not host and down_t > 0.0:
 		down_t = maxf(down_t - dt, 0.0)
+	for p in stars:
+		stars[p] = maxf(float(stars[p]) - dt, 0.0)
 	# 倒地：往一侧翻倒（绕身体前后的轴），起来的时候慢一点
 	var want := 1.2 if down_t > 0.0 else 0.0
 	_tilt = lerpf(_tilt, want, 1.0 - exp(-(9.0 if want > _tilt else 3.0) * dt))

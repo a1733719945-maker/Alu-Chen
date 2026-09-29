@@ -66,6 +66,11 @@ var busy_t := 0.0                # 吸收灵环时不能开枪
 var channeling := false          # 猎灵远征：正在吸收灵环（站着不能动，能开枪，队友护法）
 var buffs := {}                  # stat -> [amount, 剩余秒]
 # 灵兽招式带来的负面状态（Data.BEAST_SKILLS）
+## 流沙机弩（GunArts 站桩）：转起来（heat）以后站定开火，挨打 ×SAND_GUARD_K
+const SAND_GUARD_K := 0.6
+var sand_guard: bool:
+	get:
+		return gun != null and gun.id == "hansha" and gun.heat >= 0.6 and gun.since_shot < 0.35 and Vector2(velocity.x, velocity.z).length() < 2.2
 var root_t := 0.0                # 定身（连按空格挣脱）
 var slow_t := 0.0
 var slow_k := 0.0
@@ -312,6 +317,9 @@ func take_damage(amount: float, from_pos: Vector3, tick := false) -> void:
 		world.boss_nohit = false
 	# 减伤：灵力护体（等级）+ 神通（金刚变、浴火、防御增幅）+ 灵骨，最多减 80%
 	amount *= 1.0 - clampf(defense(), 0.0, 0.8)
+	# 流沙机弩（GunArts 站桩）：转起来站定开火时挨打少一截
+	if sand_guard:
+		amount *= SAND_GUARD_K
 	if vuln_t > 0.0:
 		amount *= 1.3
 	var left := amount
@@ -341,6 +349,11 @@ func _perfect_dodge() -> void:
 		return
 	_pd_cd = now + 1.2
 	add_buff("dmg", 0.3, 4.0)
+	# 袖箭（GunArts 闪身）：极限闪避后弹匣自动装满
+	if gun and gun.id == "xiujian" and gun.ammo < int(gun.d["mag"]):
+		gun.cancel_reload()
+		gun.ammo = int(gun.d["mag"])
+		Sfx.play("reload_end", -2.0, 0.0, 1.3)
 	soul = minf(soul + Profile.max_soul() * 0.15, Profile.max_soul())
 	Profile.count("perfect_dodges")
 	world.hud.flash(Color(0.45, 0.85, 1.0, 0.35))
@@ -1438,6 +1451,9 @@ func start_reload() -> void:
 
 
 func current_spread() -> float:
+	# 袖箭（GunArts 闪身）：翻滚中跟开镜站着一样准
+	if gun.id == "xiujian" and _roll_t > 0.0:
+		return gun.spread(1.0, 0.0, false, false, false)
 	var hv := Vector3(velocity.x, 0, velocity.z)
 	return gun.spread(ads, hv.length() / WALK_SPEED, not is_on_floor() and not swimming, crouch_k > 0.5, scoped)
 
@@ -1445,6 +1461,8 @@ func current_spread() -> float:
 func _fire() -> void:
 	var d := gun.d
 	fire_buffer = 0.0
+	if world:
+		GunArts.tip(world, gun.id)
 	# 先按开火前的准星方向算弹道，再加这一发的后坐
 	var spread := deg_to_rad(current_spread())
 	# 蓄力：越蓄越准，伤害越高，蓄满了穿透所有

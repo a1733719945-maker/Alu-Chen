@@ -57,7 +57,7 @@ func _ready() -> void:
 			_plan = ["phys", "hunt:burrow,meadow,flowers,water,reel", "shop", "recoil", "sniper", "ring", "boss", "boat", "hunt:den,swamp,mud", "boss", "boat",
 				"hunt:glade,roost,thicket,nest,bog", "boss", "boat",
 				"hunt:snowden,frostgrove,icefield,icecave,icelake", "boss", "boat",
-				"hunt:beach,cliff,reef,deep,abyss", "boss", "dungeon", "chase", "musou", "huntrun", "huntfail", "touch", "feel", "hunt2", "done"]
+				"hunt:beach,cliff,reef,deep,abyss", "boss", "dungeon", "chase", "musou", "huntrun", "huntfail", "touch", "feel", "hunt2", "garts", "done"]
 			# 新暗器测试放在第一章买完暗器后面（要第一章的草地摆靶子；第五章归墟没有草地）
 			_plan.insert(_plan.find("shop") + 1, "guns2")
 			_plan.insert(_plan.find("guns2") + 1, "pills")
@@ -307,6 +307,8 @@ func _process(dt: float) -> void:
 			_run_feel()
 		"hunt2":
 			_run_hunt2()
+		"garts":
+			_run_garts()
 		"hunt2shot":
 			_run_hunt2shot()
 		"fpshot":
@@ -862,7 +864,8 @@ func _run_shop() -> void:
 			if not _check(p.guns.size() == 6, "暗器数量不对（5 把 + 空手）：%d" % p.guns.size()):
 				return
 			var dmg := float(Profile.weapon_stats("zhuge")["damage"])
-			if not _check(dmg > float(Data.WEAPONS["zhuge"]["damage"]), "伤害升级没生效"):
+			# 基础伤害按章节档次拉平过（Data.weapon_stats 第三个参数），和同一章没升级的比
+			if not _check(dmg > float(Data.weapon_stats("zhuge", {}, Profile.chapter)["damage"]), "伤害升级没生效"):
 				return
 			w.hud._shop._tab = "upgrades"
 			w.hud._shop.refresh()
@@ -4518,6 +4521,212 @@ func _run_feel() -> void:
 			var b: Beast = w.beasts.get(int(_mem["bid"]))
 			if b:
 				b.root_t = 0.0
+			_next_phase()
+
+
+## 暗器各有打法（GunArts）：十把的持续输出拉平了；每把的独门机制在猎物身上都起作用
+func _run_garts() -> void:
+	var w := _world()
+	match _step:
+		0:
+			w = _ready_world()
+			if not w or _step_t < 1.0:
+				return
+			w.player.invuln_t = 9999.0
+			w.player.hp = 99999.0
+			# 输出拉平：十把的持续输出都在这一章档次的 0.75~1.05 倍
+			var outs := []
+			var lo := INF
+			var hi := 0.0
+			for id in Data.WEAPON_ORDER:
+				var o := Data.weapon_output(Profile.weapon_stats(str(id))).y
+				outs.append("%s %d" % [str(Data.WEAPONS[id]["name"]), int(o)])
+				lo = minf(lo, o)
+				hi = maxf(hi, o)
+			_note("持续输出（第 %d 章档次）：%s" % [Profile.chapter, ", ".join(outs)])
+			if not _check(hi / lo < 1.5, "暗器输出没拉平（最高 %.0f / 最低 %.0f）" % [hi, lo]):
+				return
+			if w.island.hunting and w.hunt.target_id != 0 and w.beasts.has(w.hunt.target_id):
+				_next(2)
+				return
+			var h := w.hunt
+			var list := h.species_list()
+			if not _check(not list.is_empty(), "猎灵榜上没有灵兽"):
+				return
+			var sp := str(list[0])
+			for s2 in list:
+				if str(s2) in ["wolf", "deer", "rhino", "ape", "crab"]:
+					sp = str(s2)
+					break
+			h.request(sp, h.base_age())
+			_mem["old_wid"] = w.get_instance_id()
+			_next(1)
+		1:
+			w = _ready_world()
+			if not w or w.get_instance_id() == int(_mem["old_wid"]) or not w.island.hunting:
+				if _step_t > 15.0:
+					_fail("挑了猎物没去猎场")
+				return
+			if w.hunt.target_id == 0 or not w.beasts.has(w.hunt.target_id):
+				if _step_t > 20.0:
+					_fail("猎物没出现")
+				return
+			_next(2)
+		2:
+			var b: Beast = w.beasts[w.hunt.target_id]
+			if not _check(b.arts != null and b.feel != null, "猎物身上没有 KingArts / KingFeel"):
+				return
+			var f: KingFeel = b.feel
+			w.player.invuln_t = 9999.0
+			w.player.hp = 99999.0
+			b.root_t = 9999.0
+			b.root_pos = b.global_position
+			b.max_hp *= 50.0
+			b.hp = b.max_hp
+			# 前面的阶段（hunt2）可能已经打断了部位：这里全部接回去、血量加厚，只看每一下掉多少
+			for p in f.parts:
+				f.parts[p]["hp"] = 1e9
+				f.parts[p]["max"] = 1e9
+				f.parts[p]["broken"] = false
+			f.stun_max = 1e9
+			f.down_t = 0.0
+			f.open_t = 0.0
+			b.set_meta("int_cd", 0.0)
+			b.set_meta("mine_cd", 0.0)
+			f.mood = "calm"
+			f.rage = 0.0
+			b.arts.cur.clear()
+			var me := Net.my_id
+			var head := f._center + f._front * f._half
+			var tail := f._center - f._front * f._half * 0.9
+			var backp := f._center + Vector3.UP * f._height * 0.3
+			# 寒梅：三箭落在尾巴上，第三箭开梅花
+			var d := []
+			for i in 3:
+				var h0 := b.hp
+				b.take_hit(10.0, Vector3.ZERO, tail, false, me, 10.0, false, "meihua")
+				d.append(h0 - b.hp)
+			if not _check(float(d[2]) > float(d[0]) * 2.0, "寒梅三箭同一处没开梅花（%s）" % str(d)):
+				return
+			# 千丝雨针：贴近打部位掉双份
+			var t0 := float(f.parts["tail"]["hp"])
+			b.take_hit(10.0, Vector3.ZERO, tail, false, me, 20.0, false, "baoyu")
+			var far := t0 - float(f.parts["tail"]["hp"])
+			t0 = float(f.parts["tail"]["hp"])
+			b.take_hit(10.0, Vector3.ZERO, tail, false, me, 4.0, false, "baoyu")
+			var near := t0 - float(f.parts["tail"]["hp"])
+			if not _check(near > far * 1.8, "千丝雨针贴近打部位没多掉（远 %.1f / 近 %.1f）" % [far, near]):
+				return
+			# 连机神弩：打头晕值涨得比袖箭快
+			var s0 := f.stun
+			b.take_hit(10.0, Vector3.ZERO, head, true, me, 10.0, false, "xiujian")
+			var sx := f.stun - s0
+			s0 = f.stun
+			b.take_hit(10.0, Vector3.ZERO, head, true, me, 10.0, false, "zhuge")
+			var sz := f.stun - s0
+			if not _check(sz > sx * 1.8, "连机神弩打头晕值没涨得快（袖箭 %.1f / 神弩 %.1f）" % [sx, sz]):
+				return
+			# 追星针：背甲落星，之后谁打背甲部位都掉得多
+			t0 = float(f.parts["back"]["hp"]) if f.parts.has("back") else 0.0
+			var star_part := "back" if f.parts.has("back") else "wing"
+			var sp_lp := backp if star_part == "back" else f._center + f._front.cross(Vector3.UP) * f._half * 0.8
+			t0 = float(f.parts[star_part]["hp"])
+			b.take_hit(10.0, Vector3.ZERO, sp_lp, false, me, 10.0, false, "xiujian")
+			var before_star := t0 - float(f.parts[star_part]["hp"])
+			b.take_hit(1.0, Vector3.ZERO, sp_lp, false, me, 10.0, false, "longxu")
+			if not _check(f.starred(star_part) and b.mark_t > 0.0, "追星针没落星（%s）" % star_part):
+				return
+			t0 = float(f.parts[star_part]["hp"])
+			b.take_hit(10.0, Vector3.ZERO, sp_lp, false, me, 10.0, false, "xiujian")
+			var after_star := t0 - float(f.parts[star_part]["hp"])
+			if not _check(after_star > before_star * 1.4, "星标以后部位没多掉（%.1f → %.1f）" % [before_star, after_star]):
+				return
+			# 流光翎：平时一般，踉跄时一箭顶两箭
+			f.open_t = 0.0
+			var h1 := b.hp
+			b.take_hit(10.0, Vector3.ZERO, f._center, false, me, 10.0, false, "kongque")
+			var plain := h1 - b.hp
+			f.open_t = 1.0
+			h1 = b.hp
+			b.take_hit(10.0, Vector3.ZERO, f._center, false, me, 10.0, false, "kongque")
+			var win := h1 - b.hp
+			f.open_t = 0.0
+			if not _check(win > plain * 2.5, "流光翎抓窗口没加伤（平时 %.1f / 踉跄 %.1f，破绽本身 ×1.3）" % [plain, win]):
+				return
+			# 穿云弩：起招时射中 → 招断了、预警收掉、露破绽；平时钉住腿
+			var c0 := _arts_count(w)
+			w.arts.art_owner = b.id
+			b.arts._start("charge", w.player.global_position, me, false)
+			w.arts.art_owner = 0
+			if not _check(b.arts.winding() and _arts_count(w) > c0, "冲锋没在起招 / 没出预警"):
+				return
+			b.take_hit(10.0, Vector3.ZERO, f._center, false, me, 30.0, false, "zhuihun")
+			if not _check(b.arts.cur.is_empty() and _arts_count(w) == c0 and f.open_t > 1.0, "穿云弩没打断起招（招 %s，预警 %d → %d，破绽 %.1f）" % [str(b.arts.cur.get("move", "")), c0, _arts_count(w), f.open_t]):
+				return
+			f.open_t = 0.0
+			b.take_hit(10.0, Vector3.ZERO, f._center, false, me, 30.0, false, "zhuihun")
+			if not _check(f.pin_t > 0.0 and f.speed_k() < 0.7, "穿云弩没钉住腿"):
+				return
+			# 天心泪蓄满：也能打断（冷却清掉再试）
+			b.set_meta("int_cd", 0.0)
+			w.arts.art_owner = b.id
+			b.arts._start("leap", w.player.global_position, me, false)
+			w.arts.art_owner = 0
+			b.take_hit(10.0, Vector3.ZERO, f._center, false, me, 30.0, false, "guanyin", "full")
+			if not _check(b.arts.cur.is_empty() and f.open_t > 1.0, "天心泪蓄满没打断起招"):
+				return
+			f.open_t = 0.0
+			f.down_t = 0.0
+			_note("寒梅三箭 %s；雨针部位 远 %.1f / 近 %.1f；晕值 袖箭 %.1f / 神弩 %.1f；星标部位 %.1f → %.1f；流光翎 平时 %.1f / 踉跄 %.1f；穿云弩、天心泪都能打断" % [str(d), far, near, sx, sz, before_star, after_star, plain, win])
+			# 子母雷珠：雷放在它脚下 → 炸翻
+			var g := Gun.new("zimu", Profile.weapon_stats("zimu"))
+			w._lay_mine(g, b.global_position + Vector3(0.5, 0.2, 0.0), 10.0)
+			_mem["bid"] = b.id
+			_next(3)
+		3:
+			var b: Beast = w.beasts.get(w.hunt.target_id)
+			if b.feel.down_t <= 0.0:
+				if _step_t > 2.0:
+					_fail("雷在王脚下没炸翻它（雷 %d 颗）" % w._mines.size())
+				return
+			_note("雷炸翻了王（倒地 %.1f 秒）" % b.feel.down_t)
+			# 袖箭：极限闪避装满弹匣
+			var p := w.player
+			var xi := p._gun_index("xiujian")
+			if xi >= 0:
+				p.switch_weapon(xi)
+				p.gun.ammo = 1
+				p._pd_cd = 0.0
+				p._perfect_dodge()
+				if not _check(p.gun.ammo == int(p.gun.d["mag"]), "袖箭极限闪避没装满弹匣"):
+					return
+			# 流沙机弩：转起来站定挨打少
+			var keep := p.gun
+			p.gun = Gun.new("hansha", Profile.weapon_stats("hansha"))
+			p.gun.heat = 1.0
+			p.gun.since_shot = 0.0
+			p.velocity = Vector3.ZERO
+			var guard := p.sand_guard
+			p.invuln_t = 0.0
+			p.dead = false
+			p.shield = 0.0
+			p.hp = 1000.0
+			p.take_damage(100.0, p.global_position + Vector3.FORWARD)
+			var lost_g := 1000.0 - p.hp
+			p.gun.heat = 0.0
+			p.shield = 0.0
+			p.hp = 1000.0
+			p.take_damage(100.0, p.global_position + Vector3.FORWARD)
+			var lost := 1000.0 - p.hp
+			p.gun = keep
+			p.invuln_t = 9999.0
+			p.hp = 99999.0
+			if not _check(guard and lost_g < lost * 0.75, "流沙机弩站定开火没减伤（%.1f / %.1f，站桩 %s，倒下 %s，无敌 %.1f）" % [lost_g, lost, str(guard), str(p.dead), p.invuln_t]):
+				return
+			_note("袖箭极限闪避装满弹匣；流沙机弩站桩挨打 %.0f → %.0f" % [lost, lost_g])
+			var b2: Beast = w.beasts.get(w.hunt.target_id)
+			if b2:
+				b2.root_t = 0.0
 			_next_phase()
 
 

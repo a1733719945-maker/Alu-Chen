@@ -50,9 +50,44 @@ func _k() -> float:
 	return float(Data.BOSS_DMG_CH.get(world.chapter, 1.0)) * world._boss_k
 
 
+## 谁放的（灵兽王的 id；Boss 是 0）：KingArts.host_tick 放招时设上。打断时按它把还没砸下来的预警收掉
+var art_owner := 0
+var _cur_owner := 0
+
+
 func _send(type: String, args: Array) -> void:
-	Net.send(0, "ba", [type, args])
+	Net.send(0, "ba", [type, args, art_owner])
+	_cur_owner = art_owner
 	_on(type, args)
+	_cur_owner = 0
+
+
+## 房主：这只王的招被打断了（穿云弩 / 天心泪 / 雷），大家把它还没砸下来的预警都收掉
+func cancel_owner(id: int) -> void:
+	if id == 0:
+		return
+	Net.send(0, "bacancel", [id])
+	on_cancel(id)
+
+
+func on_cancel(id: int) -> void:
+	for L in _lanes.duplicate():
+		if int(L.get("own", 0)) == id and float(L["t"]) > 0.0:
+			for n in L["nodes"]:
+				if is_instance_valid(n):
+					(n as Node).queue_free()
+			_lanes.erase(L)
+	for S in _sweeps.duplicate():
+		if int(S.get("own", 0)) == id and float(S["t"]) > 0.0:
+			for key in ["fan", "mark", "beam"]:
+				if is_instance_valid(S[key]):
+					(S[key] as Node).queue_free()
+			_sweeps.erase(S)
+	for e in _circles.duplicate():
+		if int(e.get("own", 0)) == id and float(e["t"]) > 0.0:
+			if is_instance_valid(e["node"]):
+				(e["node"] as Node).queue_free()
+			_circles.erase(e)
 
 
 func _g(p: Vector3) -> Vector3:
@@ -143,7 +178,9 @@ func on_stun(d: Array) -> void:
 # ------------------------------------------------------------------ 每台电脑：画出来、判断打没打到自己
 
 func on_message(data: Array) -> void:
+	_cur_owner = int(data[2]) if data.size() > 2 else 0
 	_on(str(data[0]), data[1])
+	_cur_owner = 0
 
 
 func _on(type: String, a: Array) -> void:
@@ -300,7 +337,7 @@ func _on_lane(a: Array) -> void:
 	var tw := fill.create_tween()
 	tw.tween_method(grow, 0.0, 1.0, maxf(delay, 0.05)).set_ease(Tween.EASE_IN)
 	_lanes.append({"o": o, "dir": dir, "len": length, "w": width, "t": delay, "dmg": float(a[5]), "style": style,
-		"travel": float(a[7]), "front": -1.0, "hit": false, "fx_at": 0.0, "nodes": [edge, fill]})
+		"travel": float(a[7]), "front": -1.0, "hit": false, "fx_at": 0.0, "nodes": [edge, fill], "own": _cur_owner})
 	Sfx.play_at("boss_roar", o, -2.0, 0.05, 1.25)
 
 
@@ -386,7 +423,7 @@ func _on_sweep(a: Array) -> void:
 	world.fx.add_child(beam)
 	beam.visible = false
 	_sweeps.append({"o": o, "a0": a0, "a1": a1, "len": length, "thick": float(a[4]), "t": float(a[5]), "dur": float(a[6]),
-		"dmg": float(a[7]), "style": style, "k": 0.0, "hit": false, "fan": fan, "mark": mark, "beam": beam, "bm": bm, "fx_t": 0.0, "prev": a0})
+		"dmg": float(a[7]), "style": style, "k": 0.0, "hit": false, "fan": fan, "mark": mark, "beam": beam, "bm": bm, "fx_t": 0.0, "prev": a0, "own": _cur_owner})
 	Sfx.play_at("boss_roar", o, 0.0, 0.05, 1.1)
 
 
@@ -496,7 +533,7 @@ func _sweep_fx(style: String, origin: Vector3, dir: Vector3, length: float) -> v
 # ---- 圈、弹幕雨
 
 func _on_circle(center: Vector3, radius: float, delay: float, dmg: float, style: String, late: bool) -> void:
-	var e := {"c": center, "r": radius, "t": delay, "dmg": dmg, "style": style, "node": null}
+	var e := {"c": center, "r": radius, "t": delay, "dmg": dmg, "style": style, "node": null, "own": _cur_owner}
 	var c := col(style)
 	if late and delay > 0.5:
 		Sfx.play_at("boss_roar", center, -6.0, 0.05, 1.5)

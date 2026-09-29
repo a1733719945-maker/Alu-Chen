@@ -977,6 +977,8 @@ func _update_status(p: Player) -> void:
 		st.append(["%s %d" % [Data.SKILLS[p.empower["sid"]]["name"], ceili(float(p.empower["t"]))], UiKit.GOLD])
 	if p.root_t > 0.0:
 		st.append(["定身 %.1f · 连按空格" % p.root_t, UiKit.RED])
+	if p.sand_guard:
+		st.append(["流沙护体", UiKit.GOLD])
 	if p.slow_t > 0.0:
 		st.append(["减速 %.1f" % p.slow_t, UiKit.JADE])
 	if p.silence_t > 0.0:

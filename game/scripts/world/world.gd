@@ -314,6 +314,7 @@ func _process(dt: float) -> void:
 	_t += dt
 	Profile.add_play_time(dt)
 	builder.animate(_t)
+	_mines_tick(dt)
 	_player_snap_t += dt
 	if _player_snap_t >= 1.0 / PLAYER_SNAP_RATE:
 		_player_snap_t = 0.0
@@ -534,7 +535,9 @@ func local_fire(g: Gun, origin: Vector3, dirs: Array[Vector3], muzzle: Vector3, 
 				break
 			elif col is Node and (col as Node).has_meta("boss"):
 				var weak: bool = bool((col as Node).get_meta("weak")) or crit
-				boss_dmg += float(w["damage"]) * _falloff(w, hit_dist) * (float(w["headshot"]) if weak else 1.0) * dmg_mult
+				# 流光翎抓窗口：打 Boss 弱点更痛（GunArts）
+				var wk: float = GunArts.WINDOW_K * 0.7 if weak and g.id == "kongque" else 1.0
+				boss_dmg += float(w["damage"]) * _falloff(w, hit_dist) * (float(w["headshot"]) if weak else 1.0) * dmg_mult * wk
 				boss_weak = boss_weak or weak
 				fx.impact_beast(end, hit["normal"], Color(0.8, 0.3, 1.0), weak)
 				break
@@ -571,9 +574,13 @@ func local_fire(g: Gun, origin: Vector3, dirs: Array[Vector3], muzzle: Vector3, 
 			var a := randf() * TAU
 			var rr := randf_range(2.0, 3.5)
 			var cp := _ground_at(at + Vector3(cos(a) * rr, 0.0, sin(a) * rr), at.y)
-			get_tree().create_timer(0.3 + i * 0.12).timeout.connect(func(): _child_blast(g, cp, sd * 0.45))
+			if trial.inside:
+				get_tree().create_timer(0.3 + i * 0.12).timeout.connect(func(): _child_blast(g, cp, sd * 0.45))
+			else:
+				# 子胆落地成雷（GunArts：陷阱流），谁走近就炸
+				get_tree().create_timer(0.25 + i * 0.1).timeout.connect(func(): _lay_mine(g, cp, sd * 0.45 * MINE_K))
 	Net.send(0, "shot", [g.id, muzzle, ends])
-	_apply_hits(g, per_beast, boss_dmg, boss_weak, true, k > 1.5)
+	_apply_hits(g, per_beast, boss_dmg, boss_weak, true, k > 1.5, "full" if pierce_over > 0 else "")
 
 
 ## 爆炸：r 米内的灵兽都挨（中心全伤害，边上三成），往外掀
@@ -610,19 +617,102 @@ func _ground_at(p: Vector3, fallback_y: float) -> Vector3:
 	return p
 
 
-## 子胆：母胆炸完 0.3 秒后在旁边各炸一次（队友也看得到）
-func _child_blast(g: Gun, at: Vector3, dmg: float) -> void:
+## 子胆：母胆炸完 0.3 秒后在旁边各炸一次（队友也看得到）；雷（fl = "mine"）炸王能把它炸翻
+func _child_blast(g: Gun, at: Vector3, dmg: float, fl := "") -> void:
 	var pb := {}
 	_blast(at, 2.8, dmg, g.d, pb)
 	var bd := _blast_boss(at, 2.8, dmg)
 	fx.explosion(at, 2.8, g.d["tracer"])
 	Sfx.play_at("boom", at, -7.0, 0.15)
 	Net.send(0, "blast", [at, 2.8, g.d["tracer"]])
-	_apply_hits(g, pb, bd, false, false, false)
+	_apply_hits(g, pb, bd, false, false, false, fl)
+
+
+# ------------------------------------------------------------------ 子母雷珠的雷（GunArts：陷阱流）
+# 子胆落地变雷，MINE_LIFE 秒内有灵兽走进 MINE_R 米（或碰到 Boss）就炸；每人最多 MINE_MAX 颗（多了最早那颗先炸）。
+# 只在布雷的人电脑上算（和子胆一样），炸了发 blast 给大家看
+const MINE_K := 1.5
+const MINE_R := 2.4
+const MINE_LIFE := 16.0
+const MINE_MAX := 8
+var _mines: Array = []
+var _mine_t := 0.0
+
+
+func _lay_mine(g: Gun, at: Vector3, dmg: float) -> void:
+	if not is_inside_tree():
+		return
+	var n := Node3D.new()
+	fx.add_child(n)
+	n.global_position = at - Vector3(0, 0.12, 0)
+	var core := MeshInstance3D.new()
+	var sm := SphereMesh.new()
+	sm.radius = 0.13
+	sm.height = 0.2
+	core.mesh = sm
+	var m := StandardMaterial3D.new()
+	m.albedo_color = Color(0.25, 0.14, 0.08)
+	m.metallic = 0.6
+	m.roughness = 0.35
+	m.emission_enabled = true
+	m.emission = g.d["tracer"]
+	m.emission_energy_multiplier = 1.5
+	core.material_override = m
+	n.add_child(core)
+	var light := OmniLight3D.new()
+	light.light_color = g.d["tracer"]
+	light.omni_range = 1.6
+	light.light_energy = 0.8
+	light.position.y = 0.3
+	n.add_child(light)
+	Sfx.play_at("shell", at, -6.0, 0.1, 0.7)
+	_mines.append({"g": g, "at": at, "dmg": dmg, "t": MINE_LIFE, "node": n, "mat": m, "light": light})
+	while _mines.size() > MINE_MAX:
+		_mine_boom(_mines[0])
+
+
+func _mine_boom(mn: Dictionary) -> void:
+	_mines.erase(mn)
+	if is_instance_valid(mn["node"]):
+		(mn["node"] as Node).queue_free()
+	_child_blast(mn["g"], mn["at"], float(mn["dmg"]), "mine")
+
+
+func _mines_tick(dt: float) -> void:
+	if _mines.is_empty():
+		return
+	_mine_t -= dt
+	var check := _mine_t <= 0.0
+	if check:
+		_mine_t = 0.1
+	var blink := 0.5 + 0.5 * sin(Time.get_ticks_msec() / 1000.0 * 6.0)
+	for mn in _mines.duplicate():
+		mn["t"] = float(mn["t"]) - dt
+		var at: Vector3 = mn["at"]
+		if is_instance_valid(mn["light"]):
+			(mn["light"] as OmniLight3D).light_energy = 0.3 + blink * (0.9 if float(mn["t"]) > 3.0 else 2.0)
+		if float(mn["t"]) <= 0.0:
+			# 没踩到：闷一声散掉，不白炸
+			_mines.erase(mn)
+			if is_instance_valid(mn["node"]):
+				(mn["node"] as Node).queue_free()
+			fx._smoke(at, Color(0.5, 0.45, 0.4, 0.5), 3, 1.0, 0.5, 0.5, 0.6)
+			continue
+		if not check:
+			continue
+		var hit := boss != null and is_instance_valid(boss) and not boss.dead and boss.surface_dist(at) < MINE_R
+		if not hit:
+			for b: Beast in beasts.values():
+				if b.alive() and Vector2(b.global_position.x - at.x, b.global_position.z - at.z).length() < MINE_R + 0.4 * b.size_k and absf(b.global_position.y - at.y) < 3.0 * b.size_k:
+					hit = true
+					break
+		if hit:
+			_mine_boom(mn)
 
 
 ## 把一发（或一次爆炸）打中的灵兽 / Boss 结算：飘字、命中音、连击、附体 / 附魔（procs）、发给房主
-func _apply_hits(g: Gun, per_beast: Dictionary, boss_dmg: float, boss_weak: bool, procs: bool, big: bool) -> void:
+## fl：给 GunArts 的标记（"full" 天心泪蓄满、"mine" 子母雷珠的雷）
+func _apply_hits(g: Gun, per_beast: Dictionary, boss_dmg: float, boss_weak: bool, procs: bool, big: bool, fl := "") -> void:
 	var w: Dictionary = g.d
 	var emp: Dictionary = player.empower
 	var emp_n := 0
@@ -671,7 +761,7 @@ func _apply_hits(g: Gun, per_beast: Dictionary, boss_dmg: float, boss_weak: bool
 		Sfx.play("hit_head" if h["head"] else "hit", -1.0 if h["head"] else -4.0, 0.03, combo.pitch())
 		if Net.is_host():
 			var before := b.alive()
-			var real := b.take_hit(h["dmg"], h["imp"], local_pt, h["head"], Net.my_id, h["dist"])
+			var real := b.take_hit(h["dmg"], h["imp"], local_pt, h["head"], Net.my_id, h["dist"], false, g.id, fl)
 			var killed := before and b.hp <= 0.0
 			fx.damage_number(b.global_position + Vector3(0, 0.3, 0), real, h["head"], killed, heavy)
 			if killed:
@@ -679,7 +769,7 @@ func _apply_hits(g: Gun, per_beast: Dictionary, boss_dmg: float, boss_weak: bool
 		else:
 			b.flinch(h["imp"])
 			fx.damage_number(b.global_position + Vector3(0, 0.3, 0), shown, h["head"], false, heavy)
-			Net.send(1, "hit", [id, h["dmg"], h["imp"], local_pt, h["head"], h["dist"]])
+			Net.send(1, "hit", [id, h["dmg"], h["imp"], local_pt, h["head"], h["dist"], g.id, fl])
 	if boss_dmg > 0.0 and boss:
 		hud.hitmarker(boss_weak, false)
 		Sfx.play("hit_head" if boss_weak else "hit", -2.0, 0.05)
@@ -3455,7 +3545,7 @@ func on_message(from: int, type: String, data: Variant) -> void:
 				var d: Array = data
 				var b: Beast = beasts.get(int(d[0]))
 				if b and b.alive():
-					b.take_hit(float(d[1]), d[2], d[3], bool(d[4]), from, float(d[5]))
+					b.take_hit(float(d[1]), d[2], d[3], bool(d[4]), from, float(d[5]), false, str(d[6]) if d.size() > 6 else "", str(d[7]) if d.size() > 7 else "")
 					if b.hp <= 0.0:
 						_host_kill(b)
 		"bhit":
@@ -3651,6 +3741,11 @@ func on_message(from: int, type: String, data: Variant) -> void:
 			travel_back()
 		"ba":
 			arts.on_message(data)
+		"bacancel":
+			arts.on_cancel(int(data[0]))
+		"gart":
+			# 暗器的打法（GunArts）：梅花、星标、打断……的样子
+			GunArts.on_message(self, data)
 		"bstun":
 			arts.on_stun(data)
 		"htst", "htfaint", "htdone", "htfail", "htback", "htguard":

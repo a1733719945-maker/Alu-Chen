@@ -126,7 +126,8 @@ func _price_button(price: int, main := true, text := "") -> Button:
 func _weapons_tab() -> void:
 	var mx := {"dmg": 1.0, "rpm": 1.0, "mag": 1.0, "hs": 1.0}
 	for id in Data.WEAPON_ORDER:
-		var w: Dictionary = Data.WEAPONS[id]
+		# 按这一章的档次拉平过的数值（Data.weapon_stats 第三个参数；暗器各有打法，没有最强）
+		var w: Dictionary = Data.weapon_stats(id, {}, Profile.chapter)
 		# 伤害条按一发算（天心泪按半蓄，不然别的暗器全是短条）
 		mx["dmg"] = maxf(mx["dmg"], float(w["damage"]) * int(w["pellets"]) * (float(w.get("charge_k", 1.0)) * 0.5 if w["mode"] == "charge" else 1.0))
 		mx["rpm"] = maxf(mx["rpm"], float(w["rpm"]))
@@ -142,7 +143,7 @@ func _weapons_tab() -> void:
 
 
 func _weapon_card(id: String, mx: Dictionary) -> Control:
-	var w: Dictionary = Data.WEAPONS[id]
+	var w: Dictionary = Data.weapon_stats(id, {}, Profile.chapter)
 	var have := Profile.has_weapon(id)
 	var unlock := int(Data.WEAPON_UNLOCK.get(id, 1))
 	var locked := not have and int(Profile.max_chapter) < unlock and int(world.chapter) < unlock
@@ -167,6 +168,8 @@ func _weapon_card(id: String, mx: Dictionary) -> Control:
 		mode_name = "越打越快"
 	if mode_name != "":
 		top.add_child(UiKit.chip(mode_name, UiKit.MIST, 12))
+	if GunArts.NAME.has(id):
+		top.add_child(UiKit.chip(str(GunArts.NAME[id]), UiKit.GOLD, 12))
 	if have:
 		top.add_child(UiKit.chip("在身上", UiKit.JADE))
 		var ench := str(Profile.enchant.get(id, ""))

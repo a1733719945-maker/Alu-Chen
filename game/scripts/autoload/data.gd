@@ -310,7 +310,7 @@ const MODE_NAME := {"semi": "单发", "auto": "连发", "bolt": "拉栓", "burst
 
 const WEAPONS := {
 	"xiujian": {
-		"name": "袖箭", "cat": "手枪", "desc": "千机阁入门暗器。射速快、爆头伤害高，适合点射。",
+		"name": "袖箭", "cat": "手枪", "desc": "闪身流。翻滚中也打得准，极限闪避后弹匣自动装满。",
 		"price": 250, "mode": "semi", "rpm": 420, "damage": 28.0, "headshot": 2.2, "pellets": 1,
 		"mag": 12, "reload": 1.05, "reload_empty": 1.35, "per_shell": false,
 		"range": 160.0, "falloff": Vector3(40, 120, 0.6),
@@ -323,7 +323,7 @@ const WEAPONS := {
 		"tracer": Color(1.0, 0.72, 0.3), "sound": "xiujian_fire", "bolt": true,
 	},
 	"zhuge": {
-		"name": "连机神弩", "cat": "冲锋", "desc": "连发弩，一秒十五箭。近中距离压制，连射上跳很快，要往下拉。",
+		"name": "连机神弩", "cat": "冲锋", "desc": "打晕手。一秒十五箭，连着打头能把王打晕。连射上跳快，要往下拉。",
 		"price": 2800, "mode": "auto", "rpm": 900, "damage": 22.0, "headshot": 1.8, "pellets": 1,
 		"mag": 36, "reload": 1.8, "reload_empty": 2.2, "per_shell": false,
 		"range": 120.0, "falloff": Vector3(18, 60, 0.55),
@@ -336,7 +336,7 @@ const WEAPONS := {
 		"tracer": Color(1.0, 0.85, 0.5), "sound": "zhuge_fire", "bolt": true,
 	},
 	"kongque": {
-		"name": "流光翎", "cat": "步枪", "desc": "千机阁四大暗器之一。伤害高、第一发极准，连射后坐很大，要压枪。",
+		"name": "流光翎", "cat": "步枪", "desc": "抓窗口。平时一般；它踉跄、倒地、睡着的时候一箭顶两箭，打 Boss 弱点也更痛。",
 		"price": 12000, "mode": "auto", "rpm": 600, "damage": 52.0, "headshot": 2.0, "pellets": 1,
 		"mag": 30, "reload": 2.1, "reload_empty": 2.6, "per_shell": false,
 		"range": 200.0, "falloff": Vector3(50, 150, 0.7),
@@ -349,7 +349,7 @@ const WEAPONS := {
 		"tracer": Color(0.45, 1.0, 0.85), "sound": "kongque_fire", "bolt": true,
 	},
 	"baoyu": {
-		"name": "千丝雨针", "cat": "霰弹", "desc": "一次十四根银针。近身一发把灵兽轰上天，后坐像被人推了一把。",
+		"name": "千丝雨针", "cat": "霰弹", "desc": "断部位。一次十四根银针，贴近了打，角、尾、背甲断得快。",
 		"price": 400, "mode": "semi", "rpm": 75, "damage": 13.0, "headshot": 1.5, "pellets": 14,
 		"mag": 6, "reload": 0.45, "reload_empty": 0.45, "per_shell": true,
 		"range": 70.0, "falloff": Vector3(9, 30, 0.3),
@@ -362,7 +362,7 @@ const WEAPONS := {
 		"tracer": Color(0.9, 0.92, 1.0), "sound": "baoyu_fire", "bolt": false,
 	},
 	"zhuihun": {
-		"name": "穿云弩", "cat": "狙击", "desc": "重弩，一箭贯穿。要装狙击镜才好用（暗器铺 → 配件）。",
+		"name": "穿云弩", "cat": "狙击", "desc": "打断。王起招时射中，招就断了、露出破绽；平时钉住它的腿。要装狙击镜。",
 		"price": 40000, "mode": "bolt", "rpm": 48, "damage": 420.0, "headshot": 2.5, "pellets": 1,
 		"mag": 5, "reload": 2.7, "reload_empty": 3.1, "per_shell": false, "cycle": 1.1,
 		"range": 1500.0, "falloff": Vector3(1500, 1500, 1.0), "pierce": 3,
@@ -377,7 +377,7 @@ const WEAPONS := {
 	# ---- 第十二版新增 ----
 	# 三连发：扣一下出三箭（burst），三箭之间 burst_gap 秒；射速 rpm 是两次扣扳机之间
 	"meihua": {
-		"name": "寒梅袖箭", "cat": "手枪", "desc": "扣一下连出三箭，像梅花一样落在一处。三箭都爆头最痛。",
+		"name": "寒梅袖箭", "cat": "手枪", "desc": "梅花印。扣一下连出三箭，三箭落在同一处开一朵梅花。",
 		"price": 1500, "mode": "burst", "burst": 3, "burst_gap": 0.055, "rpm": 150, "damage": 30.0, "headshot": 2.0, "pellets": 1,
 		"mag": 21, "reload": 1.25, "reload_empty": 1.6, "per_shell": false,
 		"range": 150.0, "falloff": Vector3(35, 100, 0.6),
@@ -391,7 +391,7 @@ const WEAPONS := {
 	},
 	# 精确射手：一发一发，开镜几乎没有散布，爆头倍数高，能穿两只
 	"longxu": {
-		"name": "追星针", "cat": "射手", "desc": "细如龙须，远处一针入脑。开镜极准，爆头 ×2.6，能穿透两只。",
+		"name": "追星针", "cat": "射手", "desc": "星标。打中的部位落一颗星，全队打那里更痛。开镜极准，能穿透两只。",
 		"price": 6000, "mode": "semi", "rpm": 240, "damage": 88.0, "headshot": 2.6, "pellets": 1,
 		"mag": 10, "reload": 2.0, "reload_empty": 2.5, "per_shell": false, "pierce": 2,
 		"range": 400.0, "falloff": Vector3(80, 300, 0.75),
@@ -405,7 +405,7 @@ const WEAPONS := {
 	},
 	# 爆炸：打到哪里炸到哪里（splash 米内，中心伤害 splash_dmg，边上三成）；炸完再散出 children 颗子弹，0.3 秒后各炸一次
 	"zimu": {
-		"name": "子母雷珠", "cat": "爆破", "desc": "母胆炸开，再散出三颗子胆各炸一次。打一群最好，一颗一颗往里装。",
+		"name": "子母雷珠", "cat": "爆破", "desc": "布雷。母胆炸开，子胆落地成雷，谁走近就炸；布在王冲锋的路上能把它炸翻。",
 		"price": 18000, "mode": "semi", "rpm": 70, "damage": 70.0, "headshot": 1.5, "pellets": 1,
 		"splash": 4.5, "splash_dmg": 110.0, "children": 3,
 		"mag": 4, "reload": 0.6, "reload_empty": 0.6, "per_shell": true,
@@ -420,7 +420,7 @@ const WEAPONS := {
 	},
 	# 机枪：按住越打越快（spinup 秒从一半射速转到满），弹匣很大，很重
 	"hansha": {
-		"name": "流沙机弩", "cat": "机枪", "desc": "机括越转越快，一匣九十发。刚开火慢，按住一秒多才到最快。很重。",
+		"name": "流沙机弩", "cat": "机枪", "desc": "站桩炮台。机括越转越快，转起来以后站定开火，挨打少一截。很重。",
 		"price": 32000, "mode": "auto", "rpm": 840, "spinup": 1.2, "damage": 40.0, "headshot": 1.6, "pellets": 1,
 		"mag": 90, "reload": 3.4, "reload_empty": 3.9, "per_shell": false,
 		"range": 180.0, "falloff": Vector3(35, 120, 0.6),
@@ -434,7 +434,7 @@ const WEAPONS := {
 	},
 	# 蓄力：按住左键蓄力（charge 秒蓄满），松开发射，伤害 ×(1 ~ charge_k)；蓄满了穿透一路上所有灵兽，散布也跟着收拢
 	"guanyin": {
-		"name": "天心泪", "cat": "蓄力", "desc": "千机阁第一暗器。按住蓄力，松开出手；蓄满一滴泪，贯穿一路上所有灵兽。",
+		"name": "天心泪", "cat": "蓄力", "desc": "蓄满一箭。按住蓄力，蓄满一滴泪贯穿一路，打断王的起招、部位重创。",
 		"price": 120000, "mode": "charge", "charge": 1.0, "charge_k": 5.0, "rpm": 240, "damage": 180.0, "headshot": 2.2, "pellets": 1,
 		"mag": 6, "reload": 2.4, "reload_empty": 2.8, "per_shell": false,
 		"range": 600.0, "falloff": Vector3(600, 600, 1.0),
@@ -1553,14 +1553,14 @@ const ELITE_FLOOR := 12.0              # 灵兽王 / 秘境之主的下限倍数
 
 
 ## 一套暗器的输出：x = 一发的伤害，y = 每秒伤害
-func kit_output(weapon: String, level: int, upg_dmg: int) -> Vector2:
-	var d := weapon_stats(weapon, {"dmg": upg_dmg})
+func kit_output(weapon: String, level: int, upg_dmg: int, ch := 0) -> Vector2:
+	var d := weapon_stats(weapon, {"dmg": upg_dmg}, ch)
 	return weapon_output(d) * level_damage(level)
 
 
 func ref_output(chapter: int) -> Vector2:
 	var k: Array = REF_KIT.get(chapter, REF_KIT[1])
-	return kit_output(str(k[0]), int(k[1]), int(k[2]))
+	return kit_output(str(k[0]), int(k[1]), int(k[2]), chapter)
 
 
 ## 这一章某个年份的灵兽，血量至少要这么多（player：玩家的输出，Vector2.ZERO = 按这一章的标准算）
@@ -1610,9 +1610,25 @@ func pattern(w: Dictionary) -> Array:
 
 
 ## 暗器数值（算上升级）
-func weapon_stats(id: String, upgrades: Dictionary) -> Dictionary:
+## 暗器各有打法（2026-09-29，用户："到最后只能选最强那个武器"）：没有最强——每把的持续输出按"暗器档次"拉平
+## （GUN_TIER_DPS × GUN_STYLE），差别在怎么打（GunArts）。档次先跟着打到第几章走（ch = Profile.chapter），
+## 以后装备树做出来换成暗器派生的档次。伤害升级 / 升星 / 熟练度照旧往上加（投入过的那把更强，不是哪一种更强）
+const GUN_TIER_DPS := {1: 200.0, 2: 330.0, 3: 480.0, 4: 600.0, 5: 720.0}
+## 每把的持续输出系数：独门机制本身会多打出来的（梅花、抓窗口、雷、钉腿）先扣掉；副手（袖箭、寒梅）低一点
+const GUN_STYLE := {"xiujian": 0.8, "meihua": 0.75, "baoyu": 1.0, "zhuge": 0.95, "longxu": 0.9, "kongque": 0.8,
+	"zimu": 0.9, "hansha": 1.05, "zhuihun": 0.95, "guanyin": 0.9}
+
+
+func weapon_stats(id: String, upgrades: Dictionary, ch := 0) -> Dictionary:
 	var d: Dictionary = WEAPONS[id].duplicate(true)
 	d["id"] = id
+	if ch > 0 and GUN_STYLE.has(id):
+		var o := weapon_output(d).y
+		if o > 0.0:
+			var nk := float(GUN_TIER_DPS[clampi(ch, 1, 5)]) * float(GUN_STYLE[id]) / o
+			d["damage"] = float(d["damage"]) * nk
+			if d.has("splash_dmg"):
+				d["splash_dmg"] = float(d["splash_dmg"]) * nk
 	var lv_dmg := int(upgrades.get("dmg", 0))
 	var lv_mag := int(upgrades.get("mag", 0))
 	var lv_rel := int(upgrades.get("reload", 0))

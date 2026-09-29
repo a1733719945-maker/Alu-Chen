@@ -7,14 +7,16 @@ extends Node3D
 var follow: Callable            # 每帧问它头在哪（返回 Vector3.INF 就收掉）
 var dur := 1.0
 var size := 1.0
+var color := Color(1.0, 0.82, 0.35)   # 金光（破绽）；追星针的星是青白
 var _age := 0.0
 var _flare: MeshInstance3D
 var _ring: MeshInstance3D
 var _light: OmniLight3D
 
 
-static func spawn(parent: Node, follow_fn: Callable, t: float, sz: float) -> WeakGlint:
+static func spawn(parent: Node, follow_fn: Callable, t: float, sz: float, col := Color(1.0, 0.82, 0.35)) -> WeakGlint:
 	var g := WeakGlint.new()
+	g.color = col
 	g.follow = follow_fn
 	g.dur = t
 	g.size = sz
@@ -40,16 +42,16 @@ func _build() -> void:
 	q.size = Vector2.ONE
 	_flare = MeshInstance3D.new()
 	_flare.mesh = q
-	_flare.material_override = FxLib.bill_mat("flare", Color(1.0, 0.82, 0.35), 3.0)
+	_flare.material_override = FxLib.bill_mat("flare", color, 3.0)
 	_flare.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_flare)
 	_ring = MeshInstance3D.new()
 	_ring.mesh = q
-	_ring.material_override = FxLib.bill_mat("ring", Color(1.0, 0.72, 0.28), 2.2)
+	_ring.material_override = FxLib.bill_mat("ring", color.darkened(0.08), 2.2)
 	_ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_ring)
 	_light = OmniLight3D.new()
-	_light.light_color = Color(1.0, 0.75, 0.35)
+	_light.light_color = color
 	_light.omni_range = 4.0 * size
 	_light.light_energy = 0.0
 	add_child(_light)
