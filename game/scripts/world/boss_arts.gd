@@ -132,21 +132,12 @@ func on_stun(d: Array) -> void:
 	world.fx._sparks(p, Vector3.UP, Color(1.0, 0.85, 0.3), 40, 10.0, 0.8, 0.09, -6.0, 180.0)
 	world.fx._air_ring(p + Vector3.UP * 1.5, Color(1.0, 0.85, 0.4), 1.0, 4.0, 0.6, 1.0, "ring", 3.0)
 	Sfx.play_at("snap", p, 4.0, 0.0, 0.8)
-	# 头上一个一闪一闪的"破绽"
-	var l := U.label3d("破绽", 90, Color(1.0, 0.85, 0.35), 14)
-	l.no_depth_test = true
-	l.fixed_size = true
-	l.pixel_size = 0.0013
-	world.fx.add_child(l)
-	l.global_position = p + Vector3.UP * 3.0
-	var tw := l.create_tween().set_loops(int(ceil(dur / 0.5)))
-	tw.tween_property(l, "modulate:a", 0.35, 0.25)
-	tw.tween_property(l, "modulate:a", 1.0, 0.25)
-	var tf := l.create_tween()
-	tf.tween_interval(dur)
-	tf.tween_callback(l.queue_free)
+	# 以前头上飘"破绽"两个字 + 横幅（用户："不是很搞笑么"）。现在：Boss 自己踉跄（Boss._update_visual 看 stun_vis）+ 弱点一团金光（WeakGlint）
+	WeakGlint.spawn(world.fx, func() -> Vector3:
+		return b.weak_point() if is_instance_valid(b) and not b.dead and b.stun_vis > 0.0 else Vector3.INF, dur, clampf(b.size.y * 0.08, 1.0, 3.0))
 	if b.center().distance_to(world.player.global_position) < 90.0:
-		world.hud._show_banner("破绽！", "打它的头：伤害 ×2（%.0f 秒）" % dur, Color(1.0, 0.85, 0.35), 1.6)
+		Sfx.play_at("thud", p, 6.0, 0.0, 0.6)
+		WeakGlint.tip_once(world)
 
 
 # ------------------------------------------------------------------ 每台电脑：画出来、判断打没打到自己

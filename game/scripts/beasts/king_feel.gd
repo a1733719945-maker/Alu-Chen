@@ -55,7 +55,7 @@ var act := 1
 var _pose := ""
 var _pose_t := 0.0
 var _pose_len := 1.0
-var _open_label: Label3D
+var _glint: WeakGlint
 
 
 ## 房主：给猎物挂上
@@ -373,21 +373,30 @@ func _on_event(kind: String, arg: String) -> void:
 				hud.toast("%s 累了：捆住它的好时机" % nm, Color(0.6, 0.85, 1.0), 3.0)
 
 
-## 露破绽：头上一闪一闪的「破绽」，近的人听到一声、看到一句提示
+## 露破绽：不写字（用户："头上写「破绽」两个字，不是很搞笑么"）——踉跄的动作（_process）+ 头上弱点一团金光 + 一声闷响、喘气；
+## 第一次出现提示一句怎么打
 func _show_open(t: float) -> void:
-	if _open_label == null:
-		_open_label = U.label3d("破绽", 90, Color(1.0, 0.85, 0.35), 14)
-		_open_label.no_depth_test = true
-		_open_label.fixed_size = true
-		_open_label.pixel_size = 0.0012
-		_open_label.top_level = true
-		add_child(_open_label)
-	_open_label.global_position = b.global_position + Vector3.UP * (_height + 1.2)
-	var fx: Node = world.fx
-	fx._flash(b.global_position + Vector3.UP * _height * 0.6, Color(1.0, 0.9, 0.5), 2.5 * b.size_k, 0.25, "flare", 2.0)
+	if _glint and is_instance_valid(_glint):
+		_glint.extend(t)
+	else:
+		_glint = WeakGlint.spawn(world.fx, Callable(self, "_glint_pos"), t, maxf(_height * 0.35, 0.6))
 	if world.player.global_position.distance_to(b.global_position) < 70.0:
-		Sfx.play_at("snap", b.global_position, 2.0, 0.05, 0.9)
-		world.hud.toast("破绽！%.0f 秒内伤害 ×1.3，打头 ×2" % t, Color(1.0, 0.85, 0.35), 1.4)
+		Sfx.play_at("thud", b.global_position, 4.0, 0.05, 0.8)
+		Sfx.play_at("exhale", b.global_position, 2.0, 0.1, 0.7)
+		WeakGlint.tip_once(world)
+
+
+## 弱点金光跟着头走（灵兽没了就收掉）
+func _glint_pos() -> Vector3:
+	if not is_instance_valid(b) or not b.alive() or open_t <= 0.0:
+		return Vector3.INF
+	return _head_pos() + Vector3.UP * _height * 0.15
+
+
+func _head_pos() -> Vector3:
+	if _skel and _skel.find_bone("Head") >= 0:
+		return _skel.global_transform * _skel.get_bone_global_pose(_skel.find_bone("Head")).origin
+	return b.global_transform * (_center + _front * _half * 0.9 + Vector3.UP * _height * 0.2)
 
 
 func _break_effect(p: String) -> String:
@@ -501,13 +510,14 @@ func _process(dt: float) -> void:
 		else:
 			b.model.rotate(side, 0.3 * k)
 			b.model.position.y += _height * 0.04 * k
+	# 破绽：踉跄——身子往一边歪、低头、左右晃（弱点的金光是 WeakGlint）
 	if open_t > 0.0:
 		open_t = maxf(open_t - dt, 0.0)
-	if _open_label:
-		_open_label.visible = open_t > 0.0
-		if open_t > 0.0:
-			_open_label.global_position = b.global_position + Vector3.UP * (_height + 1.2)
-			_open_label.modulate.a = 0.55 + 0.45 * absf(sin(Time.get_ticks_msec() / 1000.0 * 6.0))
+		var k := clampf(open_t / 0.3, 0.0, 1.0)
+		var tm := Time.get_ticks_msec() / 1000.0
+		b.model.rotate(_front, (0.1 + sin(tm * 2.8) * 0.07) * k)
+		b.model.rotate(_front.cross(Vector3.UP).normalized(), -0.1 * k)
+		b.model.position.y -= _height * 0.05 * k
 	# 暴怒冒红气、累了喘白气（从头那里出来）
 	_fx_t -= dt
 	if _fx_t <= 0.0 and mood != "calm" and world.player.global_position.distance_to(b.global_position) < 70.0:

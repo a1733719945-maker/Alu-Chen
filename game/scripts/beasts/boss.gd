@@ -1417,6 +1417,13 @@ func _update_visual(dt: float) -> void:
 		var breathe := sin(_t * 1.7) * 0.015 * (1.0 - _gait_k)
 		model.scale = Vector3(1.0 - breathe * 0.4, 1.0 + breathe, 1.0 - breathe * 0.4)
 		model.rotation.y = sin(_t * 0.45) * 0.06 * (1.0 - _gait_k)
+	# 破绽（BossArts.stun）：踉跄——往一边歪、低头、慢慢晃、身子沉下去（以前是头上飘"破绽"两个字）
+	if stun_vis > 0.0:
+		stun_vis = maxf(stun_vis - dt, 0.0)
+		var sk := clampf(stun_vis / 0.4, 0.0, 1.0)
+		model.rotation.x -= 0.12 * sk
+		model.rotation.z += (0.08 + sin(_t * 2.4) * 0.06) * sk
+		model.position.y -= size.y * 0.04 * sk
 	# 巨兽（朱厌）走路、冲锋：每一步地面一震，近处镜头跟着晃
 	if ai == "land" and size.y > 12.0 and not airborne and _speed > 1.0:
 		_step_d += _speed * dt

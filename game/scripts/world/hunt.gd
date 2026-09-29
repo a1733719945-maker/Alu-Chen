@@ -1062,7 +1062,7 @@ func _update_ui(tb: Beast) -> void:
 				_t_mood.text = "倒地！%d 秒" % ceili(f.down_t)
 				_t_mood.modulate = Color(1.0, 0.85, 0.35)
 			elif f.open_t > 0.0:
-				_t_mood.text = "破绽！%d 秒" % ceili(f.open_t)
+				_t_mood.text = "踉跄 · 打头 ×2"
 				_t_mood.modulate = Color(1.0, 0.85, 0.35)
 			elif f.mood == "rage":
 				_t_mood.text = "暴怒 %d 秒" % ceili(f.mood_t)
