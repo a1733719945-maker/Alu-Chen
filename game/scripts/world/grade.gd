@@ -98,6 +98,34 @@ void fragment() {
 }"""
 
 
+## 便宜版（中画质）：不读屏幕（读屏幕要把整个画面复制一遍），只做四角压暗 + 颗粒，乘到画面上
+const POST_CHEAP := """shader_type canvas_item;
+render_mode blend_mul;
+uniform float vignette = 0.22;
+uniform float grain = 0.028;
+void fragment() {
+	vec2 d = (SCREEN_UV - 0.5) * vec2(1.0, 0.75);
+	float v = 1.0 - smoothstep(0.2, 0.62, length(d)) * vignette;
+	float g = fract(sin(dot(FRAGCOORD.xy + fract(TIME * 7.13) * 91.7, vec2(12.9898, 78.233))) * 43758.5453);
+	v *= 1.0 - g * grain * 1.4;
+	COLOR = vec4(v, v, v, 1.0);
+}"""
+
+static var _shaders := {}
+
+
+## full：高画质以上用读屏幕的完整版（多一点锐化），中画质用便宜版（低画质整层关掉）
+static func set_full(layer: CanvasLayer, full: bool) -> void:
+	if layer == null or layer.get_child_count() == 0:
+		return
+	var key := "full" if full else "cheap"
+	if not _shaders.has(key):
+		var s := Shader.new()
+		s.code = POST if full else POST_CHEAP
+		_shaders[key] = s
+	((layer.get_child(0) as ColorRect).material as ShaderMaterial).shader = _shaders[key]
+
+
 ## 屏幕后处理层：锐化、四角压暗、胶片颗粒（HUD 在它上面，不受影响）
 static func overlay() -> CanvasLayer:
 	var layer := CanvasLayer.new()
@@ -106,9 +134,7 @@ static func overlay() -> CanvasLayer:
 	var r := ColorRect.new()
 	r.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	r.set_anchors_preset(Control.PRESET_FULL_RECT)
-	var m := ShaderMaterial.new()
-	m.shader = Shader.new()
-	m.shader.code = POST
-	r.material = m
+	r.material = ShaderMaterial.new()
 	layer.add_child(r)
+	set_full(layer, Settings.quality >= 2)
 	return layer

@@ -1454,7 +1454,10 @@ const HUNT_HP_PER := 0.45
 const HUNT_WEAK := 0.2
 ## 样板狩猎第二步（2026-09-29 大号）：猎物血量按"全队最强暗器一直开火要打多少秒"定（Data.hunt_hp）。
 ## 以前是灵兽王下限 × 0.6，单人一直开火 10~20 秒就打死了；现在 120 秒——算上躲招、露破绽才打、追它换地方、换弹，一场大约 12~15 分钟
-const HUNT_TTK := 120.0
+## 2026-09-30 用户："追猎还是 1-2 分钟就打完了"：血量以前只跟玩家输出的 0.75 次方走（暗器越强越快），也没算爆头、破绽、打晕的加伤。
+## 现在比这一章标准强的完全跟着走、一直开火 200 秒，再乘 HUNT_HIT_K（平均每发比面板高多少）
+const HUNT_TTK := 200.0
+const HUNT_HIT_K := 1.35
 const HUNT_TTK_PER := 0.75      # 每多一个人多打这么多（人多输出也多）
 const DG_MOB_DMG_CH := {1: 1.0, 2: 1.0, 3: 0.92, 4: 0.85, 5: 0.68}   # 后面几章再乘一点（机器人：第五章站着不动只用狙击，打到第三波才倒）
 # 秘境小怪血量按章再乘：第五章秘境整体高了一档年份（千年 → 万年起），血量压回来一些
@@ -1578,8 +1581,9 @@ func hp_floor(chapter: int, age: int, player: Vector2) -> float:
 func hunt_hp(chapter: int, player: Vector2, n: int) -> float:
 	var r := ref_output(chapter)
 	var p := player if player.x > 0.0 else r
-	var dps := pow(p.y, HP_FOLLOW) * pow(r.y, 1.0 - HP_FOLLOW)
-	return dps * HUNT_TTK * (1.0 + HUNT_TTK_PER * float(maxi(n, 1) - 1))
+	# 比标准强：完全跟着走；比标准弱（等级不够就来了）：还是 0.75 次方，别把人磨死
+	var dps := p.y if p.y >= r.y else pow(p.y, HP_FOLLOW) * pow(r.y, 1.0 - HP_FOLLOW)
+	return dps * HUNT_TTK * HUNT_HIT_K * (1.0 + HUNT_TTK_PER * float(maxi(n, 1) - 1))
 
 
 func beast_max_hp(species: String, age: int) -> float:

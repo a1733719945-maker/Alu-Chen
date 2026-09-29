@@ -9,7 +9,11 @@ uniform vec3 foam_color : source_color = vec3(0.92, 0.97, 0.95);
 uniform float depth_fade = 4.5;
 uniform float foam_width = 0.7;
 uniform float wave_height = 0.12;
+// 便宜版（WorldBuilder 在低 / 中画质前面加 #define CHEAP）：不读屏幕、不透明——读一次屏幕 + 画透明水面一帧要好几毫秒
+#ifndef CHEAP
 uniform sampler2D screen_texture : hint_screen_texture, filter_linear_mipmap;
+#endif
+uniform vec3 bottom_color : source_color = vec3(0.6, 0.54, 0.42);
 // 岛的高度图（每个像素 1 米），用来算每一处的水深；比读深度图稳定，不挑显卡
 uniform sampler2D height_tex : filter_linear, repeat_disable;
 uniform float terrain_half = 160.0;
@@ -63,8 +67,13 @@ void fragment() {
 	vec3 col = mix(shallow_color, deep_color, k);
 
 	// 轻微折射：透过浅水能看到水底
+#ifndef CHEAP
 	vec2 ofs = NORMAL.xz * 0.02;
 	vec3 below = texture(screen_texture, SCREEN_UV + ofs).rgb;
+#else
+	// 不读屏幕：浅水处当作看得见沙底
+	vec3 below = bottom_color * (0.85 + noise(world_pos.xz * 0.7) * 0.3);
+#endif
 	col = mix(below * shallow_color * 1.4, col, clamp(k * 1.6 + 0.35, 0.0, 1.0));
 
 	// 岸边白沫
@@ -83,5 +92,7 @@ void fragment() {
 	ROUGHNESS = 0.04 + murk * 0.12;
 	METALLIC = 0.0;
 	SPECULAR = 0.6;
+#ifndef CHEAP
 	ALPHA = clamp(0.82 + murk * 0.15 + fres * 0.18 + foam * 0.2, 0.0, 1.0);
+#endif
 }

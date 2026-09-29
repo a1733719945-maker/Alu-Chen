@@ -171,6 +171,8 @@ func _area_k() -> float:
 # ------------------------------------------------------------------ 猎场：营地
 
 var grade_layer: CanvasLayer           # 屏幕后处理（Grade.overlay）
+var water_mat: ShaderMaterial
+var terrain_mi: MeshInstance3D
 var camp_pos := Vector3.ZERO          # 营地补给箱（按 F 打开暗器铺买补给）
 
 
@@ -233,14 +235,42 @@ func apply_quality() -> void:
 	var q := Settings.quality
 	# 手机渲染器没有 SSAO / SSIL / 体积雾（开了只会刷警告）
 	var full := RenderingServer.get_current_rendering_method() == "forward_plus"
-	env.ssao_enabled = q >= 1 and full
+	# SSAO 高画质才开（2026-09-30 量的，笔记本 4060 中画质）：开了以后深度预处理要多算一遍法线和粗糙度
+	# （地形四层贴图混合、树叶的凹凸全在里面），一帧 20 → 15 毫秒
+	env.ssao_enabled = q >= 2 and full
 	env.ssil_enabled = q >= 3 and full
+	# 地形投影子（山挡太阳）：高画质才开，中低一帧省 1 毫秒
+	if terrain_mi:
+		terrain_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if q >= 2 else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	env.volumetric_fog_enabled = (ENV[biome] as Dictionary).has("vol") and q >= 2 and full
 	if grade_layer:
 		grade_layer.visible = q >= 1
+		Grade.set_full(grade_layer, q >= 2)
+	if water_mat:
+		water_mat.shader = water_shader(q)
 	sun.directional_shadow_max_distance = [70.0, 100.0, 120.0, 170.0][clampi(q, 0, 3)] * (0.7 if Settings.is_mobile() else 1.0)
 	# 影子：极高才四层（四层每一层都要把满地的树叶再画一遍，笔记本 4060 上一层要好几毫秒）
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS if q >= 3 else DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
+
+
+static var _variants := {}
+
+
+## 着色器变体：在 shader_type 那行后面加一个 #define（树叶 / 草的 A2C：只在极高画质开）
+static func variant(base: Shader, define: String) -> Shader:
+	var key := "%s|%s" % [base.resource_path, define]
+	if not _variants.has(key):
+		var s := Shader.new()
+		s.code = base.code.replace("shader_type spatial;", "shader_type spatial;\n#define %s" % define)
+		_variants[key] = s
+	return _variants[key]
+
+
+## 水：高画质以上读屏幕做折射（半透明），中低画质用不读屏幕的不透明版（一帧省好几毫秒）
+static func water_shader(q: int) -> Shader:
+	if q >= 2:
+		return WATER_SHADER
+	return variant(WATER_SHADER, "CHEAP")
 
 
 func _density() -> float:
@@ -609,6 +639,7 @@ func _terrain() -> void:
 	mi.name = "TerrainMesh"
 	mi.mesh = mesh
 	mi.material_override = _ground_material()
+	terrain_mi = mi
 	root.add_child(mi)
 
 	var body := StaticBody3D.new()
@@ -631,7 +662,8 @@ func _water() -> void:
 	pm.subdivide_width = 200
 	pm.subdivide_depth = 200
 	var sm := ShaderMaterial.new()
-	sm.shader = WATER_SHADER
+	sm.shader = water_shader(Settings.quality)
+	water_mat = sm
 	var img := Image.create_from_data(island.size, island.size, false, Image.FORMAT_RF, island.heights.to_byte_array())
 	sm.set_shader_parameter("height_tex", ImageTexture.create_from_image(img))
 	sm.set_shader_parameter("terrain_half", float(island.half))
@@ -1431,7 +1463,7 @@ func _bark(tint: Color) -> StandardMaterial3D:
 
 func _leaves(tex: String, tint: Color, backlight: Color) -> ShaderMaterial:
 	var m := ShaderMaterial.new()
-	m.shader = FOLIAGE_SHADER
+	m.shader = FOLIAGE_SHADER if quality < 3 else variant(FOLIAGE_SHADER, "A2C")
 	var t: Texture2D = load(FOLIAGE + tex + ".png")
 	m.set_shader_parameter("leaf_tex", t)
 	# 阔叶贴图 2026-09-29 换成 1024（tools/make_leaves.py），凹凸按贴图的像素算
@@ -1856,7 +1888,7 @@ func _tuft_mesh(w: float, h: float) -> ArrayMesh:
 
 func _grass_mat(tex: String, sway: float, fade: float, glow := Color.BLACK) -> ShaderMaterial:
 	var sm := ShaderMaterial.new()
-	sm.shader = GRASS_SHADER
+	sm.shader = GRASS_SHADER if quality < 3 else variant(GRASS_SHADER, "A2C")
 	sm.set_shader_parameter("glow", glow)
 	sm.set_shader_parameter("grass_tex", load(FOLIAGE + tex + ".png"))
 	sm.set_shader_parameter("sway", sway)

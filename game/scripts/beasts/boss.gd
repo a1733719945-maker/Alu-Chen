@@ -1403,6 +1403,9 @@ func _update_visual(dt: float) -> void:
 		_slam_t -= dt
 	var fwd := maxf(_slam_t, 0.0) / 0.3
 	model.rotation.x = 0.2 * lift - 0.12 * fwd
+	# 侧倾每帧从零算：下面踉跄是往上加的，以前带骨骼动作的朱厌不走程序步态、没人归零，
+	# 一次破绽累加到几十弧度，之后一直歪着（2026-09-30 用户："朱厌一直是歪着倒着的"）
+	model.rotation.z = 0.0
 	model.position.y = _model_y0 + size.y * 0.05 * lift
 	if _static_model and ai == "land" and dt > 0.0:
 		# 程序步态：一步一沉（和下面震地的步子同一个步长）、身子左右晃、跑起来前倾；站着的时候慢慢喘气

@@ -1076,8 +1076,15 @@ func _elite(delta: float, m: String, touching: bool) -> void:
 		var tpos: Vector3 = tp["pos"]
 		var near := tpos.distance_to(global_position) < 20.0
 		# 猎场的猎物追得远（大地图），岛上的灵兽王守着老家
-		var leash := 90.0 if hunt_role == "target" else 45.0
+		# 守宝王：在 45 米外朝它开枪，它以前站在宝箱边不理人——现在追出 80 米
+		var leash := 90.0 if hunt_role == "target" else (80.0 if hunt_role == "guard" else 45.0)
 		var leashed := Vector2(tpos.x - home.x, tpos.z - home.z).length() > leash
+		# 猎场的猎物挨了打就地开打：以前拴绳按"老家"算，它在去下一片栖息地的路上（老家是几百米外的目的地）
+		# 挨打不还手，顶着树继续往前走（2026-09-30 用户："卡在树前面，我打他他也不打我"）
+		if hunt_role == "target" and _aggro_t > 0.0:
+			leashed = Vector2(tpos.x - global_position.x, tpos.z - global_position.z).length() > 150.0
+			spawn_pos = global_position
+			home = spawn_pos
 		fight = (near or _aggro_t > 0.0) and not leashed
 	if fight:
 		if arts:
@@ -1097,13 +1104,16 @@ func _elite(delta: float, m: String, touching: bool) -> void:
 		if touching:
 			if to.length() > 2.5:
 				var dir := to.normalized()
-				linear_velocity = Vector3(dir.x * home_speed, minf(linear_velocity.y, 0.5), dir.z * home_speed)
+				# 猎物走远路换栖息地：顶着树 / 石头走不动就斜着绕开（和打架、换地方时一样）
+				if arts:
+					dir = arts._steer(dir, delta, touching)
+				linear_velocity = Vector3(dir.x * home_speed, minf(linear_velocity.y, 0.5) if linear_velocity.y < 1.0 else linear_velocity.y, dir.z * home_speed)
 				_face(dir, 0.2)
 			else:
 				linear_velocity = Vector3(0, minf(linear_velocity.y, 0.5), 0)
 			angular_velocity = Vector3.ZERO
-	if to.length() < 4.0:
-		# 回到老家慢慢回血（猎场的猎物回得很慢，不然追丢一会儿就白打了）
+	# 回到老家慢慢回血（猎场的猎物回得很慢，而且 60 米内有人就不回，不然躲一会儿招就白打了）
+	if to.length() < 4.0 and (hunt_role != "target" or world.nearest_player_pos(global_position).distance_to(global_position) > 60.0):
 		hp = minf(hp + max_hp * (0.004 if hunt_role == "target" else 0.04) * delta, max_hp)
 
 

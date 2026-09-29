@@ -55,8 +55,11 @@ void fragment() {
 	ALBEDO = col * tint * COLOR.rgb;
 	ALPHA = a;
 	ALPHA_SCISSOR_THRESHOLD = alpha_cut;
+#ifdef A2C
+	// 只在极高画质（开 MSAA）用：写了 ALPHA_ANTIALIASING_EDGE 引擎就把它当半透明画（不能提前剔除被挡住的叶子），中低画质一帧多好几毫秒
 	ALPHA_ANTIALIASING_EDGE = 0.3;
 	ALPHA_TEXTURE_COORDINATE = UV * tex_size;
+#endif
 	ROUGHNESS = 0.75;
 	SPECULAR = 0.3;
 	BACKLIGHT = backlight * c.rgb * 2.0;

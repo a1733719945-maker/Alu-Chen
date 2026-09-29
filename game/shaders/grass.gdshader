@@ -41,8 +41,11 @@ void fragment() {
 	ALBEDO = c.rgb * tint * COLOR.rgb * var_c * mix(root_dark, vec3(1.0), smoothstep(0.0, 0.6, tip));
 	ALPHA = c.a * (1.0 + max(mip, 0.0) * 0.35);
 	ALPHA_SCISSOR_THRESHOLD = 0.45;
+#ifdef A2C
+	// 只在极高画质（开 MSAA）用，见 foliage.gdshader
 	ALPHA_ANTIALIASING_EDGE = 0.55;
 	ALPHA_TEXTURE_COORDINATE = UV * 512.0;
+#endif
 	ROUGHNESS = 0.85;
 	BACKLIGHT = backlight;
 	EMISSION = glow * c.rgb * (0.4 + tip * 1.2);

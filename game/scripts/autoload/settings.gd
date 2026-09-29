@@ -235,6 +235,9 @@ func apply() -> void:
 		vp.msaa_3d = Viewport.MSAA_4X if q >= 3 else Viewport.MSAA_DISABLED
 		vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED if q >= 3 else Viewport.SCREEN_SPACE_AA_FXAA
 		RenderingServer.directional_shadow_atlas_set_size(4096 if q >= 3 else 2048, true)
+		# 影子边缘柔化：每个有光照的像素（地面、水、树叶）都要多采样几次，项目设置里是"中等"，按画质分档
+		RenderingServer.directional_soft_shadow_filter_set_quality([RenderingServer.SHADOW_QUALITY_SOFT_VERY_LOW, RenderingServer.SHADOW_QUALITY_SOFT_LOW,
+			RenderingServer.SHADOW_QUALITY_SOFT_MEDIUM, RenderingServer.SHADOW_QUALITY_SOFT_HIGH][q])
 		# 3D 画面按比例渲染再放大（手机上省很多），界面还是原分辨率
 		# 电脑上降分辨率用 FSR（放大后更清楚），手机用最省的双线性
 		vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR if is_mobile() or render_scale > 0.99 else Viewport.SCALING_3D_MODE_FSR

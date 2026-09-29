@@ -104,6 +104,10 @@ func _ready() -> void:
 		if args.has("chapter"):
 			Profile.chapter = int(args["chapter"])
 			Profile.save_profile()
+		# --quality=N：这一次用哪档画质（量性能用；不存进设置）
+		if args.has("quality"):
+			Settings.quality = clampi(int(args["quality"]), 0, Settings.QUALITY_MAX)
+			Settings.apply()
 		_plan.clear()
 		for e in str(args["plan"]).split(","):
 			_plan.append(e.replace("+", ","))
@@ -245,6 +249,8 @@ func _process(dt: float) -> void:
 			_run_events()
 		"bossshot":
 			_run_bossshot()
+		"bossfightshot":
+			_run_bossfight_shot()
 		"skills2":
 			_run_skills2()
 		"down":
@@ -329,6 +335,8 @@ func _process(dt: float) -> void:
 			_run_fps_nomsaa()
 		"fpscats":
 			_run_fps_cats()
+		"fpscum":
+			_run_fps_cum()
 		"hunt2shot":
 			_run_hunt2shot()
 		"fpshot":
@@ -2789,6 +2797,53 @@ func _run_bossshot() -> void:
 				_next_phase()
 
 
+## 灵主打起来的样子：另放一个镜头在斜上方跟着拍（不挡树），玩家站在旁边当靶子，每 1.2 秒一张
+func _run_bossfight_shot() -> void:
+	var w := _ready_world()
+	if not w:
+		return
+	var p := w.player
+	p.hp = 99999.0
+	match _step:
+		0:
+			w._host_spawn_boss()
+			_next(1)
+		1:
+			if _step_t < 4.0 or not w.boss:
+				return
+			var c := w.boss.center()
+			p.teleport(Vector3(c.x + 14.0, w.island.height_at(c.x + 14.0, c.z) + 0.3, c.z))
+			var cam := Camera3D.new()
+			cam.name = "ShotCam"
+			cam.fov = 60.0
+			w.add_child(cam)
+			cam.make_current()
+			_mem["cam"] = cam
+			w.hud.visible = false
+			for n in _cat_nodes(w, "树"):
+				(n as Node3D).visible = false
+			_next(2)
+		2:
+			if not w.boss:
+				_next_phase()
+				return
+			var cam: Camera3D = _mem["cam"]
+			var c := w.boss.center()
+			var far := maxf(w.boss.size.x, maxf(w.boss.size.y, w.boss.size.z)) * 1.25 + 6.0
+			var at := c + Vector3(0.75, 0.3, 0.6).normalized() * far
+			cam.global_position = at
+			cam.look_at(c, Vector3.UP)
+			var n := int(_step_t / 0.7)
+			if n >= 1 and n <= 24 and not _mem.has("f%d" % n):
+				_mem["f%d" % n] = true
+				var ap: AnimationPlayer = w.boss.model.get_meta("ap") if w.boss.model.has_meta("ap") else null
+				var an := "%s_%s_%.1f_x%.2f" % [ap.current_animation if ap else "-", "p" if ap and ap.is_playing() else "s", ap.current_animation_position if ap and ap.is_playing() else -1.0, ap.speed_scale if ap else 0.0]
+				print("[autotest] 朱厌 %d：%s 状态 %s 动作 %s 位置 %s 转角 %s" % [n, an, w.boss.state, str(w.boss._act.get("type", "")), str(w.boss.model.position), str(w.boss.model.rotation)])
+				await _shot("fight_%02d_%s" % [n, an])
+			elif _step_t > 18.0:
+				_next_phase()
+
+
 ## 奇遇 + 海鸥群 + 灵兽独门招式（平时自动测试里关着，这里专门跑一遍）
 func _run_events() -> void:
 	var w := _ready_world()
@@ -5049,15 +5104,15 @@ func _cat_nodes(w: World, cat: String) -> Array:
 				var mmi := n as MultiMeshInstance3D
 				var mm := mmi.multimesh
 				var sh: Shader = (mmi.material_override as ShaderMaterial).shader if mmi.material_override is ShaderMaterial else null
-				var tree := mm != null and mm.mesh != null and mm.mesh.get_surface_count() >= 2 and mm.mesh.surface_get_material(1) is ShaderMaterial and (mm.mesh.surface_get_material(1) as ShaderMaterial).shader == WorldBuilder.FOLIAGE_SHADER
-				var c := "树" if tree else ("草" if sh == WorldBuilder.GRASS_SHADER else ("落叶" if sh == WorldBuilder.LITTER_SHADER else "石头灌木"))
+				var tree := mm != null and mm.mesh != null and mm.mesh.get_surface_count() >= 2 and mm.mesh.surface_get_material(1) is ShaderMaterial and (mm.mesh.surface_get_material(1) as ShaderMaterial).shader.code.contains("leaf_tex")
+				var c := "树" if tree else ("草" if sh and sh.code.contains("grass_tex") else ("落叶" if sh == WorldBuilder.LITTER_SHADER else "石头灌木"))
 				if c == cat:
 					out.append(mmi)
 		"地形", "水", "房子装饰（场景里别的）":
 			for n in w.builder.root.find_children("*", "MeshInstance3D", true, false):
 				var mi := n as MeshInstance3D
 				var sh: Shader = (mi.material_override as ShaderMaterial).shader if mi.material_override is ShaderMaterial else null
-				var c := "地形" if sh == WorldBuilder.TERRAIN_SHADER else ("水" if sh == WorldBuilder.WATER_SHADER else "房子装饰（场景里别的）")
+				var c := "地形" if sh == WorldBuilder.TERRAIN_SHADER else ("水" if mi.name == "Water" else "房子装饰（场景里别的）")
 				if c == cat:
 					out.append(mi)
 			if cat == "房子装饰（场景里别的）" and w.decor:
@@ -5099,7 +5154,7 @@ func _run_fps_cats() -> void:
 	var avg := s / maxf(a.size(), 1)
 	if i == 0:
 		_mem["gpu0"] = avg
-		_note("全开：GPU %.1f 毫秒（MSAA %d）" % [avg, get_viewport().msaa_3d])
+		_note("全开：GPU %.1f 毫秒（MSAA %d），画面 %s，渲染比例 %.2f，draw call %d，三角形 %d 万，物体 %d" % [avg, get_viewport().msaa_3d, str(get_viewport().get_visible_rect().size), get_viewport().scaling_3d_scale, int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)), int(Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME) / 10000), int(Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME))])
 	else:
 		_note("藏掉%s（%d 个）：GPU %.1f 毫秒，省 %.1f" % [cat, _cat_nodes(w, cat).size(), avg, float(_mem["gpu0"]) - avg])
 	# 放回来
@@ -5108,6 +5163,85 @@ func _run_fps_cats() -> void:
 	else:
 		for n in _cat_nodes(w, cat):
 			(n as Node3D).visible = true
+	_next(i + 1)
+
+
+## 先改 3D 渲染比例（1 / 0.75 / 0.5，看是不是卡在像素上），再一类一类累加着藏（看剩下的是什么），配合 --gpu-profile
+const FPS_CUM := ["比例 1", "比例 0.75", "比例 0.5", "比例 1 + 藏草", "+ 藏树", "+ 藏落叶", "+ 藏石头灌木", "+ 藏房子装饰", "+ 藏地形", "+ 藏水", "+ 关影子", "+ 关 SSAO 泛光", "+ 藏 HUD 和手"]
+## --cum=ab：设置一步步关（什么都不藏）
+const FPS_AB := ["全开", "关 SSAO", "+ 关泛光", "+ 地形不投影子", "+ 树不投影子", "+ 影子一层", "+ 渲染比例 0.8"]
+
+
+func _run_fps_ab(w: World, i: int) -> void:
+	var vp := get_viewport()
+	match i:
+		1: w.builder.env.ssao_enabled = false
+		2: w.builder.env.glow_enabled = false
+		3:
+			for n in _cat_nodes(w, "地形"): (n as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		4:
+			for n in _cat_nodes(w, "树"): (n as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		5: w.builder.sun.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL
+		6:
+			vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR
+			vp.scaling_3d_scale = 0.8
+
+
+func _run_fps_cum() -> void:
+	var w := _ready_world()
+	if not w:
+		return
+	var i := _step
+	var ab := str(args.get("cum", "")) == "ab"
+	var names: Array = FPS_AB if ab else FPS_CUM
+	if i >= names.size():
+		_next_phase()
+		return
+	if not _mem.has("cum_%d" % i):
+		_mem["cum_%d" % i] = true
+		var vp := get_viewport()
+		if ab:
+			_run_fps_ab(w, i)
+		else:
+			match i:
+				0: vp.scaling_3d_scale = 1.0
+				1: vp.scaling_3d_scale = 0.75
+				2: vp.scaling_3d_scale = 0.5
+				3:
+					vp.scaling_3d_scale = 1.0
+					for n in _cat_nodes(w, "草"): (n as Node3D).visible = false
+				4:
+					for n in _cat_nodes(w, "树"): (n as Node3D).visible = false
+				5:
+					for n in _cat_nodes(w, "落叶"): (n as Node3D).visible = false
+				6:
+					for n in _cat_nodes(w, "石头灌木"): (n as Node3D).visible = false
+				7:
+					for n in _cat_nodes(w, "房子装饰（场景里别的）"): (n as Node3D).visible = false
+				8:
+					for n in _cat_nodes(w, "地形"): (n as Node3D).visible = false
+				9:
+					for n in _cat_nodes(w, "水"): (n as Node3D).visible = false
+				10: w.builder.sun.shadow_enabled = false
+				11:
+					w.builder.env.ssao_enabled = false
+					w.builder.env.glow_enabled = false
+				12:
+					w.hud.visible = false
+					if w.player and w.player.get("viewmodel"):
+						(w.player.viewmodel as Node3D).visible = false
+	var rid := get_viewport().get_viewport_rid()
+	RenderingServer.viewport_set_measure_render_time(rid, true)
+	if _step_t < 1.5:
+		_mem["gpu"] = []
+		return
+	(_mem["gpu"] as Array).append(RenderingServer.viewport_get_measured_render_time_gpu(rid))
+	if _step_t < 3.5:
+		return
+	var s := 0.0
+	for v in _mem["gpu"]:
+		s += float(v)
+	_note("%s：GPU %.1f 毫秒，draw call %d，三角形 %d 万" % [names[i], s / maxf((_mem["gpu"] as Array).size(), 1), int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)), int(Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME) / 10000)])
 	_next(i + 1)
 
 
@@ -5390,6 +5524,9 @@ func _run_hunt2() -> void:
 			var b: Beast = w.beasts[w.hunt.target_id]
 			if not _check(b.arts != null and b.feel != null, "猎物身上没有 KingArts"):
 				return
+			if not _mem.has("wander_done"):
+				_next(20)
+				return
 			# 从头来：满血、没逃、没换过地方、不累
 			b.root_t = 0.0
 			b.hp = b.max_hp
@@ -5412,6 +5549,33 @@ func _run_hunt2() -> void:
 			_aim(w.player, b.global_position + Vector3.UP * 0.8)
 			_note("猎物 %s（%s）：%s 血" % [b.display_name(), "飞的" if fly else "走的", str(int(b.max_hp))])
 			_next(3)
+		20:
+			# 在去下一片栖息地的路上（老家是 300 米外的目的地）挨了一箭：要就地还手，不能顶着树继续往前走
+			# （2026-09-30 用户："卡在树前面，我打他他也不打我"）
+			var b: Beast = w.beasts[w.hunt.target_id]
+			b.hp = b.max_hp
+			b.arts.cur.clear()
+			b._aggro_t = 0.0
+			b.spawn_pos = b.global_position + Vector3(300, 0, 0)
+			var at := b.global_position + Vector3(-35.0, 0, 12.0)
+			at.y = w.island.height_at(at.x, at.z) + 0.4
+			w.player.teleport(at)
+			_mem["x0"] = b.global_position.x
+			_mem["d0"] = at.distance_to(b.global_position)
+			b.take_hit(1.0, Vector3.ZERO, Vector3.ZERO, false, Net.my_id, float(_mem["d0"]))
+			_next(21)
+		21:
+			var b: Beast = w.beasts[w.hunt.target_id]
+			w.player.hp = 99999.0
+			if _step_t < 3.0:
+				return
+			var home_d := b.spawn_pos.distance_to(b.global_position)
+			var dx := b.global_position.x - float(_mem["x0"])
+			if not _check(home_d < 10.0 and dx < 6.0, "路上挨打不还手：老家还在 %.0f 米外，往原来的方向走了 %.0f 米" % [home_d, dx]):
+				return
+			_note("路上挨打就地还手（离人 %.0f → %.0f 米）" % [float(_mem["d0"]), w.player.global_position.distance_to(b.global_position)])
+			_mem["wander_done"] = true
+			_next(2)
 		3:
 			# 一招一招放
 			var b: Beast = w.beasts.get(int(_mem["bid"]))
