@@ -4558,8 +4558,9 @@ func _run_garts() -> void:
 			var outs := []
 			var lo := INF
 			var hi := 0.0
+			# 比的是没投入过的基础（全流程前面的阶段会给暗器升级、升星——升星是赌的，每次不一样）
 			for id in Data.WEAPON_ORDER:
-				var o := Data.weapon_output(Profile.weapon_stats(str(id))).y
+				var o := Data.weapon_output(Data.weapon_stats(str(id), {}, Profile.chapter)).y
 				outs.append("%s %d" % [str(Data.WEAPONS[id]["name"]), int(o)])
 				lo = minf(lo, o)
 				hi = maxf(hi, o)
