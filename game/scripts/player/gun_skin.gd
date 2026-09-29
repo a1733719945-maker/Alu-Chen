@@ -52,6 +52,11 @@ uniform float d_mean = 0.5;
 uniform float d_alb_k = 0.8;
 uniform float d_nrm_k = 1.0;
 uniform float d_rgh_k = 0.8;
+// AI 生成的暗器模型（assets/models/weapons）：按模型自己的 UV 取贴图——颜色的明暗 + 法线 + ORM；
+// 金属的地方（ORM 的 B）保留原来的颜色和金属感（金色包边），不是金属的地方换成皮肤的颜色 / 花纹
+uniform int d_uv = 0;
+uniform sampler2D d_orm : hint_default_white, filter_linear_mipmap_anisotropic, repeat_enable;
+uniform float d_orm_on = 0.0;
 
 instance uniform vec3 rp_x = vec3(1.0, 0.0, 0.0);
 instance uniform vec3 rp_y = vec3(0.0, 1.0, 0.0);
@@ -247,7 +252,19 @@ void fragment() {
 		alb = base_col + col2 * web * 0.4;
 		em = col3 * web * pulse * glow;
 	}
-	if (d_on > 0.5) {
+	if (d_uv == 1) {
+		vec3 src = texture(d_alb, UV).rgb;
+		float lum = dot(src, vec3(0.299, 0.587, 0.114)) / max(d_mean, 0.01);
+		vec3 orm = d_orm_on > 0.5 ? texture(d_orm, UV).rgb : vec3(1.0, 0.6, 0.0);
+		float metal_px = smoothstep(0.35, 0.65, orm.b);
+		alb = mix(alb * mix(1.0, lum, d_alb_k), src, metal_px);
+		m = mix(m, max(orm.b, 0.85), metal_px);
+		r = mix(mix(r, orm.g, 0.6), orm.g, metal_px);
+		em *= 1.0 - metal_px;
+		NORMAL_MAP = texture(d_nrm, UV).rgb;
+		NORMAL_MAP_DEPTH = d_nrm_k;
+		AO = orm.r;
+	} else if (d_on > 0.5) {
 		// 三向投影（暗器根节点坐标，零件之间纹理连着）+ Whiteout 法线混合
 		vec3 bw = pow(abs(rn), vec3(4.0));
 		bw /= (bw.x + bw.y + bw.z);
@@ -349,6 +366,48 @@ static func material(sk: Dictionary, role: String, base: Color, weapon := "") ->
 			m.set_shader_parameter("paint_rough", float(fin["rough"]))
 			m.set_shader_parameter("paint_coat", float(fin["coat"]))
 	return m
+
+
+static var _lum_cache := {}
+
+
+## AI 生成的暗器模型穿皮肤：src 是模型原来的材质（带颜色 / 法线 / ORM 贴图），body 是皮肤里主体的颜色
+static func model_material(sk: Dictionary, body: Color, src: BaseMaterial3D, weapon := "") -> ShaderMaterial:
+	var m := material(sk, "lacquer", body, weapon)
+	m.set_shader_parameter("d_on", 0.0)
+	m.set_shader_parameter("d_uv", 1)
+	m.set_shader_parameter("d_alb", src.albedo_texture)
+	m.set_shader_parameter("d_nrm", src.normal_texture)
+	var orm: Texture2D = src.metallic_texture if src.metallic_texture else src.roughness_texture
+	if orm:
+		m.set_shader_parameter("d_orm", orm)
+		m.set_shader_parameter("d_orm_on", 1.0)
+	m.set_shader_parameter("d_mean", _mean_lum(src.albedo_texture))
+	m.set_shader_parameter("d_alb_k", 0.85)
+	m.set_shader_parameter("d_nrm_k", 1.0)
+	return m
+
+
+## 贴图平均亮度（缩成 16×16 再平均），皮肤按它把明暗拉回 1 附近
+static func _mean_lum(t: Texture2D) -> float:
+	if t == null:
+		return 0.5
+	if _lum_cache.has(t):
+		return _lum_cache[t]
+	var img := t.get_image()
+	var v := 0.5
+	if img:
+		if img.is_compressed():
+			img.decompress()
+		img.resize(16, 16, Image.INTERPOLATE_BILINEAR)
+		var s := 0.0
+		for y in 16:
+			for x in 16:
+				var c := img.get_pixel(x, y)
+				s += c.r * 0.299 + c.g * 0.587 + c.b * 0.114
+		v = maxf(s / 256.0, 0.05)
+	_lum_cache[t] = v
+	return v
 
 
 ## 零件相对暗器根节点的变换写进 instance uniform（花纹、画的图都按根节点坐标算）

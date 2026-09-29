@@ -107,6 +107,7 @@ static func fist(parent: Node3D, m: Dictionary, pos: Vector3, rot: Vector3, side
 	var h := Node3D.new()
 	h.position = pos
 	h.rotation = rot
+	h.set_meta("hand", true)
 	parent.add_child(h)
 	var gc := Vector3(-0.004 * side, 0, -0.004)      # 握把中心
 	# 手背 + 手掌（手套）
@@ -143,6 +144,7 @@ static func fist(parent: Node3D, m: Dictionary, pos: Vector3, rot: Vector3, side
 static func sleeve(parent: Node3D, m: Dictionary, wrist: Vector3, elbow: Vector3) -> Node3D:
 	var s := Node3D.new()
 	s.position = wrist
+	s.set_meta("hand", true)
 	parent.add_child(s)
 	# 让本地 +Z 指向手肘
 	s.basis = Basis.looking_at(-elbow.normalized(), Vector3.UP if absf(elbow.normalized().y) < 0.95 else Vector3.FORWARD)
@@ -215,7 +217,109 @@ static func build(id: String, skin := "", outfit := "", on: Variant = null, arms
 		var mat := (mi as MeshInstance3D).material_override
 		if GunSkin.is_skin_mat(mat):
 			(mat as ShaderMaterial).set_shader_parameter("paint_box", pb)
+	if has_model(id):
+		_swap_model(root, id, skin, pb)
 	return root
+
+
+# ------------------------------------------------------------------ AI 生成的暗器模型（混元，2026-09-29）
+
+## 有 assets/models/weapons/<id>.glb 就用它换掉代码拼的枪身；手、袖子、瞄具配件、挂件和各种挂点（Muzzle / Sight / Mag…）照旧。
+## 摆法：yaw 模型要转多少（枪口朝 +Z 的转 180°）；k 模型长度 = 代码枪身长度 × k；off 再挪一点（米，暗器坐标）
+const MODEL_DIR := "res://assets/models/weapons/"
+const MODEL_FIT := {
+	"zhuge": {"yaw": 0.0, "k": 1.12, "off": Vector3(0, 0.0, 0.0)},
+	"kongque": {"yaw": PI, "k": 1.08, "off": Vector3(0, 0.0, 0.0)},
+	"xiujian": {"yaw": 0.0, "k": 1.3, "off": Vector3(0, 0.0, 0.0)},
+}
+
+
+static func has_model(id: String) -> bool:
+	return MODEL_FIT.has(id) and ResourceLoader.exists(MODEL_DIR + id + ".glb")
+
+
+## 代码枪身（蒙皮材质的零件 + 玉、翎羽、弦）藏起来，量出它的范围，把模型按这个范围摆进去
+static func _swap_model(root: Node3D, id: String, skin: String, pb: Vector4) -> void:
+	var body_extra: Array = []
+	var m0 := _mats(skin, "default", id)
+	for k in ["jade", "feather", "string"]:
+		body_extra.append(m0[k])
+	var box := AABB()
+	var first := true
+	for n in root.find_children("*", "MeshInstance3D", true, false):
+		var mi := n as MeshInstance3D
+		if _in_hand(mi, root):
+			continue
+		var skin_part := GunSkin.is_skin_mat(mi.material_override)
+		if not skin_part and not mi.material_override in body_extra:
+			continue
+		mi.visible = false
+		if skin_part:
+			var bb := _xf_to(root, mi) * mi.get_aabb()
+			box = bb if first else box.merge(bb)
+			first = false
+	if first:
+		return
+	var holder := Node3D.new()
+	holder.name = "Model"
+	root.add_child(holder)
+	_place_model(holder, id, box.size.z * float(MODEL_FIT[id]["k"]), box.get_center() + (MODEL_FIT[id]["off"] as Vector3), skin, pb)
+
+
+## 把模型放进 parent：长度 length、中心在 center；皮肤不是默认的就换成皮肤材质（保留模型的雕花、金属包边）
+static func _place_model(parent: Node3D, id: String, length: float, center: Vector3, skin: String, pb: Vector4) -> Node3D:
+	var inst := (load(MODEL_DIR + id + ".glb") as PackedScene).instantiate() as Node3D
+	parent.add_child(inst)
+	inst.rotation.y = float(MODEL_FIT[id]["yaw"])
+	var mb := AABB()
+	var first := true
+	for n in inst.find_children("*", "MeshInstance3D", true, false):
+		var bb := _xf_to(parent, n as Node3D) * (n as MeshInstance3D).get_aabb()
+		mb = bb if first else mb.merge(bb)
+		first = false
+	var k := length / maxf(mb.size.z, 0.001)
+	inst.scale = Vector3.ONE * k
+	inst.position = center - (mb.get_center() - inst.position) * k
+	var sk_id := skin if skin != "" else Profile.skin_for(id)
+	var sk: Dictionary = Data.GUN_SKINS.get(sk_id, Data.GUN_SKINS["default"])
+	var custom := sk_id != "default"
+	for n in inst.find_children("*", "MeshInstance3D", true, false):
+		var mi := n as MeshInstance3D
+		mi.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		if not custom or mi.mesh == null:
+			continue
+		var body: Color = (sk.get("pal", {}) as Dictionary).get("lacquer", BASE_PAL["lacquer"])
+		for s in mi.mesh.get_surface_count():
+			var src := mi.mesh.surface_get_material(s) as BaseMaterial3D
+			if src == null or src.albedo_texture == null:
+				continue
+			var sm := GunSkin.model_material(sk, body, src, id)
+			sm.set_shader_parameter("paint_box", pb)
+			mi.set_surface_override_material(s, sm)
+		GunSkin.bind_part(mi)
+	return inst
+
+
+## 这个零件是不是手 / 袖子（fist / sleeve 搭的，带 meta "hand"）
+static func _in_hand(n: Node, root: Node) -> bool:
+	var c: Node = n
+	while c != null and c != root:
+		if c.has_meta("hand"):
+			return true
+		c = c.get_parent()
+	return false
+
+
+## n 相对 root 的变换（还没进场景树时用）
+static func _xf_to(root: Node, n: Node3D) -> Transform3D:
+	var t := Transform3D.IDENTITY
+	var c: Node = n
+	while c != null and c != root:
+		if c is Node3D:
+			t = (c as Node3D).transform * t
+		c = c.get_parent()
+	return t
 
 
 ## 暗器侧面的范围（Rect2：x 是 z 方向，y 是 y 方向），画皮肤用
@@ -863,6 +967,11 @@ static func _brake(root: Node3D, m: Dictionary, pos: Vector3, r: float) -> void:
 static func build_small(id: String, skin := "default") -> Node3D:
 	var root := Node3D.new()
 	# 别人自己画的皮肤传不过来（图在他电脑上），看到的是原色
+	if has_model(id):
+		# 模型：长度和第一人称的枪身一样，原点在握把附近（中心往后挪 18%）
+		var len := side_box(id).size.x * float(MODEL_FIT[id]["k"])
+		_place_model(root, id, len, Vector3(0, 0, -len * 0.18), "default" if skin == "paint" else skin, Vector4(-0.4, -0.15, 0.4, 0.15))
+		return root
 	var m := _mats("default" if skin == "paint" else skin, "default", "")
 	match id:
 		"meihua":
