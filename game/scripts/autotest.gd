@@ -2883,12 +2883,14 @@ func _run_sceneshot() -> void:
 		1:
 			if _tour.is_empty():
 				w.hud.visible = true
+				p.viewmodel.process_mode = Node.PROCESS_MODE_INHERIT
 				_next_phase()
 				return
 			var e: Array = _tour[0]
 			if e[1] != null:
 				p.teleport((e[1] as Vector3) - Vector3(0, 1.6, 0))
 				_aim(p, e[2])
+			p.viewmodel.process_mode = Node.PROCESS_MODE_DISABLED
 			p.viewmodel.visible = false
 			_next(2)
 		2:

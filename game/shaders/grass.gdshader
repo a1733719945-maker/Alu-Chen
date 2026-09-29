@@ -10,6 +10,7 @@ uniform float fade_end = 55.0;
 uniform vec3 root_dark : source_color = vec3(0.45, 0.5, 0.4);
 uniform vec3 backlight : source_color = vec3(0.35, 0.42, 0.15);
 uniform vec3 glow : source_color = vec3(0.0);      // 青冥藤：自己发光
+uniform vec3 tint : source_color = vec3(1.0);      // 整片草的色调（镜湖压暗压饱和，草叶贴图本身太亮太绿）
 
 varying float tip;
 
@@ -31,7 +32,7 @@ void fragment() {
 	vec2 dx = dFdx(UV * 256.0);
 	vec2 dy = dFdy(UV * 256.0);
 	float mip = 0.5 * log2(max(dot(dx, dx), dot(dy, dy)));
-	ALBEDO = c.rgb * COLOR.rgb * mix(root_dark, vec3(1.0), smoothstep(0.0, 0.6, tip));
+	ALBEDO = c.rgb * tint * COLOR.rgb * mix(root_dark, vec3(1.0), smoothstep(0.0, 0.6, tip));
 	ALPHA = c.a * (1.0 + max(mip, 0.0) * 0.35);
 	ALPHA_SCISSOR_THRESHOLD = 0.4;
 	ALPHA_ANTIALIASING_EDGE = 0.3;

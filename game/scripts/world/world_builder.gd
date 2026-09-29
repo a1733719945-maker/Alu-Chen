@@ -27,8 +27,8 @@ const ENV := {
 	# 镜湖（2026-09-29 场景质感样板）：太阳压低成上午的斜阳（影子长、立体感强）、偏暖；海面和低处一层薄雾（fog_h 以下变浓），
 	# 远处的峰林和远山一层比一层淡；高画质开一点体积雾，阳光从树冠里透下来
 	"island": {"sky": "sky_day", "u": 0.595, "elev": 48.0, "heading": 999.0, "light_elev": 30.0, "sun": Color(1.0, 0.9, 0.76), "energy": 1.4,
-		"ambient": 0.62, "exposure": 0.95, "white": 6.0, "glow": 0.5, "bloom": 0.04, "fog": Color(0.74, 0.8, 0.86), "fog_d": 0.0016,
-		"scatter": 0.2, "aerial": 0.55, "fog_sky": 0.12, "sat": 1.06, "contrast": 1.08, "fog_h": 3.5, "fog_hd": 0.06,
+		"ambient": 0.62, "exposure": 0.95, "white": 6.0, "glow": 0.5, "bloom": 0.04, "fog": Color(0.76, 0.82, 0.88), "fog_d": 0.0024,
+		"scatter": 0.2, "aerial": 0.8, "fog_sky": 0.12, "sat": 1.06, "contrast": 1.08, "fog_h": 3.5, "fog_hd": 0.06,
 		"vol": 0.005, "vol_albedo": Color(0.92, 0.9, 0.86), "vol_e": 1.3},
 	# 落霞：用户反馈"整张图巨亮、秘境里太阳亮得什么都看不到"——太阳贴着地平线，体积雾吃了 2.2 倍的阳光、泛光和曝光又偏高，
 	# 朝西一看整屏发白。曝光、泛光、雾里的阳光、天空亮度都压下来
@@ -533,7 +533,7 @@ func _ground_material() -> ShaderMaterial:
 			sm.set_shader_parameter("wet_level", 0.9)
 			return sm
 	return _terrain_material(["grass", "dirt", "rock", "sand"],
-		[Color(0.82, 0.88, 0.76), Color(0.9, 0.86, 0.8), Color(1.0, 1.0, 0.98), Color(1.0, 0.97, 0.92)],
+		[Color(0.7, 0.78, 0.6), Color(0.85, 0.8, 0.72), Color(1.0, 1.0, 0.98), Color(1.0, 0.97, 0.92)],
 		Vector4(0.3, 0.24, 0.16, 0.22), Vector4(0.95, 0.92, 0.8, 0.9))
 
 
@@ -667,61 +667,79 @@ func _water() -> void:
 
 
 ## 湖对岸一圈连绵的山（山脊噪声），远处被雾淡化
-## 镜湖的峰林：岛和远山之间的海面上立起十几座桂林那样的石峰（竖直的石柱、顶上一层绿），
+## 镜湖的峰林：岛和远山之间的海面上立起十几座桂林那样的石峰（竖直的石柱、竖向的凹槽和水痕、台阶上长着苔和松），
 ## 一座比一座远、被雾吃掉一层——国风山水的层次感靠这个
+var _peak_tops: Array = []            # [顶上的位置, 半径]：_trees 在上面种黄山松
+
 func _karst_peaks() -> void:
 	var r := RandomNumberGenerator.new()
 	r.seed = island.map_seed + 88
-	var mat := _surface("rock", Color(0.78, 0.8, 0.78), 0.08, 0.95).duplicate() as StandardMaterial3D
+	var mat := _surface("rock", Color(0.85, 0.86, 0.84), 0.15, 0.95).duplicate() as StandardMaterial3D
 	mat.vertex_color_use_as_albedo = true
 	var shapes: Array = []
-	for i in 5:
+	for i in 6:
 		shapes.append(_karst_mesh(r))
 	var dock_dir := Vector2(island.dock_end.x, island.dock_end.z).normalized()
-	var n := 16
+	var n := 15
 	for i in n:
 		var a := TAU * i / n + r.randf_range(-0.15, 0.15)
-		var d := r.randf_range(190.0, 320.0)
+		var d := r.randf_range(240.0, 380.0)
 		var p := Vector3(cos(a) * d, -10.0, sin(a) * d)
 		# 码头 / 船出海的那一边留出来，别挡住航线
 		if Vector2(p.x, p.z).normalized().dot(dock_dir) > 0.93:
 			continue
-		var s := r.randf_range(0.7, 1.35) * lerpf(0.8, 1.3, (d - 190.0) / 130.0)
+		var s := r.randf_range(0.55, 1.0) * lerpf(0.8, 1.25, (d - 240.0) / 140.0)
+		var sh: Array = shapes[r.randi() % shapes.size()]
+		var sy := s * r.randf_range(0.85, 1.2)
 		var mi := MeshInstance3D.new()
-		mi.mesh = shapes[r.randi() % shapes.size()]
+		mi.mesh = sh[0]
 		mi.material_override = mat
-		mi.transform = Transform3D(Basis(Vector3.UP, r.randf() * TAU).scaled(Vector3(s, s * r.randf_range(0.85, 1.25), s)), p)
+		mi.transform = Transform3D(Basis(Vector3.UP, r.randf() * TAU).scaled(Vector3(s, sy, s)), p)
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		root.add_child(mi)
+		_peak_tops.append([mi.transform * (sh[1] as Vector3), float(sh[2]) * s])
 
 
-## 一座石峰：竖着的一圈圈截面，半径按高度收、按角度和高度加噪声（竖向的凹槽和鼓包），顶上收圆；
-## 顶点颜色：底下湿、发暗，中间灰白，顶上一层绿（树和苔）
-func _karst_mesh(r: RandomNumberGenerator) -> ArrayMesh:
+## 一座石峰：一圈圈截面，半径按高度收；竖向的凹槽（按角度的噪声）、几道台阶（半径突然收一点）、顶上收圆。
+## 顶点颜色：底下湿发暗；竖向的深色水痕；朝上的台阶和顶上一层苔绿
+## 返回 [网格, 顶上的位置, 顶上的半径]
+func _karst_mesh(r: RandomNumberGenerator) -> Array:
 	var nz := FastNoiseLite.new()
 	nz.seed = r.randi()
 	nz.frequency = 0.9
 	var H := r.randf_range(70.0, 140.0)
-	var R := r.randf_range(16.0, 30.0)
+	var R := r.randf_range(15.0, 26.0)
 	var lean := Vector3(r.randf_range(-0.12, 0.12), 0, r.randf_range(-0.12, 0.12)) * H
-	var rings := 22
-	var segs := 24
+	var steps := [r.randf_range(0.3, 0.45), r.randf_range(0.6, 0.75)]
+	var rings := 44
+	var segs := 40
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var top := Vector3.ZERO
+	var top_r := 0.0
 	for i in rings + 1:
 		var t := i / float(rings)
-		var prof := (1.0 - pow(t, 2.2) * 0.55) * (1.0 + 0.25 * exp(-t * 6.0))
-		if t > 0.9:
-			prof *= sqrt(maxf(1.0 - (t - 0.9) / 0.1, 0.0)) * 0.9 + 0.1
+		var prof := (1.0 - pow(t, 2.0) * 0.5) * (1.0 + 0.3 * exp(-t * 7.0))
+		for sv in steps:
+			prof *= 1.0 - 0.1 * smoothstep(sv - 0.015, sv + 0.015, t)
+		if t > 0.88:
+			prof *= sqrt(maxf(1.0 - (t - 0.88) / 0.12, 0.0)) * 0.85 + 0.15
 		var c := lean * t * t + Vector3(0, H * t, 0)
+		if i == int(rings * 0.93):
+			top = c
+			top_r = R * prof
 		for k in segs + 1:
 			var a := TAU * k / segs
-			var bump := 1.0 + 0.22 * nz.get_noise_2d(cos(a) * 2.0 + t * 0.5, sin(a) * 2.0 + t * 3.0) + 0.1 * nz.get_noise_2d(a * 3.0, t * 9.0)
+			var groove := nz.get_noise_2d(cos(a) * 3.0, sin(a) * 3.0 + t * 0.6)
+			var bump := 1.0 + 0.28 * groove + 0.12 * nz.get_noise_2d(a * 5.0, t * 14.0) + 0.06 * nz.get_noise_2d(a * 17.0, t * 30.0)
 			var rr := R * prof * bump
-			var green := smoothstep(0.78, 0.95, t)
-			var wet := 1.0 - smoothstep(0.0, 0.12, t)
-			st.set_color(Color(0.82, 0.83, 0.8).lerp(Color(0.32, 0.45, 0.25), green).darkened(wet * 0.35))
-			st.set_uv(Vector2(k / float(segs) * 4.0, t * H * 0.1))
+			var streak := clampf(0.5 + 0.5 * nz.get_noise_2d(a * 9.0, t * 1.5), 0.0, 1.0)
+			var green := smoothstep(0.8, 0.93, t) + 0.6 * smoothstep(0.35, 0.8, -groove) * smoothstep(0.2, 0.5, t) * 0.5
+			var wet := 1.0 - smoothstep(0.0, 0.1, t)
+			var col := Color(0.8, 0.8, 0.76).lerp(Color(0.42, 0.42, 0.42), streak * 0.55)
+			col = col.lerp(Color(0.3, 0.42, 0.26), clampf(green, 0.0, 1.0)).darkened(wet * 0.4)
+			st.set_color(col)
+			st.set_uv(Vector2(k / float(segs) * 6.0, t * H * 0.08))
 			st.add_vertex(c + Vector3(cos(a) * rr, 0, sin(a) * rr))
 	for i in rings:
 		for k in segs:
@@ -734,7 +752,7 @@ func _karst_mesh(r: RandomNumberGenerator) -> ArrayMesh:
 			st.add_index(b0 + 1)
 			st.add_index(b0)
 	st.generate_normals()
-	return st.commit()
+	return [st.commit(), top, top_r]
 
 
 func _mountains() -> void:
@@ -1525,6 +1543,19 @@ func _trees() -> void:
 		_add_trunk(Vector2(x, z), rad)
 		_cyl_collider(Vector3(x, h - 0.5, z), rad * 1.1, 7.0)
 		placed += 1
+	# 峰林顶上几棵大黄山松（远看就是石峰顶上一撮松，国画里的样子）
+	var hs := []
+	for i in kinds.size():
+		if str(kinds[i]["kind"]) == "hspine":
+			hs.append(i)
+	if not hs.is_empty():
+		for pt in _peak_tops:
+			for j in r.randi_range(3, 6):
+				var a2 := r.randf() * TAU
+				var d2 := sqrt(r.randf()) * float(pt[1]) * 0.6
+				var s2 := r.randf_range(2.2, 3.4)
+				var p2: Vector3 = (pt[0] as Vector3) + Vector3(cos(a2) * d2, -1.0, sin(a2) * d2)
+				xforms[hs[r.randi() % hs.size()]].append(Transform3D(Basis(Vector3.UP, r.randf() * TAU).scaled(Vector3(s2, s2, s2)), p2))
 	for i in kinds.size():
 		_scatter(kinds[i]["mesh"], xforms[i], [], 0.0, true, 64.0)
 
@@ -1801,7 +1832,7 @@ func _grass() -> void:
 				continue
 			var k2 := clampf(pn * 0.5 + 0.5, 0.0, 1.0)
 			c = Color(0.8, 0.84, 0.58).lerp(Color(0.58, 0.72, 0.52), k2).lerp(Color(0.66, 0.78, 0.7), r.randf() * 0.35) * r.randf_range(0.88, 1.06)
-			s *= r.randf_range(0.7, 1.0)
+			s *= r.randf_range(0.6, 0.9)
 			if meadow.size() > 0 and p2.distance_to(meadow["center"]) < float(meadow["radius"]):
 				s *= 1.45
 				c = c * Color(1.12, 1.06, 0.85)
@@ -1813,6 +1844,10 @@ func _grass() -> void:
 		xs.append(Transform3D(b, Vector3(x, h - 0.04, z)))
 		cols.append(c)
 	var mat := _grass_mat("grass_tuft_dry" if (biome in ["forest", "snow"]) else "grass_tuft", 0.22, fade)
+	if biome == "island":
+		# 镜湖：草叶贴图本身太亮太绿、逆光再一照更亮 → 压暗、压饱和、逆光减半
+		mat.set_shader_parameter("tint", Color(0.74, 0.8, 0.6))
+		mat.set_shader_parameter("backlight", Color(0.18, 0.22, 0.08))
 	_scatter(_tuft_mesh(0.95, 0.62), xs, cols, fade + 6.0, false, 32.0, mat)
 
 
