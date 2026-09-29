@@ -58,6 +58,10 @@ var _t_arrow: Control
 var _t_name: Label
 var _t_clue: Label
 var _t_hp: ProgressBar
+var _t_feel: VBoxContainer
+var _t_parts: Label
+var _t_stun: ProgressBar
+var _t_mood: Label
 var _c_card: PanelContainer
 var _c_name: Label
 var _c_bar: ProgressBar
@@ -252,6 +256,8 @@ func host_spawn_trip_target() -> void:
 	b.hunt_role = "target"
 	b.spawn_pos = pos
 	b.nest_pos = world.island.nest + Vector3(0, 0.6, 0)
+	# 样板狩猎：部位破坏、打晕倒地、怒气疲劳（beasts/king_feel.gd）
+	KingFeel.attach(world, b)
 	target_id = id
 	target_species = species
 	target_age = age
@@ -974,6 +980,21 @@ func _build_ui() -> void:
 	tv.add_child(_t_clue)
 	_t_hp = UiKit.bar(Color(1.0, 0.42, 0.28), 230, 3)
 	tv.add_child(_t_hp)
+	# 样板狩猎：部位（▮ 剩多少，断了写"断"）、晕值条、暴怒 / 疲劳 / 倒地
+	_t_feel = _vbox(2)
+	_t_feel.visible = false
+	tv.add_child(_t_feel)
+	_t_parts = UiKit.label("", 13, UiKit.MOON, 3)
+	_t_feel.add_child(_t_parts)
+	var sh := _hbox(6)
+	_t_feel.add_child(sh)
+	var skk := UiKit.label("晕", 12, Color(1.0, 0.85, 0.35), 3)
+	sh.add_child(skk)
+	_t_stun = UiKit.bar(Color(1.0, 0.85, 0.35), 150, 3)
+	_t_stun.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	sh.add_child(_t_stun)
+	_t_mood = UiKit.bold("", 13, Color.WHITE, 3)
+	sh.add_child(_t_mood)
 	# 吸收灵环 / 护法
 	_c_card = _card(UiKit.JADE)
 	_c_card.visible = false
@@ -1019,6 +1040,31 @@ func _update_ui(tb: Beast) -> void:
 			_t_clue.text = "在「%s」一带出没 · 找地上的爪痕 %s" % [region, dots]
 		_t_hp.visible = near or tb.hp < tb.max_hp - 0.5
 		_t_hp.value = tb.hp / tb.max_hp
+		_t_feel.visible = tb.feel != null and _t_hp.visible
+		if _t_feel.visible:
+			var f: KingFeel = tb.feel
+			var bits := PackedStringArray()
+			for p in f.parts:
+				var e: Dictionary = f.parts[p]
+				if bool(e["broken"]):
+					bits.append("%s 断" % str(KingFeel.PART_NAME[p]))
+				else:
+					var n := clampi(ceili(float(e["hp"]) / maxf(float(e["max"]), 1.0) * 4.0), 0, 4)
+					bits.append("%s %s" % [str(KingFeel.PART_NAME[p]), "■".repeat(n) + "□".repeat(4 - n)])
+			_t_parts.text = "   ".join(bits)
+			_t_stun.value = 1.0 if f.down_t > 0.0 else f.stun / maxf(f.stun_max, 1.0)
+			if f.down_t > 0.0:
+				_t_mood.text = "倒地！%d 秒" % ceili(f.down_t)
+				_t_mood.modulate = Color(1.0, 0.85, 0.35)
+			elif f.mood == "rage":
+				_t_mood.text = "暴怒 %d 秒" % ceili(f.mood_t)
+				_t_mood.modulate = Color(1.0, 0.35, 0.2)
+			elif f.mood == "tired":
+				_t_mood.text = "疲劳 %d 秒 · 捆它" % ceili(f.mood_t)
+				_t_mood.modulate = Color(0.6, 0.85, 1.0)
+			else:
+				_t_mood.text = "怒 %d%%" % int(f.rage)
+				_t_mood.modulate = Color(1.0, 0.6, 0.45, 0.8)
 		_t_arrow.visible = located()
 		if _t_arrow.visible:
 			_t_arrow.set_meta("a", world.hud._rel_angle(tb.global_position))

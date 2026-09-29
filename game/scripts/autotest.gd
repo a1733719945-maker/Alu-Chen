@@ -57,7 +57,7 @@ func _ready() -> void:
 			_plan = ["phys", "hunt:burrow,meadow,flowers,water,reel", "shop", "recoil", "sniper", "ring", "boss", "boat", "hunt:den,swamp,mud", "boss", "boat",
 				"hunt:glade,roost,thicket,nest,bog", "boss", "boat",
 				"hunt:snowden,frostgrove,icefield,icecave,icelake", "boss", "boat",
-				"hunt:beach,cliff,reef,deep,abyss", "boss", "dungeon", "chase", "musou", "huntrun", "huntfail", "touch", "done"]
+				"hunt:beach,cliff,reef,deep,abyss", "boss", "dungeon", "chase", "musou", "huntrun", "huntfail", "touch", "feel", "done"]
 			# 新暗器测试放在第一章买完暗器后面（要第一章的草地摆靶子；第五章归墟没有草地）
 			_plan.insert(_plan.find("shop") + 1, "guns2")
 			_plan.insert(_plan.find("guns2") + 1, "pills")
@@ -303,6 +303,8 @@ func _process(dt: float) -> void:
 			_run_chaseshot()
 		"kbshot":
 			_run_kbshot()
+		"feel":
+			_run_feel()
 		"musou":
 			_run_musou()
 		"dgshot":
@@ -4141,6 +4143,140 @@ func _trial_enter(w: World, T: Trial, m: String) -> bool:
 			_note("进了试炼 · %s" % Trial.MODES[m]["name"])
 			return true
 	return false
+
+
+## 样板狩猎（KingFeel）：去猎场 → 按住猎物 → 打尾巴直到断（模型上那截没了、地上掉一截、摔一跤、拿到部位材料）
+## → 打头攒晕值直到倒地 5 秒 → 怒气满了暴怒 → 暴怒完了累（变慢、不放大招、血少能活捉）。shots 模式下每一步截图
+func _run_feel() -> void:
+	var w := _world()
+	match _step:
+		0:
+			w = _ready_world()
+			if not w or _step_t < 1.0:
+				return
+			Profile.level = 10
+			var h := w.hunt
+			var list := h.species_list()
+			if not _check(not list.is_empty(), "猎灵榜上没有灵兽"):
+				return
+			var sp := str(list[0])
+			for s in list:
+				if str(s) in ["wolf", "deer", "rhino", "ape"]:
+					sp = str(s)
+					break
+			_mem["sp"] = sp
+			w.player.invuln_t = 9999.0
+			h.request(sp, h.base_age())
+			_mem["old_wid"] = w.get_instance_id()
+			_next(1)
+		1:
+			w = _ready_world()
+			if not w or w.get_instance_id() == int(_mem["old_wid"]) or not w.island.hunting:
+				if _step_t > 15.0:
+					_fail("挑了猎物没去猎场")
+				return
+			var h := w.hunt
+			if h.target_id == 0 or not w.beasts.has(h.target_id):
+				if _step_t > 20.0:
+					_fail("猎物没出现")
+				return
+			var b: Beast = w.beasts[h.target_id]
+			if not _check(b.feel != null and b.feel.parts.size() == 3, "猎物身上没有 KingFeel / 部位不是 3 个"):
+				return
+			_mem["bid"] = b.id
+			w.player.invuln_t = 9999.0
+			w.player.hp = 99999.0
+			# 按住它（root_t）：站着挨打；侧面 11 米看
+			b.root_t = 9999.0
+			b.root_pos = b.global_position
+			var side := b.global_basis * b.feel._front.cross(Vector3.UP)
+			var at := b.global_position + side.normalized() * 11.0
+			at.y = w.island.height_at(at.x, at.z) + 0.4
+			w.player.teleport(at)
+			_aim(w.player, b.global_position + Vector3.UP * 0.8)
+			_note("猎物 %s：部位 %s，头朝 %s，晕值上限 %.0f" % [b.display_name(), str(b.feel.parts.keys()), str(b.feel._front), b.feel.stun_max])
+			_next(2)
+		2:
+			if _step_t < 1.5:
+				return
+			var b: Beast = w.beasts.get(int(_mem["bid"]))
+			var f: KingFeel = b.feel
+			# 传送以后镜头才到位：这时候再瞄
+			_aim(w.player, b.global_position + Vector3.UP * 0.4)
+			# 打尾巴：一枪两成血（尾巴只有一成六）
+			var lp := f._center - f._front * f._half * 0.9
+			var before := int(Profile.parts.get("%s|tail" % b.species, 0))
+			b.take_hit(b.max_hp * 0.2, Vector3.ZERO, lp, false, Net.my_id, 10.0)
+			if not _check(f.broken("tail") and f.down_t > 2.0, "尾巴打了两成血没断 / 没摔倒（%s）" % str(f.parts["tail"])):
+				return
+			if not _check(int(Profile.parts.get("%s|tail" % b.species, 0)) == before + 1, "断尾没拿到部位材料"):
+				return
+			if not _check(not f.allows("slam"), "断了尾巴还能放震地"):
+				return
+			_note("断尾：摔倒 %.1f 秒，部位材料 +1，震地没了" % f.down_t)
+			_next(3)
+		3:
+			if _step_t < 0.35:
+				return
+			_next(4)
+			await _shot("feel_tail_break")
+		4:
+			if _step_t < 1.2:
+				return
+			_next(5)
+			await _shot("feel_toppled")
+		5:
+			var b: Beast = w.beasts.get(int(_mem["bid"]))
+			var f: KingFeel = b.feel
+			f.down_t = 0.0
+			f.host_tick(0.01)
+			# 打头攒晕值：一次打一成的三分之一，最多 6 下一定晕
+			var hp0 := b.hp
+			var n := 0
+			while f.down_t <= 0.0 and n < 6:
+				b.take_hit(f.stun_max * 0.4, Vector3.ZERO, f._center + f._front * f._half, true, Net.my_id, 10.0)
+				n += 1
+			if not _check(f.down_t > 4.0 and f.stuns == 1, "打头 %d 下没晕（晕值 %.0f / %.0f）" % [n, f.stun, f.stun_max]):
+				return
+			# 倒地时打头更痛
+			var h1 := b.hp
+			b.take_hit(10.0, Vector3.ZERO, f._center + f._front * f._half, true, Net.my_id, 10.0)
+			var dealt := h1 - b.hp
+			if not _check(dealt > 20.0, "倒地时打头没有加伤（10 → %.1f）" % dealt):
+				return
+			_note("打头 %d 下晕倒 %.1f 秒（掉了 %.0f 血）；倒地时打头 10 → %.1f" % [n, f.down_t, hp0 - b.hp, dealt])
+			_next(6)
+		6:
+			if _step_t < 0.8:
+				return
+			_next(7)
+			await _shot("feel_stunned")
+		7:
+			var b: Beast = w.beasts.get(int(_mem["bid"]))
+			var f: KingFeel = b.feel
+			f.down_t = 0.0
+			b._aggro_t = 10.0
+			f.rage = 99.9
+			f.host_tick(0.2)
+			if not _check(f.mood == "rage" and b.enrage_t > 20.0, "怒气满了没暴怒（%s）" % f.mood):
+				return
+			f.host_tick(KingFeel.RAGE_TIME + 0.1)
+			if not _check(f.mood == "tired" and f.speed_k() < 0.7 and not f.allows("pounce"), "暴怒完了没累 / 累了还放大招"):
+				return
+			b.hp = b.max_hp * 0.3
+			if not _check(f.capturable(), "累了、三成血还不能活捉"):
+				return
+			_note("怒气满了暴怒 %d 秒，完了累 %d 秒：速度 ×%.2f，不放大招，三成血能活捉" % [int(KingFeel.RAGE_TIME), int(KingFeel.TIRED_TIME), f.speed_k()])
+			_next(8)
+		8:
+			if _step_t < 1.5:
+				return
+			_next(9)
+			await _shot("feel_tired")
+			var b: Beast = w.beasts.get(int(_mem["bid"]))
+			if b:
+				b.root_t = 0.0
+			_next_phase()
 
 
 ## 僵尸受击反馈截图：一排 5 只跳尸，轻打 / 重打 / 打死两只，命中后 0.12 秒（后仰、后退）和 0.47 秒（尸体倒下）各一张

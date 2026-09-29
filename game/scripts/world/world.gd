@@ -1617,8 +1617,8 @@ func host_hook(bid: int, puller: int) -> void:
 			var mb := [bid]
 			Net.send(0, "kingbind", mb)
 			_on_king_bind(mb)
-			# 猎场的猎物虚弱了：捆住就开始活捉
-			if b.hunt_role == "target" and b.weak:
+			# 猎场的猎物虚弱了（或者累了 / 倒地、血也不多了）：捆住就开始活捉
+			if b.hunt_role == "target" and (b.weak or (b.feel != null and b.feel.capturable())):
 				hunt.host_capture_start(b)
 		else:
 			var mr := [bid, puller, n, need]
@@ -3538,6 +3538,10 @@ func on_message(from: int, type: String, data: Variant) -> void:
 			_on_king_move(data)
 		"kingev":
 			_on_king_ev(data)
+		"kfeel", "kfev":
+			# 样板狩猎：猎物的部位 / 晕值 / 怒气（房主发的）
+			if not Net.is_host():
+				KingFeel.on_message(self, type, data)
 		"nesthit":
 			if Net.is_host():
 				nests.host_damage(int(data[0]), float(data[1]), from)

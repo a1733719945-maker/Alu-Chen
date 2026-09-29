@@ -41,6 +41,7 @@ var max_chapter := 1                # 去过的最远一章（渡船能回以前
 var rebirth := 0                    # 转生了几次（飞升以后可以转生，换灵相从头再来，永久变强，灵兽也更凶）
 var boss_tier := {}                 # 每个 Boss 打赢了几次：再召唤就是"二重、三重"，血更厚、奖励更高
 var materials := {}                 # 王魄：灵兽 -> 个数（打灵兽王掉，给暗器附魔用）
+var parts := {}                     # 部位材料："灵兽|部位" -> 个数（样板狩猎打断的角 / 尾 / 背甲 / 翼，以后做专属装备用）
 var enchant := {}                   # 暗器 -> 附魔 id（Data.ENCHANTS）
 var stars := {}                     # 暗器 -> 星数（升星，Data.STAR_*）
 var star_bless := {}                # 暗器 -> 失败攒下的祝福（每次 +5% 成功率，成功清零）
@@ -123,6 +124,7 @@ func load_profile() -> void:
 	rebirth = int(d.get("rebirth", 0))
 	boss_tier = d.get("boss_tier", {})
 	materials = d.get("materials", {})
+	parts = d.get("parts", {})
 	enchant = d.get("enchant", {})
 	stars = d.get("stars", {})
 	decor = d.get("decor", {})
@@ -183,7 +185,7 @@ func save_profile() -> void:
 		"version": VERSION, "money": money, "xp": xp, "level": level, "weapons": weapons,
 		"upgrades": upgrades, "items": items, "rings": rings, "bones": bones, "equipped": equipped, "bag": bag, "food": food, "bait": bait, "bounties": bounties, "skins": skins, "skin": skin, "outfits": outfits, "outfit": outfit, "codex": codex,
 		"skin_of": skin_of, "charms": charms, "charm_of": charm_of, "mastery": mastery, "paint": paint,
-		"skill_slots": skill_slots, "ring_hole": ring_hole, "attach_owned": attach_owned, "attach_on": attach_on, "stats": stats, "achieved": achieved, "god": god, "max_chapter": max_chapter, "rebirth": rebirth, "boss_tier": boss_tier, "materials": materials, "enchant": enchant, "stars": stars, "star_bless": star_bless, "decor": decor,
+		"skill_slots": skill_slots, "ring_hole": ring_hole, "attach_owned": attach_owned, "attach_on": attach_on, "stats": stats, "achieved": achieved, "god": god, "max_chapter": max_chapter, "rebirth": rebirth, "boss_tier": boss_tier, "materials": materials, "parts": parts, "enchant": enchant, "stars": stars, "star_bless": star_bless, "decor": decor,
 		"chapter": chapter, "quest": quest, "quest_count": quest_count, "kills": kills, "loadout": loadout,
 	}
 	var f := FileAccess.open(path, FileAccess.WRITE)
@@ -313,6 +315,7 @@ func _defaults() -> void:
 	rebirth = 0
 	boss_tier = {}
 	materials = {}
+	parts = {}
 	enchant = {}
 	stars = {}
 	star_bless = {}
@@ -436,6 +439,13 @@ func set_skill_slot(k: int, ring: int) -> void:
 
 func add_material(species: String, n := 1) -> void:
 	materials[species] = int(materials.get(species, 0)) + n
+	mark_dirty()
+
+
+## 部位材料（样板狩猎：打断灵兽王的角 / 尾 / 背甲 / 翼）
+func add_part(species: String, part: String, n := 1) -> void:
+	var k := "%s|%s" % [species, part]
+	parts[k] = int(parts.get(k, 0)) + n
 	mark_dirty()
 
 

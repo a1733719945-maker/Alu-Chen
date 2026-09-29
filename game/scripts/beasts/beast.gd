@@ -85,6 +85,7 @@ var focus_peer := 0              # 房主指定只打这个人（护法时围攻
 var aggro_k := 1.0               # 仇恨范围倍数（秘境里的灵兽看得更远）
 var dmg_mult := 1.0              # 伤害倍数（秘境小怪轻一点）
 var hunt_role := ""              # target 猎灵榜的猎物 / dgboss 秘境之主 / dg 秘境里的灵兽（HUD 不当普通的王显示）
+var feel: KingFeel               # 样板狩猎：部位破坏、打晕倒地、怒气疲劳（猎场的猎物才有）
 var speed_cap := 0.0             # 追人最快多少米/秒（0 = 不限）
 var home_speed := 5.0            # 精英走回"老家"的速度（猎物在岛上慢慢逛）
 # 猎场的猎物：重伤了逃回巢穴（nest_pos）睡觉回血，睡着的时候偷袭伤害 ×2.5；两成血以下"虚弱"，一瘸一拐，能用引魂索活捉
@@ -211,6 +212,8 @@ func _spd() -> float:
 		k *= 1.35
 	if weak:
 		k *= 0.6
+	if feel:
+		k *= feel.speed_k()
 	return k
 
 
@@ -223,6 +226,9 @@ func _special_tick(delta: float, tpos: Vector3, dist: float, touching: bool) -> 
 	enrage_t = maxf(enrage_t - delta, 0.0)
 	var sk: Dictionary = Data.BEAST_SKILLS.get(species, {})
 	if sk.is_empty() or proxy or state == State.AIR:
+		return false
+	# 样板狩猎：累了、倒地的时候不放独门本事
+	if feel and _sk_wind <= 0.0 and not feel.allows("skill"):
 		return false
 	if _sk_wind > 0.0:
 		_sk_wind -= delta
@@ -289,6 +295,8 @@ func add_rope(peer: int) -> int:
 
 ## 捆住：原地按住几秒、受到伤害 +50%
 func bind(dur: float) -> void:
+	if feel:
+		dur *= feel.bind_k()
 	root_t = dur
 	root_pos = global_position
 	mark_t = maxf(mark_t, dur)
@@ -410,6 +418,8 @@ func take_hit(dmg: float, impulse: Vector3, local_point: Vector3, headshot: bool
 		_rested = true
 		_aggro_t = 15.0
 		world.king_sleep(self, false, shooter)
+	if feel:
+		real = feel.host_hit(real, local_point, headshot)
 	hp -= real
 	damagers[shooter] = float(damagers.get(shooter, 0.0)) + real
 	if root_t <= 0.0:
@@ -975,10 +985,21 @@ func _roam_tick(delta: float, m: String, touching: bool) -> void:
 func _elite(delta: float, m: String, touching: bool) -> void:
 	_aggro_t = maxf(_aggro_t - delta, 0.0)
 	bind_cd = maxf(bind_cd - delta, 0.0)
-	# 半血暴怒：更快更狠，叫小弟
+	if feel:
+		feel.host_tick(delta)
+		if feel.down_t > 0.0:
+			# 倒地（被打晕 / 断了部位摔一跤）：躺着不动
+			if touching:
+				linear_velocity = Vector3(0, minf(linear_velocity.y, 0.5), 0)
+				angular_velocity = Vector3.ZERO
+			return
+		if feel.grounded():
+			m = "run"
+	# 半血暴怒：更快更狠，叫小弟（样板狩猎的猎物改成"怒气 → 暴怒 → 疲劳"循环，这里只叫小弟）
 	if not _phase2 and hp < max_hp * 0.5:
 		_phase2 = true
-		enrage_t = 9999.0
+		if feel == null:
+			enrage_t = 9999.0
 		world.king_phase2(self)
 	# 四分之一血：逃回巢穴养伤（只逃一次）——追上去补刀；猎场的猎物三成血就跑，跑回很远的巢穴
 	var flee_at := 0.3 if nest_pos != Vector3.INF else 0.25
@@ -1056,6 +1077,15 @@ func _king_tick(delta: float, tpos: Vector3, touching: bool) -> bool:
 		else:
 			_king_move = "slam"
 			_king_wind = 1.0
+		# 样板狩猎：断尾放不出震地、断角不会咆哮（换成扑杀）；累了 / 倒地什么大招都不放
+		if feel and not feel.allows(_king_move):
+			if feel.allows("pounce") and flat > 4.0:
+				_king_move = "pounce"
+				_king_wind = 0.8
+			else:
+				_king_wind = 0.0
+				_king_cd = 2.0
+				return false
 		_king_at = tpos
 		world.king_move(self, _king_move, tpos, _king_wind)
 		return true
