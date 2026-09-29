@@ -738,13 +738,17 @@ func _run_hunt() -> void:
 			elif _step_t > 8.0:
 				_fail("拽不上来，state=%d" % p.lure.state)
 		4:
-			# 等灵兽出现
+			# 等灵兽出现：挑离自己最近的那只（CI 挂过一次：野外同时刷出一只，测试跑去打 100 米外那只，12 秒没打死）
+			var best: Beast = null
 			for b: Beast in w.beasts.values():
-				if b.alive() and b.owner_peer == Net.my_id:
-					_target = b
-					_note("灵兽出现了：%s，位置 %s" % [b.name, b.global_position])
-					_next(5)
-					return
+				if b.alive() and b.owner_peer == Net.my_id and b.global_position.distance_to(p.global_position) < 45.0:
+					if best == null or b.global_position.distance_to(p.global_position) < best.global_position.distance_to(p.global_position):
+						best = b
+			if best:
+				_target = best
+				_note("灵兽出现了：%s，位置 %s" % [best.name, best.global_position])
+				_next(5)
+				return
 			if _step_t > 3.0:
 				_fail("拽了之后没出现灵兽")
 		5:
