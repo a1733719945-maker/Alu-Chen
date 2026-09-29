@@ -995,6 +995,7 @@ func _build_ui() -> void:
 	var sh := _hbox(6)
 	_t_feel.add_child(sh)
 	var skk := UiKit.label("晕", 12, Color(1.0, 0.85, 0.35), 3)
+	skk.visible = false   # 晕值条不画了，标签也藏起来
 	sh.add_child(skk)
 	_t_stun = UiKit.bar(Color(1.0, 0.85, 0.35), 150, 3)
 	_t_stun.size_flags_vertical = Control.SIZE_SHRINK_CENTER

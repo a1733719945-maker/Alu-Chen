@@ -632,7 +632,7 @@ func _build_ui() -> void:
 	_top.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	# 以前在正上方（和灵兽王的大血条叠在一起）：挪到右上小地图和灵石下面，右对齐
 	_top.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	UiKit.place(_top, Vector4(1, 0, 1, 0), Vector4(-420, 232, -18, 256))
+	UiKit.place(_top, Vector4(1, 0, 1, 0), Vector4(-420, 292, -18, 316))
 	layer.add_child(_top)
 	_panel = PanelContainer.new()
 	_panel.add_theme_stylebox_override("panel", UiKit.glass_style(0.72, 28, 20))

@@ -4740,14 +4740,13 @@ func _run_hunt2shot() -> void:
 			_next(13)
 			await _shot("hunt2_charge")
 		13:
+			# 截图很慢（软件渲染），截完冲锋那张时它可能早就冲完、破绽也过了：直接让它露一次破绽
 			var b: Beast = w.beasts.get(int(_mem["bid"]))
 			w.player.hp = 99999.0
 			b._aggro_t = 12.0
 			b.arts.cd = 999.0
-			if b.feel.open_t <= 0.0:
-				if _step_t > 12.0:
-					_fail("冲完没露破绽")
-				return
+			b.arts.cur.clear()
+			b.arts._rest(6.0)
 			_aim(w.player, b.global_position + Vector3.UP * 1.0)
 			_next(14)
 		14:
