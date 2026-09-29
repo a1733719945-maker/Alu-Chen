@@ -224,7 +224,8 @@ func _build() -> void:
 	head.add_child(model)
 	_model_y0 = model.position.y
 	# AI 生成的模型大多没有骨骼动画：用代码让整个身子动（走路一步一沉、左右晃、跑起来前倾、站着喘气）
-	_static_model = not model.has_meta("ap")
+	# 有骨骼但没有走 / 跑动作的（比如只导出了死亡动作）也用程序步态
+	_static_model = not model.has_meta("ap") or str((model.get_meta("roles") as Dictionary).get("run", "")) == ""
 	FxLib.no_decals(model)
 	var d := BeastModels._dims(str(cfg["model"]))
 	var k := BeastModels._model_scale(cfg)

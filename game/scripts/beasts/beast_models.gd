@@ -135,7 +135,11 @@ static func instance_custom(path: String, cfg: Dictionary) -> Node3D:
 		for role in ROLE_KEYS:
 			roles[role] = _pick_anim(names, ROLE_KEYS[role])
 			if roles[role] == "" and names.size() > 0 and role == "idle":
-				roles[role] = names[0]
+				# 没有叫 idle 的就拿第一段顶上——但别拿死亡动作当待机循环（混元一次只导出一段，可能只有死亡）
+				for nm in names:
+					if _pick_anim(PackedStringArray([nm]), ROLE_KEYS["death"]) == "":
+						roles[role] = nm
+						break
 			if roles[role] != "" and role in ["idle", "run", "air"]:
 				ap.get_animation(roles[role]).loop_mode = Animation.LOOP_LINEAR
 		holder.set_meta("ap", ap)
