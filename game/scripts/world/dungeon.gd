@@ -411,7 +411,7 @@ func enter(tier: int) -> void:
 	else:
 		var v := Voyage.new()
 		v.video = "res://assets/cutscene/dungeon.ogv"
-		v.length = 3.6
+		v.length = 5.0
 		v.title = "洞天 · %s" % tier_name(tier)
 		world.add_child(v)
 		v.finished.connect(show_banner)

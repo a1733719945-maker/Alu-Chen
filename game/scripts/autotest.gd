@@ -3153,8 +3153,8 @@ func _dummy_center(b: Beast) -> Vector3:
 
 ## 队友的样子（截图）：在面前放一个假的队友，站着、走、跑、蹲各拍一张
 ## 过场动画在游戏里播出来的样子（视频 + 标题 / 字幕叠层），每段截几张
-const CINES := [["prologue", "", [4.0, 16.0, 30.0, 44.0]], ["voyage_2", "", [2.0, 6.0]], ["voyage_5", "", [6.0]], ["dungeon", "洞天秘境 · 千年 · 二层", [2.5]],
-	["hunt", "猎场 · 万年铁钳蟹王", [2.5]], ["ascend", "", [6.0, 14.0, 22.0]]]
+const CINES := [["prologue", "", [2.5, 6.0, 10.0, 14.0, 18.5, 22.5]], ["voyage_2", "前往 · 第二章 · 落霞林", [2.0, 6.5]], ["voyage_5", "前往 · 第五章 · 归墟", [6.5]],
+	["dungeon", "洞天 · 千年 · 二层", [2.5]], ["hunt", "猎场 · 万年铁钳蟹王", [2.5]], ["ascend", "", [3.0, 7.0, 12.0]]]
 
 
 func _run_cineshot() -> void:
@@ -3172,6 +3172,10 @@ func _run_cineshot() -> void:
 			v.video = "res://assets/cutscene/%s.ogv" % c[0]
 			v.title = str(c[1])
 			v.length = 60.0
+			if str(c[0]) == "prologue":
+				v.captions = main.PROLOGUE_CAPTIONS
+			elif str(c[0]).begins_with("voyage_"):
+				v.captions = [[4.6, 8.9, str(Data.CHAPTERS[int(str(c[0]).substr(7))].get("story", ""))]]
 			main.add_child(v)
 			_mem["v"] = v
 			_mem["si"] = 0

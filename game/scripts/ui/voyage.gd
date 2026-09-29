@@ -1,9 +1,10 @@
 class_name Voyage
 extends CanvasLayer
-## 过场动画：画面是公有领域的名画（tools/boat_anim：Remotion 做镜头、调色、双语字幕，ffmpeg 转成 Ogg Theora，assets/cutscene/*.ogv）。
-##   prologue.ogv   序章：天倾、五大灵主、栖霞村、怎么玩（第一次进游戏播，主菜单"序章"能重看）
-##   voyage_N.ogv   渡海去第 N 章（"前往 · 第几章"和这一章的故事画在视频里）
-##   ascend.ogv     飞升结局 → 九重天 → 轮回
+## 过场动画：国风图生视频（2026-09-29：用户用即梦 / 可灵把 tools/boat_anim/ai 的国风图做成 5~10 秒动态镜头，
+## tools/build_cg.py 剪成 Ogg Theora，assets/cutscene/*.ogv）。以前的西洋名画版不用了。
+##   prologue.ogv   序章 25 秒（字幕 Main.PROLOGUE_CAPTIONS；第一次进游戏播，主菜单"序章"能重看）
+##   voyage_N.ogv   渡海去第 N 章：云海行舟 → 这一章的灵主（标题、这一章的故事由 Main._travel 叠上去）
+##   ascend.ogv     飞升：金光冲天 → 九重天
 ##   dungeon.ogv    进洞天秘境（叠秘境名字）
 ##   hunt.ogv       去猎场（叠猎物名字）
 ## 字幕（captions）也可以叠在视频上：[[开始秒, 结束秒, 文字], ...]。按 Esc / 空格 / 点屏幕 / 点鼠标跳过。

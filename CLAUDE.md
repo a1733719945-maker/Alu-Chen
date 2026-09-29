@@ -479,6 +479,14 @@
    - 截图阶段 `fpshot`（第一人称 + 从右边 + 从前面看手）、`gripshot`（每把暗器的握把标定图）
    - 还没做：检视 / 换弹时左手跟着弹匣走（现在左手一直托着护木）；手的材质跟装扮（袍子颜色）
 
+38. 灵兽 AI 模型 + 国风 CG（2026-09-29，小号）：
+   - 灵兽：`beasts/static_beast.gd`（`StaticBeast`）——混元模型**没骨骼**，顶点着色器按部位动：`quad` 四条腿（下面四成是腿，对角步绕髋摆、空中前伸后蹬、尾巴甩、点头、扑咬前冲）、
+     `hop`（耳朵晃、空中耳朵后贴、后腿蹬直、身子拉长）、`swim`（头到尾一道横波）、`flap`（两侧上下扇）；参数是 instance uniform（gait / amp / air / lunge / hurt / t），一个物种一个材质。
+     `StaticBeast.FIT` 写每个物种的 yaw（让头朝 -Z）和 rig；`BeastModels.build` 有 `assets/models/beasts/beast_<物种>.glb` 就用它（meta "static"），碰撞体还按原来的 body_size。现在有狼、兔。截图 `beastshot`
+   - 国风 CG：用户用即梦 / 可灵做了 01~14.mp4（放在 GitHub Release 草稿，下载到 `tools/_downloads/cg/`，不进仓库），`tools/build_cg.py` 剪成 `assets/cutscene/*.ogv`：
+     序章 02→03→04→01→05（25 秒，字幕 `Main.PROLOGUE_CAPTIONS`，只讲表面的故事）、渡海 11 + 这章灵主（06~10，标题和 story 由 `Main._travel` 叠）、秘境 12、猎场 13、飞升 14 + 01（字幕在 `World._check_god`）。
+     **原片右下角有 AI 水印**，build_cg 取画面 86%（顶上对齐、左右各切 7%）去掉。西洋名画版全部替换。灵主 CG 没加在出场镜头前面（BossCine 不暂停世界，再加 5 秒会被打）
+
 ## 还没做 / 可以继续
 
 - 国风 CG、模型质感、蛛母 / 玄鲲新模型：见文末"交接"

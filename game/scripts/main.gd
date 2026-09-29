@@ -127,11 +127,23 @@ func _on_connected(_code: String) -> void:
 		Net.send(0, "hello", [Settings.display_name(), Settings.wuhun, true, Profile.level, _ring_summary()])
 
 
-## 序章（Remotion 画的，48 秒）：主菜单"序章"也能重看
+## 序章（国风图生视频，25 秒：叩天之战 → 天门前的星君 → 天枢坠落 → 九重天 → 青崖子）：主菜单"序章"也能重看
+## 字幕只讲"表面的故事"（docs/世界观.md 第一节），画面里的叩天、星君碎身先不说破
+const PROLOGUE_CAPTIONS := [
+	[0.8, 4.0, "上古之时，天有九重。人间与九天之间，立着一座天门。"],
+	[4.2, 7.6, "三万年前，天门之下，燃起一场谁也说不清的大战。"],
+	[8.0, 12.0, "那一夜，天门崩碎。撑住天地的天枢，碎成了五块。"],
+	[12.3, 16.2, "五块碎片坠入人间，被五头上古灵兽吞下——是为灵主。"],
+	[16.5, 20.2, "大地沉进云海，只剩孤岛，后人叫它苍墟。三万年，再没有人飞升。"],
+	[20.5, 24.6, "青崖子说：「去猎灵，去炼环。五块碎片凑齐那天，天门重开。」"],
+]
+
+
 func play_prologue() -> void:
 	var v := Voyage.new()
 	v.video = "res://assets/cutscene/prologue.ogv"
-	v.length = 50.0
+	v.length = 25.0
+	v.captions = PROLOGUE_CAPTIONS
 	v.music = "event"
 	add_child(v)
 	await v.finished
@@ -202,7 +214,7 @@ func _change_map(chapter: int, hunt: Dictionary) -> void:
 		var sp := str(hunt.get("species", ""))
 		var hv := Voyage.new()
 		hv.video = "res://assets/cutscene/hunt.ogv"
-		hv.length = 4.0
+		hv.length = 5.0
 		hv.title = "猎场 · %s%s王" % [Data.age_name(int(hunt.get("age", 0))), Data.BEASTS[sp]["name"]] if Data.BEASTS.has(sp) else "猎场 · 灵兽王"
 		add_child(hv)
 		await hv.finished
@@ -230,14 +242,13 @@ func _travel(chapter: int) -> void:
 		world.hud.visible = false
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	var v := Voyage.new()
-	v.length = 8.0
-	# 每章一段（月下出海 → 目的地的名画，"前往 · 第几章"和这一章的故事都画在视频里）
+	v.length = 9.2
+	# 每章一段（国风图生视频：乌篷船在云海上 → 这一章的灵主），标题和这一章的故事叠在上面
 	var per := "res://assets/cutscene/voyage_%d.ogv" % chapter
 	if ResourceLoader.exists(per):
 		v.video = per
-	else:
-		v.title = "前往 · %s" % Data.CHAPTERS[chapter]["name"]
-		v.captions = [[1.4, 7.4, str(Data.CHAPTERS[chapter].get("story", ""))]]
+	v.title = "前往 · %s" % Data.CHAPTERS[chapter]["name"]
+	v.captions = [[4.6, 8.9, str(Data.CHAPTERS[chapter].get("story", ""))]]
 	add_child(v)
 	await v.finished
 	# 建新岛要一会儿（平板上十几秒）：先盖"正在前往"，画出来了再建，不然画面停在最后一帧像黑屏卡死

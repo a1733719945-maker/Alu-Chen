@@ -1083,11 +1083,12 @@ func _check_god() -> void:
 	Net.send(0, "feedall", ["%s 飞升了！" % Settings.display_name()])
 	if Data.autotest:
 		return
-	# 飞升结局（Remotion 画的）：五块碎片归位 → 天门重开 → 门后是九重天 → 轮回
+	# 飞升结局（国风图生视频）：金光冲天、人影升起、天门打开 → 门后是九重天 → 轮回
 	var v := Voyage.new()
 	v.video = "res://assets/cutscene/ascend.ogv"
-	v.length = 26.0
+	v.length = 14.2
 	v.music = "ascend"
+	v.captions = [[1.0, 4.8, "五块天枢碎片归位——天门，开了。"], [5.2, 9.0, "你踏着金光，一步一步走上去。"], [9.6, 13.8, "门后不是天。是九重天的第一重。"]]
 	get_tree().root.add_child(v)
 	v.finished.connect(func():
 		# 飞升专属曲（For Her）接着放完
