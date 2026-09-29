@@ -666,9 +666,10 @@ func _water() -> void:
 			sm.set_shader_parameter("foam_color", Color(0.95, 0.98, 1.0))
 			sm.set_shader_parameter("foam_width", 1.0)
 		"sea":
-			sm.set_shader_parameter("shallow_color", Color(0.2, 0.85, 0.8))
-			sm.set_shader_parameter("deep_color", Color(0.02, 0.2, 0.42))
-			sm.set_shader_parameter("depth_fade", 8.0)
+			# 浅水以前是荧光青（像泳池），压成带点灰的青绿
+			sm.set_shader_parameter("shallow_color", Color(0.24, 0.56, 0.54))
+			sm.set_shader_parameter("deep_color", Color(0.03, 0.17, 0.3))
+			sm.set_shader_parameter("depth_fade", 6.0)
 			sm.set_shader_parameter("foam_width", 1.0)
 	var mi := MeshInstance3D.new()
 	mi.name = "Water"
