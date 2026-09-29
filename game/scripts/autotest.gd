@@ -5524,9 +5524,6 @@ func _run_hunt2() -> void:
 			var b: Beast = w.beasts[w.hunt.target_id]
 			if not _check(b.arts != null and b.feel != null, "猎物身上没有 KingArts"):
 				return
-			if not _mem.has("wander_done"):
-				_next(20)
-				return
 			# 从头来：满血、没逃、没换过地方、不累
 			b.root_t = 0.0
 			b.hp = b.max_hp
@@ -5539,6 +5536,9 @@ func _run_hunt2() -> void:
 			b.arts.relocated = false
 			b.arts.act = 1
 			b.arts.cur.clear()
+			if not _mem.has("wander_done"):
+				_next(20)
+				return
 			_mem["bid"] = b.id
 			_mem["i"] = 0
 			var fly := b.motion() in ["fly", "flutter"] and not b.feel.grounded()
@@ -5555,7 +5555,13 @@ func _run_hunt2() -> void:
 			var b: Beast = w.beasts[w.hunt.target_id]
 			b.hp = b.max_hp
 			b.arts.cur.clear()
+			b.arts._relocating = false
 			b._aggro_t = 0.0
+			# 无敌（invuln_t）的人灵兽当成打不着：这一步要它来打人
+			if w.player.dead:
+				w._respawn_at_dock()
+			w.player.invuln_t = 0.0
+			w.player.hp = 99999.0
 			b.spawn_pos = b.global_position + Vector3(300, 0, 0)
 			var at := b.global_position + Vector3(-35.0, 0, 12.0)
 			at.y = w.island.height_at(at.x, at.z) + 0.4
@@ -5571,9 +5577,12 @@ func _run_hunt2() -> void:
 				return
 			var home_d := b.spawn_pos.distance_to(b.global_position)
 			var dx := b.global_position.x - float(_mem["x0"])
+			if home_d >= 10.0 or dx >= 6.0:
+				print("[autotest] 猎物状态 state=%s aggro=%.1f retreat=%s down=%.1f reloc=%s alive=%d near=%s role=%s temper=%s root=%.1f bound=%s nap=%s motion=%s" % [str(b.state), b._aggro_t, str(b._retreat), b.feel.down_t, str(b.arts.relocating()), w.alive_players().size(), str(b._nearest_ok().get("pos", "无")), b.hunt_role, b.temper, b.root_t, str(b.get("bound")), str(b.napping), b.motion()])
 			if not _check(home_d < 10.0 and dx < 6.0, "路上挨打不还手：老家还在 %.0f 米外，往原来的方向走了 %.0f 米" % [home_d, dx]):
 				return
 			_note("路上挨打就地还手（离人 %.0f → %.0f 米）" % [float(_mem["d0"]), w.player.global_position.distance_to(b.global_position)])
+			w.player.invuln_t = 9999.0
 			_mem["wander_done"] = true
 			_next(2)
 		3:
