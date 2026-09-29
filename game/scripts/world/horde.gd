@@ -38,7 +38,15 @@ var units: Array = []                      # 活着的：{"id","p","hp","max","k
 var by_id := {}
 var next_id := 1
 var _mm: MultiMesh
+var _mmi: MultiMeshInstance3D
 var _fx_budget := 0
+var textured := false                      # 用的是 AI 生成的跳尸模型（assets/models/horde/jiangshi.glb）
+
+## AI 生成的跳尸（Meshy，用户 2026-09-29 给的）：tools/pose_jiangshi.py 已经把胳膊掰成向前平伸、
+## 转成朝 -Z、脚底在 0、1.9 米高；tools/shrink_glb.gd 减到约 6000 面（尸群一次上百只）
+const MODEL_PATH := "res://assets/models/horde/jiangshi.glb"
+## 贴图模型每种僵尸的色调（乘在贴图上）：小尸发灰、跳尸原色、铁尸发铜、尸王发红、疾尸发青
+const TEX_TINT := [Color(0.78, 0.86, 0.8), Color(1, 1, 1), Color(1.05, 0.82, 0.6), Color(1.15, 0.55, 0.5), Color(0.75, 1.0, 0.82)]
 
 
 func _ready() -> void:
@@ -46,15 +54,26 @@ func _ready() -> void:
 	_mm.transform_format = MultiMesh.TRANSFORM_3D
 	_mm.use_colors = true
 	_mm.use_custom_data = true
-	_mm.mesh = _build_mesh()
+	var m := ShaderMaterial.new()
+	m.shader = Shader.new()
+	# 有 AI 生成的跳尸模型就用它（贴图 + 法线），没有就用程序拼的
+	var gen := _load_model()
+	if not gen.is_empty():
+		textured = true
+		_mm.mesh = gen["mesh"]
+		m.shader.code = SHADER_TEX
+		for k in ["albedo", "normal", "orm"]:
+			if gen.get(k) != null:
+				m.set_shader_parameter(k + "_tex", gen[k])
+	else:
+		_mm.mesh = _build_mesh()
+		m.shader.code = SHADER
 	_mm.instance_count = MAX
 	_mm.visible_instance_count = 0
 	var mmi := MultiMeshInstance3D.new()
 	mmi.multimesh = _mm
 	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
-	var m := ShaderMaterial.new()
-	m.shader = Shader.new()
-	m.shader.code = SHADER
+	_mmi = mmi
 	mmi.material_override = m
 	add_child(mmi)
 	# 包围盒要大（MultiMesh 按整体剔除）
@@ -341,10 +360,13 @@ func _process(dt: float) -> void:
 		var bs := Basis(Vector3.UP, float(u["yaw"])) * Basis(Vector3.RIGHT, -0.12 * hop)
 		bs = bs.scaled(Vector3(s * (1.0 + squash), s * (1.0 - squash + 0.06 * hop), s * (1.0 + squash)))
 		_mm.set_instance_transform(n, Transform3D(bs, Vector3(p.x, y, p.z)))
-		_mm.set_instance_color(n, TINT[k])
+		_mm.set_instance_color(n, TEX_TINT[k] if textured else TINT[k])
 		_mm.set_instance_custom_data(n, Color(float(u["ph"]), hop, float(u["hurt"]), float(k)))
 		n += 1
 	_mm.visible_instance_count = n
+	# 割草几百只的时候不投影子（贴图模型一只六千面，影子再画一遍太重）
+	if _mmi:
+		_mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if n <= 140 else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 
 ## 推出障碍物、留在场地里
@@ -413,6 +435,63 @@ void fragment() {
 	EMISSION = em + vec3(1.0, 0.35, 0.2) * cd.z * 1.6 + (cd.w > 2.5 && cd.w < 3.5 && part < 0.5 ? vec3(0.25, 0.02, 0.02) : vec3(0.0));
 }
 """
+
+
+const SHADER_TEX := """shader_type spatial;
+uniform sampler2D albedo_tex : source_color, filter_linear_mipmap_anisotropic;
+uniform sampler2D normal_tex : hint_normal, filter_linear_mipmap_anisotropic;
+uniform sampler2D orm_tex : hint_default_white, filter_linear_mipmap;
+varying vec3 tint;
+varying vec4 cd;
+void vertex() {
+	tint = COLOR.rgb;
+	cd = INSTANCE_CUSTOM;
+	// 袍子下摆跳起来往后飘（背后是 +Z）；伸直的两只手随着跳上下晃
+	if (VERTEX.y < 0.55) { VERTEX.z += cd.y * 0.07 * (1.0 - VERTEX.y / 0.55); }
+	if (VERTEX.z < -0.3 && VERTEX.y > 1.05) {
+		float reach = clamp((-VERTEX.z - 0.3) / 0.5, 0.0, 1.0);
+		VERTEX.y += (sin(TIME * 6.0 + cd.x * 30.0) * 0.025 - cd.y * 0.07) * reach;
+	}
+}
+void fragment() {
+	vec3 c = texture(albedo_tex, UV).rgb * tint;
+	vec3 orm = texture(orm_tex, UV).rgb;
+	ALBEDO = c;
+	NORMAL_MAP = texture(normal_tex, UV).rgb;
+	ROUGHNESS = clamp(orm.g, 0.3, 1.0);
+	METALLIC = orm.b * 0.6;
+	// 挨打：红光一闪；尸王一层暗红；轮廓一圈淡淡的尸气绿光（远处也分得清）
+	float rim = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 3.0);
+	EMISSION = vec3(1.0, 0.35, 0.2) * cd.z * 1.6 + (cd.w > 2.5 && cd.w < 3.5 ? vec3(0.3, 0.02, 0.02) * rim * 2.0 : vec3(0.08, 0.22, 0.1) * rim);
+}
+"""
+
+
+## 读 AI 生成的跳尸：返回 {mesh, albedo, normal, orm}，没有文件就返回空
+func _load_model() -> Dictionary:
+	if not ResourceLoader.exists(MODEL_PATH):
+		return {}
+	var ps := load(MODEL_PATH) as PackedScene
+	if ps == null:
+		return {}
+	var inst := ps.instantiate()
+	var out := {}
+	for n in inst.find_children("*", "MeshInstance3D", true, false):
+		var mi := n as MeshInstance3D
+		if mi.mesh == null:
+			continue
+		out["mesh"] = mi.mesh
+		var mat := mi.mesh.surface_get_material(0)
+		if mi.get_surface_override_material(0):
+			mat = mi.get_surface_override_material(0)
+		if mat is BaseMaterial3D:
+			var bm := mat as BaseMaterial3D
+			out["albedo"] = bm.albedo_texture
+			out["normal"] = bm.normal_texture if bm.normal_enabled else null
+			out["orm"] = bm.roughness_texture if bm.roughness_texture else bm.metallic_texture
+		break
+	inst.free()
+	return out
 
 
 func _build_mesh() -> ArrayMesh:

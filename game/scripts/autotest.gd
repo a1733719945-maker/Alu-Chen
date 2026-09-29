@@ -299,6 +299,8 @@ func _process(dt: float) -> void:
 			_run_decorshot()
 		"chase":
 			_run_chase()
+		"chaseshot":
+			_run_chaseshot()
 		"musou":
 			_run_musou()
 		"dgshot":
@@ -4483,6 +4485,70 @@ func _run_decorshot() -> void:
 				_mem["d5"] = true
 				await _shot("decor_shop")
 			elif _step_t > 7.5:
+				_next_phase()
+
+
+# ------------------------------------------------------------------ 尸潮追击截图：长街、跳尸模型近看、挨打的血条和数字
+
+func _run_chaseshot() -> void:
+	var w := _ready_world()
+	if not w:
+		return
+	var T := w.trial
+	var p := w.player
+	p.hp = 99999.0
+	p.invuln_t = 9999.0
+	match _step:
+		0:
+			T.request("chase")
+			_next(1)
+		1:
+			if not T.inside:
+				if _step_t > 4.0:
+					_fail("进不了尸潮追击")
+				return
+			T._phase_t = 999.0     # 一直停在准备阶段，只看自己摆的僵尸
+			T.horde.clear()
+			p.teleport(Trial.CHASE + Vector3(0, 0.5, -2.0))
+			# 近处一排：跳尸、疾尸、铁尸、小尸，远一点一只尸王
+			var list: Array = []
+			var kinds := [1, 4, 2, 1, 0, 1, 4, 1, 2, 1, 1, 4]
+			for i in kinds.size():
+				var x := -7.0 + (i % 6) * 2.8 + randf_range(-0.4, 0.4)
+				var z := -9.0 - (i / 6) * 4.0 - randf_range(0.0, 1.5)
+				list.append([0, Trial.CHASE.x + x, Trial.CHASE.z + z, kinds[i], 100.0])
+			list.append([0, Trial.CHASE.x + 1.5, Trial.CHASE.z - 24.0, 3, 1000.0])
+			T.horde.host_spawn(list)
+			_aim(p, Trial.CHASE + Vector3(0, 1.3, -14.0))
+			_next(2)
+		2:
+			if _step_t > 0.6 and not _mem.has("c1"):
+				_mem["c1"] = true
+				await _shot("chase_close")
+			elif _step_t > 0.8 and not _mem.has("c2"):
+				_mem["c2"] = true
+				# 打其中两只：血条、伤害数字
+				for u in T.horde.units.slice(0, 3):
+					T._pending.append([int(u["id"]), float(u["max"]) * 0.4, Net.my_id])
+					w.fx.damage_number((u["p"] as Vector3) + Vector3.UP * 1.9, float(u["max"]) * 0.4, false, false, true)
+			elif _step_t > 1.1 and not _mem.has("c3"):
+				_mem["c3"] = true
+				await _shot("chase_hit")
+			elif _step_t > 1.3 and not _mem.has("c4"):
+				_mem["c4"] = true
+				# 长街：从起点往北看到第一道城门
+				T.horde.clear()
+				var list2: Array = []
+				for i in 30:
+					list2.append([0, Trial.CHASE.x + randf_range(-11.0, 11.0), Trial.CHASE.z - randf_range(20.0, 90.0), [1, 1, 4, 2][i % 4], 100.0])
+				T.horde.host_spawn(list2)
+				p.teleport(Trial.CHASE + Vector3(0, 0.5, 4.0))
+				_aim(p, Trial.CHASE + Vector3(0, 4.0, -110.0))
+			elif _step_t > 2.2 and not _mem.has("c5"):
+				_mem["c5"] = true
+				await _shot("chase_street")
+			elif _step_t > 2.5:
+				T.leave()
 				_next_phase()
 
 
