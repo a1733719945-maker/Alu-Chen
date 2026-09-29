@@ -8,6 +8,7 @@
 - 用户在德国工作，这个游戏是业余做来**和朋友们一起联机玩**的。
 - 用户会说 token 不够、让"快速处理"：这时只做必要的检查（`--check-only`、相关的一小段自动测试或一张截图），不要把五章全流程全跑一遍。CI 推送后会自动跑全流程。
 - 做完一轮就提交、推送，然后告诉用户改了什么、有什么没做完。
+- **用户要用手机跟你沟通**（2026-09-29）：本机桌面会话一开始就打开远程控制（`mcp__ccd_session_mgmt__set_remote_control`，session "self"，true），不然手机上看不到；截图、对比图用 SendUserFile 发，回复短、手机上好读。
 - **两个账号同时做**（2026-09-29 用户定的：大号在云端、小号在本机，用户想到什么随时跟其中一个说）：开工前先读 `docs/正在做.md` 并登记，别做对方正在做的事；提交小、勤推，推送被拒就 `git pull --rebase --autostash`，冲突两边都保留。
 - **用户完全信任你来做决定，别问选择题**。拿不准时自己选"玩家手上、眼睛里感受变化最大"的方案，做完告诉用户选了什么、为什么。只有真正要用户动手的事（Meshy / Tripo 生成模型、Dola 生成图）才找用户，而且一次列全。
 - 2026-09-29 起用户换了一个 Claude 账号，在**本机 Windows 桌面**上做（仓库在 `C:\Users\zlche\OneDrive\文档\Alu-Chen`）。本机工具：Godot `%LOCALAPPDATA%\Programs\Godot\Godot_v4.7.2-stable_win64_console.exe`、Python 3.12、Node 24、ffmpeg（winget 装的）、git、gh。有独立显卡：开窗口截图很快（29 张约 2 分钟），截图输出放 `%TEMP%\claude\shots*`（短路径、没有中文）
