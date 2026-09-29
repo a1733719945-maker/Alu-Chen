@@ -810,10 +810,11 @@ func _ref() -> Array:
 	return [str(sp[0]) if not sp.is_empty() else "rabbit", int(Data.CH_AGE.get(world.chapter, 0))]
 
 
-## 僵尸血量：按全队最强暗器一发的伤害算（跳尸 3 发、疾尸 2 发、铁尸 9 发、尸王 60 发），越往后越厚
+## 僵尸血量：按这一章的标准输出一直开火多少秒算（"一发" = 0.3 秒；跳尸 2.6 发、疾尸 1.8、铁尸 8、尸王 55），越往后越厚。
+## 不按某把暗器一发的伤害——每把一发差十几倍，按哪把都偏心
 func _unit_hp(kind: int, lvl: int) -> float:
 	var o := world.team_output()
-	var shot := maxf(o.x, 10.0)
+	var shot := maxf(o.y * 0.3, 10.0)
 	var k := 1.0 + 0.16 * (lvl - 1)
 	match kind:
 		0:

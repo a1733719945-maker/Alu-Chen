@@ -1452,10 +1452,10 @@ const DG_MOB_DMG := 0.75               # 秘境小怪的伤害
 const HUNT_HP_SOLO := 0.6
 const HUNT_HP_PER := 0.45
 const HUNT_WEAK := 0.2
-## 样板狩猎第二步（2026-09-29 大号）：猎物血量按"全队最强暗器一直开火要打多少秒"定（Data.hunt_hp）。
+## 样板狩猎第二步（2026-09-29 大号）：猎物血量按"一直开火要打多少秒"定（Data.hunt_hp）。
 ## 以前是灵兽王下限 × 0.6，单人一直开火 10~20 秒就打死了；现在 120 秒——算上躲招、露破绽才打、追它换地方、换弹，一场大约 12~15 分钟
 ## 2026-09-30 用户："追猎还是 1-2 分钟就打完了"：血量以前只跟玩家输出的 0.75 次方走（暗器越强越快），也没算爆头、破绽、打晕的加伤。
-## 现在比这一章标准强的完全跟着走、一直开火 200 秒，再乘 HUNT_HIT_K（平均每发比面板高多少）
+## 现在按这一章的标准输出（World.team_output，不看带的是哪把暗器）一直开火 200 秒，再乘 HUNT_HIT_K（平均每发比面板高多少）
 const HUNT_TTK := 200.0
 const HUNT_HIT_K := 1.35
 const HUNT_TTK_PER := 0.75      # 每多一个人多打这么多（人多输出也多）
@@ -1481,8 +1481,8 @@ const CH_HP := {1: 1.0, 2: 2.0, 3: 4.0, 4: 6.0, 5: 8.0}
 
 
 ## 第十一版补丁：怪不再一枪一只（用户："伤害基本都是秒杀"）。
-## 灵兽血量有个下限：按这一章该有的暗器（REF_KIT：暗器、等级、伤害升级），最少要打 HP_SHOTS 下、持续开火 HP_TTK 秒；
-## 玩家的暗器比这一章强，下限也跟着涨（HP_FOLLOW：0.75 次方，强还是打得快一点，只是不会一枪一只）
+## 灵兽血量有个下限：按这一章的标准输出（REF_KIT：暗器、等级、伤害升级）持续开火 HP_TTK 秒（HP_SHOTS × 0.2 秒兜底）；
+## 2026-09-30 起不看玩家带的是哪把暗器（World.team_output）；等级不够就来了，下限跟着降（HP_FOLLOW：0.75 次方）
 const REF_KIT := {1: ["xiujian", 10, 2], 2: ["zhuge", 30, 3], 3: ["kongque", 50, 3], 4: ["kongque", 70, 5], 5: ["zhuihun", 90, 5]}
 const HP_SHOTS := [3.0, 4.0, 5.0, 7.0, 10.0]
 const HP_TTK := [0.5, 0.8, 1.2, 1.7, 2.4]
@@ -1550,7 +1550,7 @@ func star_color(s: int) -> Color:
 	return c
 
 
-## 灵主血量下限：全队最强暗器持续开火至少这么多秒（再乘人数、重数）。用户："打完了都只砸了一下"——强暗器几秒就打死，招都出不来
+## 灵主血量下限：这一章的标准输出持续开火至少这么多秒（再乘人数、重数）。用户："打完了都只砸了一下"——强暗器几秒就打死，招都出不来
 const BOSS_TTK := 55.0
 const ELITE_FLOOR := 12.0              # 灵兽王 / 秘境之主的下限倍数
 
@@ -1569,19 +1569,19 @@ func ref_output(chapter: int) -> Vector2:
 ## 这一章某个年份的灵兽，血量至少要这么多（player：玩家的输出，Vector2.ZERO = 按这一章的标准算）
 func hp_floor(chapter: int, age: int, player: Vector2) -> float:
 	var r := ref_output(chapter)
-	var p := player if player.x > 0.0 else r
+	var p := player if player.y > 0.0 else r
 	var a := clampi(age, 0, HP_SHOTS.size() - 1)
-	var shot := pow(p.x, HP_FOLLOW) * pow(r.x, 1.0 - HP_FOLLOW)
 	var dps := pow(p.y, HP_FOLLOW) * pow(r.y, 1.0 - HP_FOLLOW)
-	# "最少几发"只是不让一枪一只：打得慢的（狙击、天心泪）不能因此要打五六发，最多按持续开火时间的 2.5 倍算
-	return maxf(minf(shot * HP_SHOTS[a], dps * HP_TTK[a] * 2.5), dps * HP_TTK[a])
+	# 以前还按"最少几发"（参照暗器一发的伤害）算，可每把暗器一发差十几倍（寒梅一发是连机神弩的 7 倍），按哪把算都偏心；
+	# 现在只按一直开火多少秒（HP_SHOTS × 0.2 秒兜底，差不多是以前的样子）
+	return dps * maxf(HP_TTK[a], HP_SHOTS[a] * 0.2)
 
 
-## 猎场猎物的血量（player：全队最强暗器的输出 World.team_output，n：几个人）
+## 猎场猎物的血量（player：这一章的标准输出 World.team_output，n：几个人）
 func hunt_hp(chapter: int, player: Vector2, n: int) -> float:
 	var r := ref_output(chapter)
-	var p := player if player.x > 0.0 else r
-	# 比标准强：完全跟着走；比标准弱（等级不够就来了）：还是 0.75 次方，别把人磨死
+	var p := player if player.y > 0.0 else r
+	# 等级不够就来了（比标准弱）：0.75 次方软化，别把人磨死
 	var dps := p.y if p.y >= r.y else pow(p.y, HP_FOLLOW) * pow(r.y, 1.0 - HP_FOLLOW)
 	return dps * HUNT_TTK * HUNT_HIT_K * (1.0 + HUNT_TTK_PER * float(maxi(n, 1) - 1))
 

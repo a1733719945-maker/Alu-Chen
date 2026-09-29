@@ -246,13 +246,16 @@ func _my_info() -> Dictionary:
 
 
 ## 队伍里最强的输出（灵兽血量下限按它算）
+## 定灵兽 / 灵主 / 猎物 / 僵尸血量用的"这一章的标准输出"：只看这是第几章、全队最高等级，**不看带的是哪把暗器、升了几星**
+## （2026-09-30 用户："哪有什么最强的暗器……应该跟怪物猎人一样，每个武器都可以用来打各个关卡"）。
+## 以前取全队身上输出最高的那把：一把升了星，换别的暗器去打就显得打不动。现在练级、升星、锻造都只是让人打得更快。
+## 等级比这一章的参照低就跟着降（各处再按 0.75 次方软化），高了不跟着涨
 func team_output() -> Vector2:
-	var best := Profile.output()
+	var lv := Profile.level
 	for id in peer_info:
-		var o: Array = peer_info[id].get("out", [])
-		if o.size() >= 2 and float(o[1]) > best.y:
-			best = Vector2(float(o[0]), float(o[1]))
-	return best
+		lv = maxi(lv, int(peer_info[id].get("level", 1)))
+	var ref_lv := int((Data.REF_KIT.get(chapter, Data.REF_KIT[1]) as Array)[1])
+	return Data.ref_output(chapter) * minf(Data.level_damage(lv) / Data.level_damage(ref_lv), 1.0)
 
 
 func _ring_summary() -> Array:
