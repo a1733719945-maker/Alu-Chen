@@ -23,7 +23,7 @@ const LOOK := {
 	"snow": {"desat": 0.25, "green": 0.45, "olive": 0.35, "blue": 0.2,
 		"sh": Color(-0.004, 0.002, 0.016), "hi": Color(0.012, 0.006, -0.004), "curve": 0.12, "lift": 0.01},
 	# 归墟：海水青得像泳池、草绿得像塑料
-	"sea": {"desat": 0.26, "green": 0.3, "olive": 0.35, "blue": 0.18,
+	"sea": {"desat": 0.2, "green": 0.3, "olive": 0.25, "blue": 0.08,
 		"sh": Color(-0.004, 0.002, 0.012), "hi": Color(0.024, 0.012, -0.016), "curve": 0.16, "lift": 0.012},
 }
 

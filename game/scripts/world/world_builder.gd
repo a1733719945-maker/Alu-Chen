@@ -548,7 +548,7 @@ func _ground_material() -> ShaderMaterial:
 			return sm
 		"sea":
 			var sm := _terrain_material(["sand", "grass", "rock", "dirt"],
-				[Color(1.08, 1.02, 0.9), Color(0.95, 1.05, 0.8), Color(1.0, 0.98, 0.95), Color(0.95, 0.9, 0.8)],
+				[Color(1.08, 1.02, 0.9), Color(0.64, 0.76, 0.5), Color(1.0, 0.98, 0.95), Color(0.95, 0.9, 0.8)],
 				Vector4(0.2, 0.3, 0.16, 0.24), Vector4(0.9, 0.95, 0.8, 0.92))
 			sm.set_shader_parameter("wet_level", 0.9)
 			return sm
@@ -1205,49 +1205,6 @@ func _pine_tree(r: RandomNumberGenerator, H: float, bark: Material, needles: Mat
 	return {"mesh": mesh, "radius": r0}
 
 
-## 椰子树：弯弯的树干，顶上一圈往下垂的大叶子（每片叶子两段，先往上再往下弯）
-func _palm_tree(r: RandomNumberGenerator, H: float, bark: Material, fronds: Material) -> Dictionary:
-	var sb := SurfaceTool.new()
-	sb.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var sl := SurfaceTool.new()
-	sl.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var cb := [0]
-	var cl := [0]
-	var lean_dir := Vector3(r.randf_range(-1, 1), 0, r.randf_range(-1, 1)).normalized()
-	var lean := r.randf_range(0.8, 2.6)
-	var pts := []
-	var rad := []
-	for i in 9:
-		var t := i / 8.0
-		pts.append(Vector3(0, t * H - 0.3, 0) + lean_dir * lean * t * t)
-		rad.append(lerpf(0.26, 0.15, t) * (1.0 + 0.4 * pow(1.0 - t, 8.0)))
-	_tube(sb, cb, pts, rad, 8, 0.0, 0.5)
-	var top: Vector3 = pts[8]
-	var nc := top - Vector3(0, 2.0, 0)
-	var n := r.randi_range(10, 13)
-	for k in n:
-		var az := TAU * k / n + r.randf_range(-0.2, 0.2)
-		var out := Vector3(cos(az), 0, sin(az))
-		var side := out.cross(Vector3.UP).normalized()
-		var L := r.randf_range(3.2, 4.4)
-		var el1 := deg_to_rad(r.randf_range(15.0, 40.0))
-		var d1 := (out * cos(el1) + Vector3.UP * sin(el1)).normalized()
-		var p1 := top + d1 * L * 0.5
-		var el2 := deg_to_rad(r.randf_range(-45.0, -20.0))
-		var d2 := (out * cos(el2) + Vector3.UP * sin(el2)).normalized()
-		var sh := r.randf_range(0.85, 1.05)
-		var col := Color(sh, sh, sh)
-		_card(sl, cl, top, d1, side.rotated(d1, r.randf_range(-0.3, 0.3)), 1.5, L * 0.5, nc, 0.8, col, 1.0, 0.5)
-		_card(sl, cl, p1, d2, side.rotated(d2, r.randf_range(-0.3, 0.3)), 1.5, L * 0.5, nc, 1.0, col, 0.5, 0.0)
-	var mesh := ArrayMesh.new()
-	sb.generate_tangents()
-	sb.commit(mesh)
-	sl.commit(mesh)
-	mesh.surface_set_material(0, bark)
-	mesh.surface_set_material(1, fronds)
-	return {"mesh": mesh, "radius": 0.26}
-
-
 # ------------------------------------------------------------------ 中式树种（2026-09-29 用户："地面、树这些质感不行"）
 # 黄山松、竹丛、垂柳用代码长；红枫、桃花用阔叶树的骨架换叶子。叶片贴图 tools/make_cn_foliage.py（真实树叶照片拼的）
 
@@ -1469,44 +1426,73 @@ func _tree_kinds(r: RandomNumberGenerator) -> Array:
 	var kinds: Array = []
 	match biome:
 		"forest":
+			# 落霞林（2026-09-29 按镜湖样板换成中式秋林）：红枫、银杏（金黄）、秋叶阔叶树，山坡上黄山松，零星竹丛。
+			# 以前是西洋阔叶树 + 圣诞树一样的松
 			var bark := _bark(Color(0.72, 0.62, 0.55))
+			var dark_bark := _bark(Color(0.5, 0.42, 0.4))
+			var maple := _leaves("maple_red", Color(1.05, 0.92, 0.88), Color(0.7, 0.2, 0.05))
+			var ginkgo := _leaves("leaf_green", Color(1.25, 1.0, 0.4), Color(0.65, 0.5, 0.1))
 			var autumn := _leaves("leaf_autumn", Color(1.0, 0.92, 0.85), Color(0.7, 0.35, 0.1))
-			var dark := _leaves("leaf_dark", Color(0.95, 0.9, 0.7), Color(0.4, 0.4, 0.12))
-			var gold := _leaves("leaf_green", Color(1.15, 0.95, 0.45), Color(0.6, 0.45, 0.1))
-			var pine := _leaves("leaf_pine", Color(0.8, 0.85, 0.7), Color(0.25, 0.35, 0.12))
+			var pine := _leaves("leaf_pine", Color(0.85, 0.88, 0.75), Color(0.25, 0.35, 0.12))
+			var pad := _leaves("pine_pad", Color(0.88, 0.92, 0.8), Color(0.2, 0.3, 0.12))
+			var bleaf := _leaves("bamboo_leaf", Color(0.95, 0.95, 0.8), Color(0.35, 0.45, 0.12))
+			var culm := _culm()
 			for i in 3:
-				kinds.append(_broad_tree(r, r.randf_range(14, 18), 1.0, bark, autumn).merged({"kind": "broad"}))
+				kinds.append(_broad_tree(r, r.randf_range(12, 16), 1.15, dark_bark, maple).merged({"kind": "maple"}))
 			for i in 2:
-				kinds.append(_broad_tree(r, r.randf_range(13, 17), 0.95, bark, dark).merged({"kind": "broad"}))
-			kinds.append(_broad_tree(r, r.randf_range(12, 15), 1.05, bark, gold).merged({"kind": "broad"}))
+				kinds.append(_broad_tree(r, r.randf_range(13, 17), 0.95, bark, ginkgo).merged({"kind": "ginkgo"}))
 			for i in 2:
-				kinds.append(_pine_tree(r, r.randf_range(16, 21), _bark(Color(0.6, 0.5, 0.45)), pine).merged({"kind": "pine"}))
+				kinds.append(_broad_tree(r, r.randf_range(13, 17), 1.0, bark, autumn).merged({"kind": "broad"}))
+			for i in 3:
+				kinds.append(_hs_pine(r, r.randf_range(12, 17), _bark(Color(0.72, 0.62, 0.55)), pad, pine).merged({"kind": "hspine"}))
+			for i in 2:
+				kinds.append(_bamboo(r, r.randf_range(10, 13), culm, bleaf).merged({"kind": "bamboo"}))
 		"deepforest":
+			# 苍梧林海：月夜里的梧桐、大片竹海、老黄山松，夹几棵高高的杉木
 			var bark := _bark(Color(0.42, 0.4, 0.46))
 			var dark := _leaves("leaf_dark", Color(0.55, 0.8, 0.85), Color(0.1, 0.3, 0.45))
 			var blue := _leaves("leaf_green", Color(0.45, 0.7, 0.9), Color(0.1, 0.35, 0.6))
 			var pine := _leaves("leaf_pine", Color(0.55, 0.72, 0.75), Color(0.1, 0.2, 0.28))
+			var pad := _leaves("pine_pad", Color(0.5, 0.68, 0.72), Color(0.08, 0.2, 0.28))
+			var bleaf := _leaves("bamboo_leaf", Color(0.5, 0.72, 0.75), Color(0.08, 0.25, 0.3))
+			var culm := _culm()
+			culm.albedo_color = Color(0.5, 0.62, 0.62)
 			for i in 3:
 				kinds.append(_broad_tree(r, r.randf_range(18, 25), 1.1, bark, dark).merged({"kind": "broad"}))
 			for i in 2:
 				kinds.append(_broad_tree(r, r.randf_range(16, 22), 1.0, bark, blue).merged({"kind": "broad"}))
 			for i in 2:
 				kinds.append(_pine_tree(r, r.randf_range(20, 27), bark, pine).merged({"kind": "pine"}))
+			for i in 3:
+				kinds.append(_bamboo(r, r.randf_range(14, 19), culm, bleaf).merged({"kind": "bamboo"}))
+			for i in 2:
+				kinds.append(_hs_pine(r, r.randf_range(14, 18), bark, pad, pine).merged({"kind": "hspine"}))
 		"snow":
+			# 朔北：雪压的云杉、坡上和高处落了雪的黄山松、枯树
 			var bark := _bark(Color(0.6, 0.55, 0.52))
 			var snowpine := _leaves("leaf_pine_snow", Color(0.95, 1.0, 1.0), Color(0.2, 0.25, 0.3))
+			var snowpad := _leaves("pine_pad_snow", Color(0.95, 1.0, 1.0), Color(0.2, 0.25, 0.3))
 			for i in 4:
 				kinds.append(_pine_tree(r, r.randf_range(11, 19), bark, snowpine).merged({"kind": "pine"}))
+			for i in 3:
+				kinds.append(_hs_pine(r, r.randf_range(9, 13), _bark(Color(0.62, 0.56, 0.52)), snowpad, snowpine).merged({"kind": "hspine"}))
 			for i in 2:
 				kinds.append(_broad_tree(r, r.randf_range(7, 10), 0.9, _bark(Color(0.55, 0.52, 0.5)), null).merged({"kind": "dead"}))
 		"sea":
-			var bark := _bark(Color(0.9, 0.78, 0.62))
-			var frond := _leaves("palm_frond", Color(1.0, 1.02, 0.95), Color(0.4, 0.5, 0.15))
+			# 归墟（以前是椰子树）：海边被风吹歪的黑松、大冠深绿的榕树、开红花的凤凰木，坡上竹丛
+			var bark := _bark(Color(0.62, 0.56, 0.5))
+			var pad := _leaves("pine_pad", Color(0.85, 0.95, 0.85), Color(0.18, 0.3, 0.12))
+			var pine := _leaves("leaf_pine", Color(0.9, 0.95, 0.9), Color(0.25, 0.35, 0.12))
+			var banyan := _leaves("leaf_dark", Color(0.95, 1.05, 0.9), Color(0.3, 0.42, 0.12))
+			var flame := _leaves("maple_red", Color(1.15, 0.85, 0.75), Color(0.75, 0.2, 0.05))
+			var bleaf := _leaves("bamboo_leaf", Color(1.0, 1.05, 0.9), Color(0.35, 0.5, 0.12))
 			for i in 4:
-				kinds.append(_palm_tree(r, r.randf_range(7, 11), bark, frond).merged({"kind": "palm"}))
-			var green := _leaves("leaf_green", Color(1.05, 1.05, 0.95), Color(0.45, 0.55, 0.15))
+				kinds.append(_hs_pine(r, r.randf_range(8, 12), _bark(Color(0.5, 0.45, 0.42)), pad, pine).merged({"kind": "hspine"}))
+			for i in 3:
+				kinds.append(_broad_tree(r, r.randf_range(9, 12), 1.35, bark, banyan).merged({"kind": "broad"}))
+			kinds.append(_broad_tree(r, r.randf_range(8, 10), 1.3, bark, flame).merged({"kind": "flame"}))
 			for i in 2:
-				kinds.append(_broad_tree(r, r.randf_range(8, 11), 1.1, _bark(Color(0.85, 0.78, 0.72)), green).merged({"kind": "broad"}))
+				kinds.append(_bamboo(r, r.randf_range(8, 11), _culm(), bleaf).merged({"kind": "bamboo"}))
 		_:
 			# 镜湖：中式树种——水边垂柳、成片的竹林、山上和坡上的黄山松，阔叶树里夹着红枫和桃花
 			var bark := _bark(Color(0.85, 0.78, 0.72))
@@ -1537,15 +1523,34 @@ func _tree_kinds(r: RandomNumberGenerator) -> Array:
 
 ## 这个位置长哪种树
 func _tree_kind_at(r: RandomNumberGenerator, h: float, x := 0.0, z := 0.0) -> String:
+	var bn := _bamboo_noise.get_noise_2d(x, z) if _bamboo_noise else 0.0
+	var steep := island.slope_at(x, z) > 0.4
 	match biome:
 		"forest":
-			return "pine" if r.randf() < 0.25 else "broad"
+			if bn > 0.42:
+				return "bamboo"
+			if (h > 9.0 or steep) and r.randf() < 0.6:
+				return "hspine"
+			var q := r.randf()
+			return "maple" if q < 0.36 else ("ginkgo" if q < 0.6 else ("hspine" if q < 0.7 else "broad"))
 		"deepforest":
-			return "pine" if r.randf() < 0.3 else "broad"
+			# 竹海成大片
+			if bn > 0.15:
+				return "bamboo"
+			if steep and r.randf() < 0.5:
+				return "hspine"
+			return "pine" if r.randf() < 0.28 else "broad"
 		"snow":
-			return "dead" if r.randf() < 0.15 else "pine"
+			if r.randf() < 0.12:
+				return "dead"
+			return "hspine" if (steep or h > 10.0) and r.randf() < 0.55 else "pine"
 		"sea":
-			return "palm" if h < 5.5 or r.randf() < 0.5 else "broad"
+			if h < 5.5:
+				return "hspine" if r.randf() < 0.7 else "broad"
+			if bn > 0.4:
+				return "bamboo"
+			var q := r.randf()
+			return "flame" if q < 0.12 else ("hspine" if q < 0.45 else "broad")
 	# 镜湖：水边垂柳，竹林成片（噪声高的地方），高处和陡坡黄山松，其余阔叶树夹红枫、桃花
 	if h < 2.3 and r.randf() < 0.65:
 		return "willow"
@@ -1865,7 +1870,7 @@ func _grass() -> void:
 			if h < 1.4 or _patch.get_noise_2d(x * 2.0, z * 2.0) < 0.1 or island.habitat_at(Vector3(x, h, z)) == "icefield":
 				continue
 			s *= 0.75
-			c = Color(1.75, 1.0, 1.3).lerp(Color(1.55, 1.05, 1.15), r.randf())
+			c = Color(1.05, 1.0, 0.95).lerp(Color(0.9, 0.88, 0.86), r.randf())
 		elif biome == "sea":
 			if h < 2.6:
 				continue
@@ -1900,12 +1905,12 @@ func _grass() -> void:
 			if _near_trunk(x, z, 3.5):
 				c = c * 0.8
 		var b := Basis(Vector3.UP, r.randf() * TAU).scaled(Vector3(s, s * r.randf_range(0.8, 1.2), s))
-		xs.append(Transform3D(b, Vector3(x, h - 0.04, z)))
+		xs.append(Transform3D(b, Vector3(x, h - 0.07, z)))
 		cols.append(c)
 	var mat := _grass_mat("grass_tuft_dry" if (biome in ["forest", "snow"]) else "grass_tuft", 0.22, fade)
 	if biome == "island":
-		# 镜湖：草叶贴图本身太亮太绿、逆光再一照更亮 → 压暗、压饱和、逆光减半
-		mat.set_shader_parameter("tint", Color(0.85, 0.85, 0.75))
+		# 镜湖：逆光一照草叶发亮 → 逆光减半（2026-09-29 草叶贴图换成画的细草 tools/make_grass.py，本身不亮，tint 不再压那么多）
+		mat.set_shader_parameter("tint", Color(1.0, 1.0, 0.92))
 		mat.set_shader_parameter("backlight", Color(0.18, 0.22, 0.08))
 	_scatter(_tuft_mesh(1.15 if biome == "island" else 0.95, 0.62), xs, cols, fade + 6.0, false, 32.0, mat)
 
