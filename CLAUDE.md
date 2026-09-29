@@ -435,7 +435,7 @@
    - 自动测试：第三章 boss、bossarts（朱厌 8 招）全过；**还没在游戏里截图看动作**
    - 以后别的灵主照这个流程：混元生成 → Studio 绑骨骼（只支持人形；蛛母 / 蛟 / 鲲不是人形，要另想：程序化腿、身体波浪摆）
 
-33. 混元模型第一批接进游戏（2026-09-29，小号；用户把模型放在 GitHub Release **草稿**里，`gh api` 按 asset id 下载到 `tools/_downloads/hunyuan`，不进仓库）：
+34. 混元模型第一批接进游戏（2026-09-29，小号；用户把模型放在 GitHub Release **草稿**里，`gh api` 按 asset id 下载到 `tools/_downloads/hunyuan`，不进仓库）：
    - 流程：`tools/preview_model.gd`（三个角度拼一张图，看朝向 / 大小 / 面数 / 骨头）→ 静态的用 `tools/shrink_glb.gd` 减到约 1.25 万面 → 带骨骼的用 `tools/fbx_to_glb.gd -- --notail …`（人形**要加 --notail**，不然长衫后摆被当尾巴绑到胯上，跑起来脚边拉出长条）
    - 队友 `assets/models/player/player.glb`（六段动作 idle / walk / run / sprint / jump / crouch）：`RemotePlayer` 按速度、冲刺、蹲、空中选动作；`player/aim_ik.gd`（`AimIK`，SkeletonModifier3D）两节 IK 让两只手端着暗器、枪口跟着 pitch；暗器挂在 `_gun_root`（每帧摆到右手目标点）
    - 暗器 `assets/models/weapons/<id>.glb`（zhuge / kongque / xiujian）：`WeaponModels.MODEL_FIT`（yaw：流光翎枪口朝 +Z 要转 180°；k：长度倍数），`_swap_model` 藏掉代码枪身（蒙皮材质 + 玉 / 翎羽 / 弦），模型按原范围摆；手、配件、Muzzle / Sight / Mag 挂点照旧；`build_small` 也用模型。
@@ -443,6 +443,16 @@
    - 乌篷船 `props/boat.glb`（`WorldBuilder._boat`，meta "model"：Decor 不加船舷灯，锦帆桅杆挪到船头）、石狮子 `props/stone_lion.glb`（`Decor._d_lions`，**别用负缩放镜像**：法线贴图光照会反）、青崖子 `npc/sage.glb`（老将军，待机动作；`Sage` 整个人慢慢侧身看玩家）
    - `Props.place_model(parent, path, size, fit, base, yaw)`：按长 / 高缩放、底面贴地
    - **截图 / 自动测试的启动方式改成** `Start-Process … -WindowStyle Hidden` + Godot 的 `--log-file 文件`（不重定向 stdout）：窗口不出现在用户桌面上；以前重定向 stdout + 屏幕外窗口有两次渲染卡住（用户看到"无响应"窗口）
+
+35. 镜湖场景样板（2026-09-29，大号；`26bb9c4` → `199f5cc`，第四版截图还没看）：用户说"地面、树这些质感不行"，先拿第一章做样板
+   - 树（`world_builder.gd`）：中式树种 `_hs_pine`（黄山松：S 形干、细枝、枝头一团团松针，`_pine_pad` 是压扁椭球里十几张斜贴片）、`_bamboo`（竹丛）、`_willow`（垂柳，垂下的柳条贴片）、红枫、桃花；`_tree_kinds` / `_tree_kind_at` 按高度、坡度、噪声决定种什么（水边柳、成片竹林、陡坡和高处黄山松）。
+     叶片贴图 `tools/make_cn_foliage.py` 用 ambientCG 真树叶照片拼（竹叶、柳条、桃花、红枫、松针团、荷叶、竹竿）
+   - 海上峰林 `_karst_peaks` / `_karst_mesh`（15 座，竖向凹槽、水痕、台阶、苔绿，峰顶种黄山松，码头方向留空）；远山 `_mountains` 镜湖用四道分开的山脊（`ridges`，远的一层比一层淡），不再是一片尖三角锥
+   - 光和雾（`ENV.island`）：上午斜阳、偏暖，低处一层薄雾（`fog_h / fog_hd`），高画质开体积雾
+   - 地面：草 11 万丛、按噪声变色变疏密；地面草色和草丛对齐（草丛着色器加了 `tint`）；土偏褐；陡坡上石头；荷塘 `_lotus`
+   - 宝塔 `Decor._pagoda` 重做成木构（`_story / _pingzuo / _dougong`，曲面飞檐 `_roof_mesh` + 垂脊 `_roof_ridges`，小零件按材质合并 `_acc_add / _acc_flush`）；亭子换曲面攒尖顶；路牌 `_sign` 改成宋体竖写的木牌
+   - 修：秘境 / 试炼场地在 900 米外 420 米高的空中，从岛上看是天上一个灰色椭圆 → 镜头不在 560 米内就藏起来（`WorldBuilder._hide_far_arenas`）
+   - 截图阶段 `sceneshot`（码头、草原、山坡近看宝塔，藏 HUD 和手）；对比图用 `before/` 目录的旧截图
 
 ## 还没做 / 可以继续
 
@@ -619,3 +629,17 @@ xvfb-run -a -s "-screen 0 1280x720x24" godot --path . --rendering-driver vulkan 
 4. **装备循环**：每只王的材料做专属暗器 / 护具（蛛母的毒针、朱厌的火甲），带套装效果 →"猎 A 拿装备，才好打 B"，目标自然连起来；再加千年王 / 历战王、最快 / 无伤纪录给高手追
 5. **收枝叶**：秘境、试炼、钓灵兽不删，降成配角（秘境变成刷某种材料的地方，试炼是休闲），菜单和流程围着"猎王"转
 - 王的血量 / 攻击频率按人数调（已有），一个人不会被磨死，四个人也不会太轻松
+
+### 8. 大号第二次交接（2026-09-29，用户让小号接着做，大号停）
+
+1. **用户刚做好的模型**（7 把暗器里的几把 + 2 种灵兽，按 `docs/3D模型提示词.md` 第二批生成）：接进游戏
+   - 暗器照版本历史 34 的流程（`WeaponModels.MODEL_FIT` / `_swap_model`）。流沙机弩的转管（节点 Rotor）、天心泪的泪滴（节点 Tear）要从模型里按位置切出来单独动（或者让用户拆部件生成）
+   - 灵兽是**静态模型、没有骨骼**（跟用户说好了"动作用代码做"）：`BeastModels` 现在全是带骨骼动画的 Quaternius 模型，要加一条"静态模型 + 代码动作"的路：
+     鱼 / 蛇 / 藤身体波浪摆、鸟 / 蛾 / 蝠 / 鳐扇翅膀、兔 / 蟾整只一蹦一蹦、蛛 / 蟹腿交替迈、四条腿的按位置把腿切开前后摆（可以学跳尸的顶点着色器 `Horde.SHADER_TEX`，或 Boss 的程序步态 `Boss._static_model`）。
+     攻击 / 受击 / 死亡也要有（前扑、后仰、翻倒）。文件名 `beast_<物种 id>.glb`，姿势要求见提示词文档
+   - 山魈是人形，用混元绑骨骼后借用朱厌的 8 段动作（骨头名字一样，都是 Mixamo 那套）
+2. **镜湖样板收尾**（版本历史 35）：第四版截图还没看。`sceneshot` 截图 → 和 `before/` 比 → 还丑的地方接着改 → 用户点头了再推到其他四张图（落霞林、苍梧林海、朔北冰原、归墟，每张图的树种和光各自定）。
+   第三版截图里看到的问题：草一丛丛露黄土、黄山松近看像扁饼、宝塔平白墙、远山灰三角锥、天上灰椭圆——第四版都改了，要确认
+3. **国风 CG**：用户看不了 md 文件，图生视频提示词已经用文字发给用户了。**用户不想做视频也没关系**：直接用 `tools/boat_anim/ai/01~10` 的静图做 Remotion 版（`FilmsCN.tsx` 慢推 + 流云 + 天光 + 竖排题字 + 朱印），先换掉西洋名画版；用户以后做了视频再替换
+4. 蛛母 / 玄鲲（`tools/incoming_models/` 的 Meshy 模型）：还没接（见第 3 节）
+
