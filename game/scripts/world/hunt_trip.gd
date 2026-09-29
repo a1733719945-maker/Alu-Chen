@@ -226,6 +226,11 @@ func _on_done(r: Dictionary) -> void:
 	Profile.count("hunts")
 	if bool(r["captured"]):
 		Profile.count("captures")
+	# 灵核（装备树第五品要）：每人自己掷，连着没掉有保底
+	var sp := str(r["species"])
+	if Data.BEASTS.has(sp) and Gear.roll_core(sp, bool(r["captured"])):
+		world.hud.feed("+ %s灵核" % str(Data.BEASTS[sp]["name"]), UiKit.GOLD)
+		Sfx.play("rare", -2.0)
 	var key := "hunt_best_%s_%d" % [str(r["species"]), int(r["age"])]
 	var best := int(Profile.stats.get(key, 0))
 	var new_best := best == 0 or int(r["time"]) < best

@@ -57,7 +57,7 @@ func _ready() -> void:
 			_plan = ["phys", "hunt:burrow,meadow,flowers,water,reel", "shop", "recoil", "sniper", "ring", "boss", "boat", "hunt:den,swamp,mud", "boss", "boat",
 				"hunt:glade,roost,thicket,nest,bog", "boss", "boat",
 				"hunt:snowden,frostgrove,icefield,icecave,icelake", "boss", "boat",
-				"hunt:beach,cliff,reef,deep,abyss", "boss", "dungeon", "chase", "musou", "huntrun", "huntfail", "touch", "feel", "hunt2", "garts", "done"]
+				"hunt:beach,cliff,reef,deep,abyss", "boss", "dungeon", "chase", "musou", "huntrun", "huntfail", "touch", "feel", "hunt2", "garts", "gear", "done"]
 			# 新暗器测试放在第一章买完暗器后面（要第一章的草地摆靶子；第五章归墟没有草地）
 			_plan.insert(_plan.find("shop") + 1, "guns2")
 			_plan.insert(_plan.find("guns2") + 1, "pills")
@@ -309,6 +309,10 @@ func _process(dt: float) -> void:
 			_run_hunt2()
 		"garts":
 			_run_garts()
+		"gear":
+			_run_gear()
+		"gearshot":
+			_run_gearshot()
 		"hunt2shot":
 			_run_hunt2shot()
 		"fpshot":
@@ -4727,6 +4731,122 @@ func _run_garts() -> void:
 			var b2: Beast = w.beasts.get(w.hunt.target_id)
 			if b2:
 				b2.root_t = 0.0
+			_next_phase()
+
+
+## 装备树（Gear）：做护具、套装件数、护体、锻造、灵核保底、见机 / 铁甲套的效果、锻造页
+func _run_gear() -> void:
+	var w := _ready_world()
+	if not w or _step_t < 0.5:
+		return
+	var p := w.player
+	var keep_on: Dictionary = Profile.gear_on.duplicate()
+	Profile.money += 10000000
+	# 追风狼一套（疾风）
+	for part in ["head", "back", "tail"]:
+		Profile.add_part("wolf", part, 10)
+	Profile.add_material("wolf", 10)
+	var d0 := p.defense()
+	for slot in Gear.SLOTS:
+		if not _check(Gear.craft("wolf", slot), "做不了 %s" % Gear.piece_name("wolf", slot)):
+			return
+	if not _check(Gear.n("swift") == 4 and p.defense() > d0 + 0.05, "穿了四件疾风套：件数 %d，护体 %.2f → %.2f" % [Gear.n("swift"), d0, p.defense()]):
+		return
+	if not _check(not Gear.craft("wolf", "head"), "同一件能做两次"):
+		return
+	# 会飞的（青鸾）身甲用翼
+	var bc: Dictionary = Gear.cost("bird", "body")
+	if not _check((bc["parts"] as Dictionary).has("bird|wing"), "会飞的身甲没用翼"):
+		return
+	# 见机套（碧鳞蛇两件 + 碧眼蟾两件，同一类混穿也算四件）：极限闪避后下一箭翻倍
+	for sp in ["snake", "frog"]:
+		for part in ["head", "back", "tail"]:
+			Profile.add_part(sp, part, 10)
+		Profile.add_material(sp, 10)
+	Gear.craft("snake", "head")
+	Gear.craft("snake", "body")
+	Gear.craft("frog", "arms")
+	Gear.craft("frog", "legs")
+	if not _check(Gear.n("counter") == 4 and Gear.n("swift") == 0, "混穿见机套件数不对（%s）" % str(Gear.worn())):
+		return
+	p._pd_cd = 0.0
+	p._perfect_dodge()
+	if not _check(p.counter_t > 3.0, "见机套四件：极限闪避后没有下一箭翻倍"):
+		return
+	p.counter_t = 0.0
+	# 铁甲套（铁甲兕）：血少的时候挨打少一大截
+	for part in ["head", "back", "tail"]:
+		Profile.add_part("rhino", part, 10)
+	Profile.add_material("rhino", 10)
+	for slot in Gear.SLOTS:
+		Gear.craft("rhino", slot)
+	p.invuln_t = 0.0
+	p.shield = 0.0
+	p.dead = false
+	var mx := Profile.max_hp()
+	p.hp = mx
+	p.take_damage(50.0, p.global_position + Vector3.FORWARD)
+	var full := mx - p.hp
+	p.hp = mx * 0.2
+	var h0 := p.hp
+	p.take_damage(50.0, p.global_position + Vector3.FORWARD)
+	var low := h0 - p.hp
+	p.hp = mx
+	p.invuln_t = 9999.0
+	if not _check(low < full * 0.8, "铁甲套四件：血少时没少挨（满血 %.1f / 血少 %.1f）" % [full, low]):
+		return
+	# 锻造：第一品用第一章灵兽王的材料
+	var gid := str(Profile.loadout[0])
+	var dmg0 := float(Profile.weapon_stats(gid)["damage"])
+	Profile.add_part("rabbit", "head", 5)
+	Profile.add_material("rabbit", 3)
+	if not _check(Gear.forge(gid) and Gear.grade(gid) == 1, "锻不了 %s" % gid):
+		return
+	var dmg1 := float(Profile.weapon_stats(gid)["damage"])
+	if not _check(dmg1 > dmg0 * 1.05, "锻造没加伤害（%.1f → %.1f）" % [dmg0, dmg1]):
+		return
+	# 灵核保底
+	Profile.stats["core_pity"] = Gear.CORE_PITY - 1
+	var c0 := Gear.cores()
+	if not _check(Gear.roll_core("wolf", false) and Gear.cores() == c0 + 1, "灵核保底没掉"):
+		return
+	# 锻造页能打开
+	w.hud._shop._tab = "forge"
+	w.hud._shop.refresh()
+	_note("疾风套四件护体 %.2f → %.2f；见机套混穿四件；铁甲套血少挨打 %.0f → %.0f；%s（伤害 %.1f → %.1f）；灵核保底" % [d0, d0 + Gear.armor(), full, low, Gear.forged_name(gid), dmg0, dmg1])
+	Profile.gear_on = keep_on
+	_next_phase()
+
+
+## 锻造页截图（接在 gear 后面：材料和护具是 gear 给的）
+func _run_gearshot() -> void:
+	var w := _ready_world()
+	if not w:
+		return
+	match _step:
+		0:
+			for slot in Gear.SLOTS:
+				if Gear.owns("wolf", slot):
+					Profile.gear_on[slot] = "wolf"
+			Profile.gear_on["legs"] = "rhino" if Gear.owns("rhino", "legs") else Profile.gear_on.get("legs", "wolf")
+			Profile.add_part("husky", "head", 1)
+			w.hud._shop._tab = "forge"
+			w.hud._shop._gear_sp = "wolf"
+			w.hud._shop.open()
+			_next(1)
+		1:
+			if _step_t < 1.2:
+				return
+			_next(2)
+			await _shot("forge_tab")
+		2:
+			w.hud._shop._scroll.scroll_vertical = 900
+			if _step_t < 0.6:
+				return
+			_next(3)
+			await _shot("forge_tab_weapon")
+		3:
+			w.hud._shop.visible = false
 			_next_phase()
 
 

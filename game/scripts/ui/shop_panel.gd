@@ -6,7 +6,7 @@ extends ColorRect
 
 signal closed
 
-const TABS := [["weapons", "暗器"], ["attach", "配件"], ["upgrades", "升级"], ["stars", "升星"], ["enchant", "附魔"], ["items", "道具 · 鱼饵"], ["looks", "外观"], ["decor", "装饰"]]
+const TABS := [["weapons", "暗器"], ["attach", "配件"], ["upgrades", "升级"], ["stars", "升星"], ["forge", "锻造"], ["enchant", "附魔"], ["items", "道具 · 鱼饵"], ["looks", "外观"], ["decor", "装饰"]]
 
 var world: Node
 var _tab := "weapons"
@@ -88,6 +88,8 @@ func refresh() -> void:
 			_enchant_tab()
 		"stars":
 			_stars_tab()
+		"forge":
+			_forge_tab()
 		"upgrades":
 			if Profile.loadout.is_empty():
 				_list.add_child(UiKit.label("身上没有暗器。先买一把", 18, UiKit.MIST))
@@ -418,6 +420,181 @@ func _star_reveal(id: String, res: Dictionary) -> void:
 
 
 # ------------------------------------------------------------------ 装饰：码头、船、暗器铺、营地（Decor）
+
+# ------------------------------------------------------------------ 锻造（装备树 Gear）：护具 + 暗器锻造
+
+var _gear_sp := ""
+
+
+func _forge_tab() -> void:
+	# 穿着的套装
+	var worn := Gear.worn()
+	_list.add_child(UiKit.section("身上的套装：同一类混穿也算件数，两件一个小加成，四件改打法", UiKit.GOLD))
+	var wrow := HFlowContainer.new()
+	wrow.add_theme_constant_override("h_separation", 8)
+	wrow.add_theme_constant_override("v_separation", 6)
+	_list.add_child(wrow)
+	if worn.is_empty():
+		wrow.add_child(UiKit.label("还没穿护具。猎场里打断灵兽王的角、尾、背甲，就有材料做", 15, UiKit.MIST))
+	for kind in Gear.KIND_ORDER:
+		var c := int(worn.get(kind, 0))
+		if c <= 0:
+			continue
+		var s: Dictionary = Gear.SKILLS[kind]
+		var txt := "%s %d/4" % [str(s["name"]), c]
+		if c >= 2:
+			txt += "  ·  " + str(s["two"])
+		if c >= 4:
+			txt += "  ·  " + str(s["four"])
+		wrow.add_child(UiKit.chip(txt, s["color"], 15, c >= 4))
+	# 选一种灵兽王看它的一套
+	var sps := Gear.species()
+	if not _gear_sp in sps:
+		_gear_sp = ""
+		for sp in sps:
+			if _has_mats(sp) or int(Data.SPECIES_CH[sp]) == int(Profile.chapter):
+				_gear_sp = str(sp)
+				break
+		if _gear_sp == "":
+			_gear_sp = str(sps[0])
+	_list.add_child(UiKit.section("护具", UiKit.GOLD))
+	var pick := HFlowContainer.new()
+	pick.add_theme_constant_override("h_separation", 8)
+	pick.add_theme_constant_override("v_separation", 6)
+	_list.add_child(pick)
+	for sp in sps:
+		var ch := int(Data.SPECIES_CH[sp])
+		if ch > int(Profile.max_chapter) and not _has_mats(sp):
+			continue
+		var spid := str(sp)
+		var b := UiKit.button(str(Data.BEASTS[sp]["name"]) + ("  ·" if _has_mats(sp) else ""), 15, spid == _gear_sp)
+		b.pressed.connect(func():
+			_gear_sp = spid
+			refresh())
+		pick.add_child(b)
+	_gear_block(_gear_sp)
+	_forge_block()
+
+
+func _has_mats(sp: String) -> bool:
+	if int(Profile.materials.get(sp, 0)) > 0:
+		return true
+	for k in Profile.parts:
+		if str(k).get_slice("|", 0) == sp and int(Profile.parts[k]) > 0:
+			return true
+	return false
+
+
+func _gear_block(sp: String) -> void:
+	var kind := str(Gear.KIND[sp])
+	var s: Dictionary = Gear.SKILLS[kind]
+	# 这只王的材料
+	var mats := HFlowContainer.new()
+	mats.add_theme_constant_override("h_separation", 8)
+	_list.add_child(mats)
+	mats.add_child(UiKit.chip("%s套 · 两件：%s · 四件：%s" % [str(s["name"]), str(s["two"]), str(s["four"])], s["color"], 15, true))
+	for part in ["head", "back", "wing", "tail", "core"]:
+		var n := int(Profile.parts.get("%s|%s" % [sp, part], 0))
+		if n > 0 or (part in ["head", "tail"]) or (part == ("wing" if Gear.fly(sp) else "back")):
+			var nm: String = "灵核" if part == "core" else str(KingFeel.PART_NAME.get(part, part))
+			mats.add_child(UiKit.chip("%s ×%d" % [nm, n], UiKit.MOON if n > 0 else UiKit.DIM, 14))
+	mats.add_child(UiKit.chip("王魄 ×%d" % int(Profile.materials.get(sp, 0)), UiKit.GOLD if int(Profile.materials.get(sp, 0)) > 0 else UiKit.DIM, 14))
+	for slot in Gear.SLOTS:
+		var owned := Gear.owns(sp, slot)
+		var on := str(Profile.gear_on.get(slot, "")) == sp
+		var h := _row(s["color"] if on else Color(0, 0, 0, 0))
+		var v := VBoxContainer.new()
+		v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		v.add_theme_constant_override("separation", 3)
+		h.add_child(v)
+		var top := HBoxContainer.new()
+		top.add_theme_constant_override("separation", 10)
+		v.add_child(top)
+		top.add_child(UiKit.bold(Gear.piece_name(sp, slot), 19, UiKit.MOON))
+		if on:
+			top.add_child(UiKit.chip("穿着", s["color"], 12))
+		var cur := str(Profile.gear_on.get(slot, ""))
+		if cur != "" and cur != sp:
+			top.add_child(UiKit.chip("现在穿：%s" % Gear.piece_name(cur, slot), UiKit.DIM, 12))
+		var need := HFlowContainer.new()
+		need.add_theme_constant_override("h_separation", 6)
+		v.add_child(need)
+		need.add_child(UiKit.label("护体 +%d%%" % roundi(Gear.piece_armor(sp) * 100.0), 14, UiKit.MIST))
+		var sl := str(slot)
+		if owned:
+			var b := UiKit.button("脱下" if on else "穿上", 17, not on)
+			b.custom_minimum_size.x = 150
+			b.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+			b.pressed.connect(func():
+				Gear.toggle(sp, sl)
+				Sfx.play("switch", -4.0)
+				world._broadcast_prog()
+				refresh())
+			h.add_child(b)
+			continue
+		var c := Gear.cost(sp, slot)
+		for k in c["parts"]:
+			var have := int(Profile.parts.get(k, 0))
+			var want := int(c["parts"][k])
+			need.add_child(UiKit.chip("%s %d/%d" % [str(KingFeel.PART_NAME.get(str(k).get_slice("|", 1), "")), have, want], UiKit.GREEN if have >= want else UiKit.RED, 13))
+		var hm := int(Profile.materials.get(sp, 0))
+		need.add_child(UiKit.chip("王魄 %d/%d" % [hm, int(c["mat"])], UiKit.GREEN if hm >= int(c["mat"]) else UiKit.RED, 13))
+		var b2 := _price_button(int(c["money"]), true, "做 · %d 灵石" % int(c["money"]))
+		b2.disabled = not Gear.can_craft(sp, slot)
+		b2.pressed.connect(func():
+			if Gear.craft(sp, sl):
+				Sfx.play("coin", -2.0)
+				Sfx.play("level_up", -6.0, 0.0, 1.2)
+				world.hud.toast("做好了【%s】，穿上了" % Gear.piece_name(sp, sl), s["color"])
+				world._broadcast_prog()
+			refresh())
+		h.add_child(b2)
+
+
+func _forge_block() -> void:
+	_list.add_child(UiKit.section("锻造暗器：第几品用第几章灵兽王的材料，第五品要一颗灵核", UiKit.GOLD))
+	if Profile.loadout.is_empty():
+		_list.add_child(UiKit.label("身上没有暗器。先买一把", 18, UiKit.MIST))
+		return
+	_weapon_picker()
+	var id := _pick_weapon
+	var g := Gear.grade(id)
+	var h := _row(UiKit.GOLD if g > 0 else Color(0, 0, 0, 0))
+	var v := VBoxContainer.new()
+	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	v.add_theme_constant_override("separation", 4)
+	h.add_child(v)
+	var top := HBoxContainer.new()
+	top.add_theme_constant_override("separation", 10)
+	v.add_child(top)
+	top.add_child(UiKit.bold(Gear.forged_name(id), 22, UiKit.MOON))
+	top.add_child(UiKit.chip("第 %d 品 / %d" % [g, Gear.FORGE_MAX], UiKit.GOLD if g > 0 else UiKit.DIM, 13))
+	var c := Gear.forge_cost(id)
+	if c.is_empty():
+		v.add_child(UiKit.label("锻满了", 15, UiKit.GOLD))
+		return
+	var ng := int(c["grade"])
+	v.add_child(UiKit.label("下一品：%s·%s（伤害更高）" % [str(Data.WEAPONS[id]["name"]), str(Gear.FORGE_NAME[ng])], 15, UiKit.MIST))
+	var need := HFlowContainer.new()
+	need.add_theme_constant_override("h_separation", 6)
+	v.add_child(need)
+	var hp := Gear.ch_parts(ng)
+	need.add_child(UiKit.chip("第%d章灵兽王的部位 %d/%d" % [ng, hp, int(c["parts"])], UiKit.GREEN if hp >= int(c["parts"]) else UiKit.RED, 13))
+	var hm := Gear.ch_mats(ng)
+	need.add_child(UiKit.chip("第%d章王魄 %d/%d" % [ng, hm, int(c["mats"])], UiKit.GREEN if hm >= int(c["mats"]) else UiKit.RED, 13))
+	if int(c["core"]) > 0:
+		need.add_child(UiKit.chip("灵核 %d/%d" % [Gear.cores(), int(c["core"])], UiKit.GREEN if Gear.cores() >= int(c["core"]) else UiKit.RED, 13))
+	var b := _price_button(int(c["money"]), true, "锻造 · %d 灵石" % int(c["money"]))
+	b.disabled = not Gear.can_forge(id)
+	b.pressed.connect(func():
+		if Gear.forge(id):
+			Sfx.play("coin", -2.0)
+			Sfx.play("level_up", -4.0, 0.0, 1.0)
+			world.hud.toast("锻成了【%s】" % Gear.forged_name(id), UiKit.GOLD)
+			world.on_attach_changed()
+		refresh())
+	h.add_child(b)
+
 
 func _decor_tab() -> void:
 	_list.add_child(UiKit.section("装饰码头、渡船、暗器铺和猎场营地；联机时队友买的也会摆出来", UiKit.GOLD))

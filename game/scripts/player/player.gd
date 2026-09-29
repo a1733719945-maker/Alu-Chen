@@ -66,6 +66,7 @@ var busy_t := 0.0                # 吸收灵环时不能开枪
 var channeling := false          # 猎灵远征：正在吸收灵环（站着不能动，能开枪，队友护法）
 var buffs := {}                  # stat -> [amount, 剩余秒]
 # 灵兽招式带来的负面状态（Data.BEAST_SKILLS）
+var counter_t := 0.0             # 见机套（Gear 四件）：极限闪避后这几秒内下一箭翻倍
 ## 流沙机弩（GunArts 站桩）：转起来（heat）以后站定开火，挨打 ×SAND_GUARD_K
 const SAND_GUARD_K := 0.6
 var sand_guard: bool:
@@ -301,7 +302,7 @@ func heal(amount: float) -> void:
 
 ## 总减伤比例（面板上显示的"护体"）
 func defense() -> float:
-	return Data.level_armor(Profile.level) + buff("dr") + Profile.bone_bonus("dr")
+	return Data.level_armor(Profile.level) + buff("dr") + Profile.bone_bonus("dr") + Gear.armor()
 
 
 ## tick = true：毒池、中毒、溺水、漩涡这种一跳一跳的（不算极限闪避）
@@ -320,6 +321,12 @@ func take_damage(amount: float, from_pos: Vector3, tick := false) -> void:
 	# 流沙机弩（GunArts 站桩）：转起来站定开火时挨打少一截
 	if sand_guard:
 		amount *= SAND_GUARD_K
+	# 铁甲套（Gear）：两件少挨一点，四件血少时再少一大截
+	var iron := Gear.n("iron")
+	if iron >= 2:
+		amount *= Gear.IRON_K
+	if iron >= 4 and hp < Profile.max_hp() * 0.35:
+		amount *= Gear.IRON_LOW_K
 	if vuln_t > 0.0:
 		amount *= 1.3
 	var left := amount
@@ -349,6 +356,12 @@ func _perfect_dodge() -> void:
 		return
 	_pd_cd = now + 1.2
 	add_buff("dmg", 0.3, 4.0)
+	# 见机套（Gear）：两件多回灵力，四件下一箭翻倍
+	var ctr := Gear.n("counter")
+	if ctr >= 2:
+		soul = minf(soul + Profile.max_soul() * 0.15 * (Gear.COUNTER_SOUL - 1.0), Profile.max_soul())
+	if ctr >= 4:
+		counter_t = 4.0
 	# 袖箭（GunArts 闪身）：极限闪避后弹匣自动装满
 	if gun and gun.id == "xiujian" and gun.ammo < int(gun.d["mag"]):
 		gun.cancel_reload()
@@ -618,7 +631,7 @@ func _physics_process(dt: float) -> void:
 	elif crouching:
 		max_speed = CROUCH_SPEED
 	max_speed *= lerpf(1.0, float(gun.d["ads_move"]), ads)
-	max_speed *= 1.0 + buff("speed") + Profile.bone_bonus("speed") + giant_k * 0.25
+	max_speed *= 1.0 + buff("speed") + Profile.bone_bonus("speed") + giant_k * 0.25 + (Gear.SWIFT_SPEED if Gear.n("swift") >= 2 else 0.0)
 	if slot < 2:
 		max_speed *= float(Data.MOVE_K.get(gun.id, 1.0)) * float(gun.d.get("move_k", 1.0)) * (0.7 if gun.charge > 0.0 else 1.0)
 	max_speed = maxf(max_speed, 1.0)
@@ -649,7 +662,11 @@ func _physics_process(dt: float) -> void:
 			if _ctrl_t < 0.22 and wish.length() > 0.1 and _roll_cd <= 0.0 and is_on_floor() and fly_t <= 0.0 and not channeling:
 				_roll_dir = wish.normalized()
 				_roll_t = 0.42
-				_roll_cd = 0.9
+				# 疾风套（Gear 四件）：翻滚冷却减半，翻完一阵跑得飞快
+				var swift4 := Gear.n("swift") >= 4
+				_roll_cd = 0.45 if swift4 else 0.9
+				if swift4:
+					add_buff("speed", 0.3, 1.2)
 				invuln_t = maxf(invuln_t, 0.36)
 				Sfx.play("jump", -4.0, 0.05, 0.7)
 				viewmodel.land(0.5)
@@ -766,7 +783,7 @@ func _physics_process(dt: float) -> void:
 	if jump_pressed:
 		_jump_buf = JUMP_BUFFER
 	_jump_buf -= dt
-	var jv := JUMP_VELOCITY * sqrt(1.0 + Profile.bone_bonus("jump") + giant_k * 0.6)
+	var jv := JUMP_VELOCITY * sqrt(1.0 + Profile.bone_bonus("jump") + giant_k * 0.6) * (Gear.SKY_JUMP if Gear.n("sky") >= 2 else 1.0)
 	if _jump_buf > 0.0 and _coyote > 0.0 and not swimming:
 		velocity.y = jv
 		_jump_buf = 0.0
@@ -914,7 +931,8 @@ func _update_stats(dt: float) -> void:
 	# （饱食度去掉了：用户说吃肉没什么作用，换成了各种丹药）
 	_update_poison(dt)
 	if _since_hurt > REGEN_DELAY:
-		regen += REGEN_RATE
+		regen += REGEN_RATE * (Gear.RENEW_REGEN if Gear.n("renew") >= 2 else 1.0)
+	counter_t = maxf(counter_t - dt, 0.0)
 	hp = minf(hp + regen * dt, max_hp)
 	var soul_rate := 5.0 * (1.0 + buff("soul"))
 	soul = minf(soul + soul_rate * dt, Profile.max_soul())
@@ -1455,7 +1473,9 @@ func current_spread() -> float:
 	if gun.id == "xiujian" and _roll_t > 0.0:
 		return gun.spread(1.0, 0.0, false, false, false)
 	var hv := Vector3(velocity.x, 0, velocity.z)
-	return gun.spread(ads, hv.length() / WALK_SPEED, not is_on_floor() and not swimming, crouch_k > 0.5, scoped)
+	# 凌空套（Gear 四件）：空中开火不散
+	var air := not is_on_floor() and not swimming and Gear.n("sky") < 4
+	return gun.spread(ads, hv.length() / WALK_SPEED, air, crouch_k > 0.5, scoped)
 
 
 func _fire() -> void:
@@ -1472,6 +1492,13 @@ func _fire() -> void:
 		spread *= 1.0 - 0.9 * gun.charge
 		ck = gun.charge_mult()
 		pierce_all = gun.charge >= 0.98
+	# 护具（Gear）：见机套极限闪避后下一箭翻倍；凌空套人在空中开火更痛
+	if counter_t > 0.0:
+		counter_t = 0.0
+		ck *= 2.0
+		Sfx.play("hit_head", -6.0, 0.0, 1.7)
+	if not is_on_floor() and not swimming and Gear.n("sky") >= 4:
+		ck *= Gear.SKY_DMG
 	var basis := aim_basis()
 	var dirs: Array[Vector3] = []
 	var n := int(d["pellets"])

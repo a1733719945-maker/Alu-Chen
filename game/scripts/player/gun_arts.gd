@@ -60,6 +60,9 @@ static func host_hit(b: Beast, gun: String, fl: String, real: float, lp: Vector3
 	# 追星针的星：谁打这个部位都更痛（部位多掉一截在 KingFeel.host_hit）
 	if f and part != "" and f.starred(part):
 		real *= 1.15
+	# 护具（Gear）破势四件：打头把王打晕得快得多（看的是开枪那个人穿的）
+	if f and head and Gear.peer_n(b.world, shooter, "breaker") >= 4:
+		f.add_stun(real * Gear.BREAKER_STUN)
 	match gun:
 		"meihua":
 			var key := "%d:%d" % [b.id, shooter]

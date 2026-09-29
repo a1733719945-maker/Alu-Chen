@@ -46,6 +46,10 @@ var enchant := {}                   # 暗器 -> 附魔 id（Data.ENCHANTS）
 var stars := {}                     # 暗器 -> 星数（升星，Data.STAR_*）
 var star_bless := {}                # 暗器 -> 失败攒下的祝福（每次 +5% 成功率，成功清零）
 var decor := {}                     # 装饰 id -> 摆没摆上（买了就有这个键）
+## 装备树（Gear）：做过的护具 "灵兽|部位" -> 1、穿着的 部位 -> 灵兽、暗器锻到第几品
+var gear := {}
+var gear_on := {}
+var forge := {}
 var chapter := 1
 var quest := 0              # 当前章节的任务进度
 var quest_count := 0        # 当前任务的计数（击杀数等）
@@ -128,6 +132,9 @@ func load_profile() -> void:
 	enchant = d.get("enchant", {})
 	stars = d.get("stars", {})
 	decor = d.get("decor", {})
+	gear = d.get("gear", {})
+	gear_on = d.get("gear_on", {})
+	forge = d.get("forge", {})
 	star_bless = d.get("star_bless", {})
 	skin = str(d.get("skin", "default"))
 	outfit = str(d.get("outfit", "default"))
@@ -185,7 +192,7 @@ func save_profile() -> void:
 		"version": VERSION, "money": money, "xp": xp, "level": level, "weapons": weapons,
 		"upgrades": upgrades, "items": items, "rings": rings, "bones": bones, "equipped": equipped, "bag": bag, "food": food, "bait": bait, "bounties": bounties, "skins": skins, "skin": skin, "outfits": outfits, "outfit": outfit, "codex": codex,
 		"skin_of": skin_of, "charms": charms, "charm_of": charm_of, "mastery": mastery, "paint": paint,
-		"skill_slots": skill_slots, "ring_hole": ring_hole, "attach_owned": attach_owned, "attach_on": attach_on, "stats": stats, "achieved": achieved, "god": god, "max_chapter": max_chapter, "rebirth": rebirth, "boss_tier": boss_tier, "materials": materials, "parts": parts, "enchant": enchant, "stars": stars, "star_bless": star_bless, "decor": decor,
+		"skill_slots": skill_slots, "ring_hole": ring_hole, "attach_owned": attach_owned, "attach_on": attach_on, "stats": stats, "achieved": achieved, "god": god, "max_chapter": max_chapter, "rebirth": rebirth, "boss_tier": boss_tier, "materials": materials, "parts": parts, "enchant": enchant, "stars": stars, "star_bless": star_bless, "decor": decor, "gear": gear, "gear_on": gear_on, "forge": forge,
 		"chapter": chapter, "quest": quest, "quest_count": quest_count, "kills": kills, "loadout": loadout,
 	}
 	var f := FileAccess.open(path, FileAccess.WRITE)
@@ -271,7 +278,7 @@ func do_rebirth() -> bool:
 		return false
 	var keep := {"skins": skins, "skin": skin, "outfits": outfits, "outfit": outfit, "achieved": achieved, "stats": stats,
 		"codex": codex, "attach_owned": attach_owned, "money": money / 10, "rebirth": rebirth + 1,
-		"skin_of": skin_of, "charms": charms, "charm_of": charm_of, "mastery": mastery, "paint": paint, "stars": stars, "star_bless": star_bless, "decor": decor}
+		"skin_of": skin_of, "charms": charms, "charm_of": charm_of, "mastery": mastery, "paint": paint, "stars": stars, "star_bless": star_bless, "decor": decor, "gear": gear, "gear_on": gear_on, "forge": forge}
 	_defaults()
 	for k in keep:
 		set(k, keep[k])
@@ -320,6 +327,9 @@ func _defaults() -> void:
 	stars = {}
 	star_bless = {}
 	decor = {}
+	gear = {}
+	gear_on = {}
+	forge = {}
 	chapter = 1
 	quest = 0
 	quest_count = 0
@@ -541,6 +551,18 @@ func weapon_stats(id: String, on: Variant = null) -> Dictionary:
 		d["damage"] = d["damage"] * sk
 		if d.has("splash_dmg"):
 			d["splash_dmg"] = float(d["splash_dmg"]) * sk
+	# 锻造（装备树）：每品 +Gear.FORGE_DMG
+	var fk := 1.0 + Gear.FORGE_DMG * float(forge.get(id, 0))
+	if fk != 1.0:
+		d["damage"] = d["damage"] * fk
+		if d.has("splash_dmg"):
+			d["splash_dmg"] = float(d["splash_dmg"]) * fk
+	# 护具两件套：破势打头更痛、追猎开镜更快
+	var worn := Gear.worn()
+	if int(worn.get("breaker", 0)) >= 2:
+		d["headshot"] = float(d["headshot"]) * Gear.BREAKER_HEAD
+	if int(worn.get("hunter", 0)) >= 2:
+		d["ads_time"] = float(d["ads_time"]) * Gear.HUNTER_ADS
 	return d
 
 

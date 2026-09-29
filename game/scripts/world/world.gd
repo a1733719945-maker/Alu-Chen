@@ -240,7 +240,7 @@ func _exit_tree() -> void:
 
 func _my_info() -> Dictionary:
 	var o := Profile.output()
-	return {"name": Settings.display_name(), "wuhun": Settings.wuhun, "level": Profile.level, "rings": _ring_summary(), "outfit": Profile.outfit, "skin": Profile.skin, "out": [o.x, o.y], "skins": Profile.skin_of.duplicate(), "decor": Profile.decor_on()}
+	return {"name": Settings.display_name(), "wuhun": Settings.wuhun, "level": Profile.level, "rings": _ring_summary(), "outfit": Profile.outfit, "skin": Profile.skin, "out": [o.x, o.y], "skins": Profile.skin_of.duplicate(), "decor": Profile.decor_on(), "gear": Gear.worn()}
 
 
 ## 队伍里最强的输出（灵兽血量下限按它算）
@@ -490,7 +490,7 @@ func local_fire(g: Gun, origin: Vector3, dirs: Array[Vector3], muzzle: Vector3, 
 			if col is Beast and (col as Beast).alive():
 				var b := col as Beast
 				var head := b.is_head(int(hit["shape"])) or crit
-				var dmg: float = float(w["damage"]) * _falloff(w, hit_dist) * (float(w["headshot"]) if head else 1.0) * dmg_mult
+				var dmg: float = float(w["damage"]) * _falloff(w, hit_dist) * (float(w["headshot"]) if head else 1.0) * dmg_mult * _gear_hit_k(b, hit_dist)
 				if not per_beast.has(b.id):
 					per_beast[b.id] = {"dmg": 0.0, "imp": Vector3.ZERO, "pts": Vector3.ZERO, "n": 0, "head": false, "dist": hit_dist}
 				var h: Dictionary = per_beast[b.id]
@@ -581,6 +581,19 @@ func local_fire(g: Gun, origin: Vector3, dirs: Array[Vector3], muzzle: Vector3, 
 				get_tree().create_timer(0.25 + i * 0.1).timeout.connect(func(): _lay_mine(g, cp, sd * 0.45 * MINE_K))
 	Net.send(0, "shot", [g.id, muzzle, ends])
 	_apply_hits(g, per_beast, boss_dmg, boss_weak, true, k > 1.5, "full" if pierce_over > 0 else "")
+
+
+## 护具（Gear）打中灵兽时的加成：缠魂两件打捆住的更痛，追猎四件离得越远越痛
+func _gear_hit_k(b: Beast, dist: float) -> float:
+	var worn := Gear.worn()
+	if worn.is_empty():
+		return 1.0
+	var k := 1.0
+	if int(worn.get("bind", 0)) >= 2 and (b.root_t > 0.0 or (b.flags & Beast.FLAG_ROOT) != 0):
+		k *= Gear.BIND_DMG
+	if int(worn.get("hunter", 0)) >= 4:
+		k *= 1.0 + Gear.HUNTER_FAR * clampf((dist - 15.0) / 60.0, 0.0, 1.0)
+	return k
 
 
 ## 爆炸：r 米内的灵兽都挨（中心全伤害，边上三成），往外掀
@@ -752,6 +765,9 @@ func _apply_hits(g: Gun, per_beast: Dictionary, boss_dmg: float, boss_weak: bool
 				Net.send(1, "emp", [xk, xp, xd, int(id)])
 		var local_pt: Vector3 = h["pts"] / float(h["n"])
 		var shown: float = h["dmg"] * b.armor_factor(h["head"])
+		# 回春套（Gear 四件）：打中灵兽王回一点血
+		if b.temper == "elite" and Gear.n("renew") >= 4:
+			player.heal(float(h["dmg"]) * Gear.RENEW_LEECH)
 		# 狙击 / 远处（35 米外）打中：数字一定飘，再加一声清脆的命中
 		var heavy: bool = big or str(w["mode"]) == "bolt" or float(h["dist"]) >= 35.0 or w.has("splash")
 		if heavy and not h["head"]:
@@ -1703,7 +1719,8 @@ func host_hook(bid: int, puller: int) -> void:
 		var need := mini(alive_players().size(), 2)
 		var n := b.add_rope(puller)
 		if n >= need:
-			b.bind(Data.KING_BIND_TIME)
+			# 缠魂套（Gear 四件）：捆得更久
+			b.bind(Data.KING_BIND_TIME * (Gear.BIND_TIME if Gear.peer_n(self, puller, "bind") >= 4 else 1.0))
 			var mb := [bid]
 			Net.send(0, "kingbind", mb)
 			_on_king_bind(mb)
@@ -2637,7 +2654,7 @@ func _on_quest_done(msg: Array) -> void:
 func _broadcast_prog() -> void:
 	peer_info[Net.my_id] = _my_info()
 	var o := Profile.output()
-	var p := [Profile.level, _ring_summary(), Profile.outfit, Profile.skin, [snappedf(o.x, 0.1), snappedf(o.y, 0.1)], Profile.skin_of.duplicate(), Profile.decor_on()]
+	var p := [Profile.level, _ring_summary(), Profile.outfit, Profile.skin, [snappedf(o.x, 0.1), snappedf(o.y, 0.1)], Profile.skin_of.duplicate(), Profile.decor_on(), Gear.worn()]
 	if p == _last_prog:
 		return
 	_last_prog = p
@@ -3469,7 +3486,7 @@ func _add_remote(id: int, info: Dictionary) -> void:
 
 func hello_payload(want_reply: bool) -> Array:
 	var o := Profile.output()
-	return [Settings.display_name(), Settings.wuhun, want_reply, Profile.level, _ring_summary(), Profile.outfit, Profile.skin, [o.x, o.y], Profile.skin_of.duplicate(), Profile.decor_on()]
+	return [Settings.display_name(), Settings.wuhun, want_reply, Profile.level, _ring_summary(), Profile.outfit, Profile.skin, [o.x, o.y], Profile.skin_of.duplicate(), Profile.decor_on(), Gear.worn()]
 
 
 func _info_from_hello(d: Array) -> Dictionary:
@@ -3504,6 +3521,8 @@ func on_message(from: int, type: String, data: Variant) -> void:
 					peer_info[from]["decor"] = d[6]
 					if decor:
 						decor.refresh()
+				if d.size() > 7:
+					peer_info[from]["gear"] = d[7]
 				if remotes.has(from):
 					remotes[from].set_info(peer_info[from])
 			if Net.is_host():
