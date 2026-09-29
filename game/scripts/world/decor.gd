@@ -607,46 +607,231 @@ func _landmarks() -> void:
 				break
 
 
-## 七层八角宝塔：一层比一层小，每层一圈飞檐，顶上金葫芦；檐角挂灯
+## 七层八角楼阁式宝塔：一层比一层小，每层木构 + 曲面飞檐，顶上塔刹；隔层檐角挂灯
 func _pagoda(p: Vector3) -> void:
+	# 2026-09-29 重做：以前每层是一个白色八棱柱 + 扁锥檐，近看就是一面平白墙。现在照木构楼阁式塔：
+	# 每层八根朱柱、柱间白墙，下地栿、上额枋，额枋下一道青绿彩画；四面隔扇门、四面直棂窗；
+	# 柱头和每面正中一朵斗拱托着檐；飞檐是曲面（上陡下缓、翼角起翘），檐下是深色椽子；二层起一圈平座栏杆。
+	# 小零件（柱、枋、窗棂、斗拱、栏杆）按材质合成一个网格（_acc），整座塔十来个节点
 	var n := Node3D.new()
 	n.name = "Pagoda"
 	add_child(n)
 	n.global_position = p
-	var wall := MatLib.plaster(Color(0.84, 0.8, 0.72))
-	var red := MatLib.lacquer(Color(0.55, 0.1, 0.07))
-	var tiles := _b()._tiles(Color(0.25, 0.26, 0.29))
-	var gold := MatLib.gold(true)
-	U.part(n, U.cyl(4.2, 4.6, 1.2, 8), _b()._stone(Color(0.55, 0.53, 0.5)), Vector3(0, 0.4, 0))
-	var y := 1.0
+	var M := {"wall": MatLib.plaster(Color(0.86, 0.82, 0.74)), "red": MatLib.lacquer(Color(0.52, 0.09, 0.06)),
+		"teal": MatLib.lacquer(Color(0.1, 0.34, 0.32)), "dark": MatLib.wood(Color(0.42, 0.34, 0.28)),
+		"gold": MatLib.gold(true), "stone": _b()._stone(Color(0.62, 0.6, 0.56))}
+	var tiles := _roof_tiles(Color(0.25, 0.26, 0.29))
+	var acc := {}
+	# 台基：两层八角石台
+	U.part(n, U.cyl(4.7, 5.0, 0.7, 8), M["stone"], Vector3(0, 0.1, 0))
+	U.part(n, U.cyl(4.0, 4.2, 0.4, 8), M["stone"], Vector3(0, 0.62, 0))
+	var y := 0.82
 	var r := 3.2
 	for f in 7:
-		var h := 3.2 - f * 0.18
-		U.part(n, U.cyl(r, r, h, 8), wall, Vector3(0, y + h * 0.5, 0))
-		# 每层四面开一个红门洞
-		for k in 4:
-			var a := TAU * k / 4.0 + PI / 8.0
-			U.part(n, U.box(Vector3(0.9, h * 0.6, 0.1)), red, Vector3(cos(a) * (r - 0.02), y + h * 0.42, sin(a) * (r - 0.02)), Vector3(0, -a + PI * 0.5, 0))
+		var h := 3.1 - f * 0.17
+		if f > 0:
+			_pingzuo(acc, M, y, r + 0.75)
+		_story(acc, M, y, r, h, f)
 		y += h
-		# 飞檐：扁的八角锥 + 一圈檐口
-		U.part(n, U.cyl(r * 0.7, r + 1.3, 0.7, 8), tiles, Vector3(0, y + 0.3, 0))
-		U.part(n, U.cyl(r + 1.32, r + 1.32, 0.1, 8), red, Vector3(0, y - 0.03, 0))
-		for k in 8:
-			var a := TAU * k / 8.0
-			var tip := Vector3(cos(a), 0, sin(a)) * (r + 1.45)
-			U.part(n, U.cyl(0.03, 0.14, 0.9, 5), tiles, tip + Vector3(0, y + 0.1, 0), Vector3(sin(a) * 0.7, 0, -cos(a) * 0.7))
-			if f % 2 == 0:
-				Props.lantern(n, tip + Vector3(0, y - 0.45, 0), Color(1.0, 0.5, 0.22), 0.5, 0.15)
-		y += 0.6
-		r *= 0.86
-	U.part(n, U.cyl(0.08, 0.12, 3.0, 8), gold, Vector3(0, y + 1.5, 0))
-	for k in 3:
-		U.part(n, U.sphere(0.35 - k * 0.08, 12, 8), gold, Vector3(0, y + 0.6 + k * 0.8, 0))
+		# 斗拱：柱头和每面正中各一朵
+		var ap := r * cos(PI / 8.0)
+		for k in 16:
+			var a := k * PI / 8.0
+			var rr := r if k % 2 == 0 else ap
+			_dougong(acc, M, Vector3(cos(a) * rr, y, sin(a) * rr), a)
+		y += 0.42
+		var ro := r + 1.55
+		var rm := _roof_mesh(8, r * 0.72, ro, 1.15, 0.62, 0.2, tiles, M["dark"], M["red"])
+		U.part(n, rm, null, Vector3(0, y, 0))
+		_roof_ridges(acc, M, 8, r * 0.72, ro, 1.15, 0.62, y)
+		if f % 2 == 0:
+			for k in 8:
+				var a := k * PI / 4.0
+				var tip := Vector3(cos(a), 0, sin(a)) * ro * 1.1
+				Props.lantern(n, tip + Vector3(0, y + 0.15, 0), Color(1.0, 0.5, 0.22), 0.5, 0.2)
+		y += 1.05
+		r *= 0.87
+	# 塔刹：覆钵 + 相轮 + 宝珠
+	U.part(n, U.cyl(r * 0.5, r * 0.75, 0.5, 8), M["red"], Vector3(0, y + 0.1, 0))
+	U.part(n, U.cyl(0.07, 0.11, 3.4, 8), M["gold"], Vector3(0, y + 1.9, 0))
+	for k in 5:
+		U.part(n, U.cyl(0.42 - k * 0.05, 0.42 - k * 0.05, 0.08, 16), M["gold"], Vector3(0, y + 0.9 + k * 0.38, 0))
+	U.part(n, U.sphere(0.3, 14, 10), M["gold"], Vector3(0, y + 3.1, 0))
+	U.part(n, U.sphere(0.18, 12, 8), M["gold"], Vector3(0, y + 3.55, 0))
+	_acc_flush(acc, n)
 	_light(n, Vector3(0, y + 2.0, 0), Color(1.0, 0.75, 0.4), 1.5, 14.0)
 	var cs := CylinderShape3D.new()
 	cs.radius = 3.3
 	cs.height = y
 	_col(n, cs, Transform3D(Basis(), p + Vector3(0, y * 0.5, 0)))
+
+
+## 塔的一层：八根柱、柱间墙、地栿、额枋 + 彩画；k 为偶数的面开隔扇门，奇数面开直棂窗
+func _story(acc: Dictionary, M: Dictionary, y: float, r: float, h: float, f: int) -> void:
+	var ap := r * cos(PI / 8.0)
+	var L := 2.0 * r * sin(PI / 8.0)
+	for k in 8:
+		var a0 := k * PI / 4.0
+		var am := a0 + PI / 8.0
+		var d := Vector3(cos(am), 0, sin(am))
+		var b := Basis(Vector3(-sin(am), 0, cos(am)), Vector3.UP, d)
+		_acc_add(acc, U.cyl(0.15, 0.17, h, 10), M["red"], Transform3D(Basis(), Vector3(cos(a0) * r, y + h * 0.5, sin(a0) * r)))
+		_acc_add(acc, U.box(Vector3(L - 0.2, h - 0.5, 0.14)), M["wall"], Transform3D(b, d * (ap - 0.1) + Vector3(0, y + 0.2 + (h - 0.5) * 0.5, 0)))
+		_acc_add(acc, U.box(Vector3(L, 0.2, 0.22)), M["red"], Transform3D(b, d * (ap - 0.04) + Vector3(0, y + 0.1, 0)))
+		_acc_add(acc, U.box(Vector3(L, 0.3, 0.24)), M["red"], Transform3D(b, d * (ap - 0.02) + Vector3(0, y + h - 0.15, 0)))
+		_acc_add(acc, U.box(Vector3(L - 0.1, 0.18, 0.2)), M["teal"], Transform3D(b, d * (ap - 0.03) + Vector3(0, y + h - 0.39, 0)))
+		var door := (k + f) % 2 == 0
+		var ow := L * (0.5 if door else 0.46)
+		var oh := h * (0.62 if door else 0.34)
+		var oy := y + 0.2 + oh * 0.5 if door else y + h * 0.56
+		var c := d * (ap - 0.02) + Vector3(0, oy, 0)
+		# 门窗：朱漆边框、里面深色木板、一排朱漆棂条（门上半截再加两道横棂）
+		_acc_add(acc, U.box(Vector3(ow + 0.16, oh + 0.14, 0.1)), M["red"], Transform3D(b, c))
+		_acc_add(acc, U.box(Vector3(ow, oh, 0.1)), M["dark"], Transform3D(b, c + d * 0.02))
+		var bars := 5 if door else 7
+		for i in bars:
+			var x := (float(i) + 0.5) / bars - 0.5
+			_acc_add(acc, U.box(Vector3(0.035, oh, 0.05)), M["red"], Transform3D(b, c + b.x * (x * ow) + d * 0.06))
+		if door:
+			for j in 3:
+				_acc_add(acc, U.box(Vector3(ow, 0.035, 0.05)), M["red"], Transform3D(b, c + Vector3(0, oh * (0.05 + j * 0.2), 0) + d * 0.06))
+			_acc_add(acc, U.box(Vector3(0.03, oh, 0.06)), M["gold"], Transform3D(b, c + d * 0.07))
+
+
+## 平座：层与层之间一圈木平台 + 栏杆（望柱、寻杖、盆唇）
+func _pingzuo(acc: Dictionary, M: Dictionary, y: float, rr: float) -> void:
+	_acc_add(acc, U.cyl(rr, rr - 0.25, 0.5, 8), M["dark"], Transform3D(Basis(), Vector3(0, y - 0.3, 0)))
+	var L := 2.0 * rr * sin(PI / 8.0)
+	var ap := rr * cos(PI / 8.0)
+	for k in 8:
+		var a0 := k * PI / 4.0
+		var am := a0 + PI / 8.0
+		var d := Vector3(cos(am), 0, sin(am))
+		var b := Basis(Vector3(-sin(am), 0, cos(am)), Vector3.UP, d)
+		_acc_add(acc, U.box(Vector3(0.1, 0.8, 0.1)), M["red"], Transform3D(Basis(), Vector3(cos(a0) * rr * 0.97, y + 0.4, sin(a0) * rr * 0.97)))
+		_acc_add(acc, U.box(Vector3(0.08, 0.7, 0.08)), M["red"], Transform3D(b, d * ap * 0.97 + Vector3(0, y + 0.35, 0)))
+		_acc_add(acc, U.box(Vector3(L, 0.07, 0.09)), M["red"], Transform3D(b, d * ap * 0.97 + Vector3(0, y + 0.76, 0)))
+		_acc_add(acc, U.box(Vector3(L, 0.05, 0.06)), M["red"], Transform3D(b, d * ap * 0.97 + Vector3(0, y + 0.42, 0)))
+
+
+## 一朵斗拱：栌斗 + 十字交叉的拱 + 上面的散斗（朝外挑出去托檐）
+func _dougong(acc: Dictionary, M: Dictionary, at: Vector3, a: float) -> void:
+	var d := Vector3(cos(a), 0, sin(a))
+	var b := Basis(Vector3(-sin(a), 0, cos(a)), Vector3.UP, d)
+	_acc_add(acc, U.box(Vector3(0.3, 0.12, 0.3)), M["red"], Transform3D(b, at + Vector3(0, 0.06, 0)))
+	_acc_add(acc, U.box(Vector3(0.75, 0.1, 0.14)), M["teal"], Transform3D(b, at + Vector3(0, 0.17, 0)))
+	_acc_add(acc, U.box(Vector3(0.14, 0.1, 0.8)), M["teal"], Transform3D(b, at + Vector3(0, 0.17, 0) + d * 0.2))
+	_acc_add(acc, U.box(Vector3(0.9, 0.1, 0.16)), M["red"], Transform3D(b, at + Vector3(0, 0.28, 0) + d * 0.18))
+	for s in [-1.0, 1.0]:
+		_acc_add(acc, U.box(Vector3(0.16, 0.1, 0.16)), M["red"], Transform3D(b, at + Vector3(0, 0.37, 0) + b.x * (0.36 * s) + d * 0.18))
+	_acc_add(acc, U.box(Vector3(0.18, 0.1, 0.18)), M["red"], Transform3D(b, at + Vector3(0, 0.37, 0) + d * 0.52))
+
+
+## 屋面贴图：UV 顺着坡（瓦垄从上往下），不用三向投影（三向投影的瓦垄按世界坐标走，在八角檐上是斜的）
+func _roof_tiles(c: Color) -> StandardMaterial3D:
+	var m := MatLib.roof(c).duplicate() as StandardMaterial3D
+	m.uv1_triplanar = false
+	m.uv1_world_triplanar = false
+	m.uv1_scale = Vector3.ONE
+	return m
+
+
+## 曲面飞檐（sides 边形）：从 r_in（上沿，高 rise）到 r_out（檐口，高 0），上陡下缓，翼角起翘 lift、往外多挑一点。
+## 三个面：0 瓦面 / 1 檐下（深色椽子木）/ 2 檐口一圈（朱漆）
+static func _roof_mesh(sides: int, r_in: float, r_out: float, rise: float, lift: float, thick: float, m_top: Material, m_under: Material, m_rim: Material) -> ArrayMesh:
+	var seg := sides * 8
+	var rings := 10
+	var slope_len := Vector2(r_out - r_in, rise).length()
+	var grid := []
+	for j in rings + 1:
+		var t := float(j) / rings
+		var row := []
+		for i in seg + 1:
+			row.append(_roof_pt(sides, r_in, r_out, rise, lift, t, TAU * i / seg))
+		grid.append(row)
+	var mesh := ArrayMesh.new()
+	for pass_i in 2:
+		var st := SurfaceTool.new()
+		st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		var dy := 0.0 if pass_i == 0 else -thick
+		for j in rings + 1:
+			var t := float(j) / rings
+			for i in seg + 1:
+				var th := TAU * i / seg
+				st.set_uv(Vector2(th * lerpf(r_in, r_out, t) * 0.9, t * slope_len * 0.9))
+				st.add_vertex(grid[j][i] + Vector3(0, dy, 0))
+		for j in rings:
+			for i in seg:
+				var a := j * (seg + 1) + i
+				# Godot 顺时针是正面：瓦面从上面看顺时针，檐下反过来
+				var q := [a, a + seg + 1, a + 1, a + 1, a + seg + 1, a + seg + 2]
+				if pass_i == 1:
+					q = [a, a + 1, a + seg + 1, a + 1, a + seg + 2, a + seg + 1]
+				for v in q:
+					st.add_index(v)
+		st.generate_normals()
+		st.generate_tangents()
+		st.commit(mesh)
+		mesh.surface_set_material(pass_i, m_top if pass_i == 0 else m_under)
+	# 檐口：外圈上下连起来
+	var sr := SurfaceTool.new()
+	sr.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for i in seg + 1:
+		var o: Vector3 = grid[rings][i]
+		sr.set_uv(Vector2(float(i) / seg * 20.0, 0.0))
+		sr.add_vertex(o)
+		sr.set_uv(Vector2(float(i) / seg * 20.0, 0.3))
+		sr.add_vertex(o + Vector3(0, -thick, 0))
+	for i in seg:
+		var a := i * 2
+		for v in [a, a + 1, a + 2, a + 2, a + 1, a + 3]:
+			sr.add_index(v)
+	sr.generate_normals()
+	sr.generate_tangents()
+	sr.commit(mesh)
+	mesh.surface_set_material(2, m_rim)
+	return mesh
+
+
+static func _roof_pt(sides: int, r_in: float, r_out: float, rise: float, lift: float, t: float, th: float) -> Vector3:
+	var half := PI / sides
+	var m := fposmod(th, 2.0 * half) - half
+	var cf := pow(absf(m) / half, 3.0)
+	var rad := lerpf(r_in, r_out, t) * cos(half) / cos(m) * (1.0 + 0.1 * cf * t * t)
+	var yy := rise * pow(1.0 - t, 1.7) + lift * cf * pow(t, 2.5)
+	return Vector3(cos(th) * rad, yy, sin(th) * rad)
+
+
+## 垂脊：每个翼角一条，从上沿顺着屋面到檐角，尽头一个翘起的脊兽头
+func _roof_ridges(acc: Dictionary, M: Dictionary, sides: int, r_in: float, r_out: float, rise: float, lift: float, y: float) -> void:
+	var ridge := _b()._tiles(Color(0.2, 0.21, 0.23))
+	for k in sides:
+		var th := TAU * k / sides
+		var prev := _roof_pt(sides, r_in, r_out, rise, lift, 0.0, th)
+		for j in range(1, 11):
+			var q := _roof_pt(sides, r_in, r_out, rise, lift, j / 10.0, th)
+			var mid := (prev + q) * 0.5 + Vector3(0, 0.08, 0)
+			var dir := q - prev
+			var bz := dir.normalized()
+			var bx := bz.cross(Vector3.UP).normalized()
+			_acc_add(acc, U.box(Vector3(0.16, 0.16, dir.length() + 0.04)), ridge, Transform3D(Basis(bx, bz.cross(bx), bz), mid + Vector3(0, y, 0)))
+			prev = q
+		var out := Vector3(cos(th), 0, sin(th))
+		_acc_add(acc, U.cyl(0.03, 0.12, 0.6, 6), ridge, Transform3D(Basis(out.cross(Vector3.UP).normalized(), -0.9), prev + Vector3(0, y + 0.25, 0) + out * 0.1))
+
+
+func _acc_add(acc: Dictionary, mesh: Mesh, mat: Material, xf: Transform3D) -> void:
+	if not acc.has(mat):
+		var st := SurfaceTool.new()
+		st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		acc[mat] = st
+	(acc[mat] as SurfaceTool).append_from(mesh, 0, xf)
+
+
+func _acc_flush(acc: Dictionary, n: Node3D) -> void:
+	for mat in acc:
+		U.part(n, (acc[mat] as SurfaceTool).commit(), mat)
+	acc.clear()
 
 
 ## 六角红柱亭子：石台 + 六根红柱 + 攒尖顶 + 美人靠
@@ -657,7 +842,6 @@ func _pavilion(p: Vector3, yaw: float) -> void:
 	n.global_transform = Transform3D(Basis(Vector3.UP, yaw), p)
 	var stone := _b()._stone(Color(0.7, 0.68, 0.64))
 	var red := MatLib.lacquer(Color(0.58, 0.09, 0.06))
-	var tiles := _b()._tiles(Color(0.24, 0.28, 0.28))
 	var gold := MatLib.gold(true)
 	U.part(n, U.cyl(3.4, 3.7, 0.6, 6), stone, Vector3(0, 0.1, 0))
 	for k in 6:
@@ -670,13 +854,13 @@ func _pavilion(p: Vector3, yaw: float) -> void:
 			var c2 := Vector3(cos(a + TAU / 12.0), 0, sin(a + TAU / 12.0)) * 2.5
 			U.part(n, U.box(Vector3(2.7, 0.12, 0.35)), red, c2 + Vector3(0, 0.95, 0), Vector3(0, -(a + TAU / 12.0) + PI * 0.5, 0))
 	U.part(n, U.cyl(3.3, 3.3, 0.35, 6), red, Vector3(0, 3.7, 0))
-	U.part(n, U.cyl(0.25, 4.3, 1.8, 6), tiles, Vector3(0, 4.7, 0))
-	for k in 6:
-		var a := TAU * k / 6.0
-		var tip := Vector3(cos(a), 0, sin(a)) * 4.35
-		U.part(n, U.cyl(0.03, 0.14, 1.0, 5), tiles, tip + Vector3(0, 3.95, 0), Vector3(sin(a) * 0.75, 0, -cos(a) * 0.75))
-	U.part(n, U.sphere(0.3, 10, 8), gold, Vector3(0, 5.75, 0))
-	U.part(n, U.cyl(0.02, 0.1, 0.6, 6), gold, Vector3(0, 6.2, 0))
+	# 攒尖顶：曲面、六个翼角起翘（以前是一个六棱锥）
+	var acc := {}
+	U.part(n, _roof_mesh(6, 0.25, 4.5, 1.9, 0.6, 0.18, _roof_tiles(Color(0.24, 0.28, 0.28)), MatLib.wood(Color(0.42, 0.34, 0.28)), red), null, Vector3(0, 3.85, 0))
+	_roof_ridges(acc, {}, 6, 0.25, 4.5, 1.9, 0.6, 3.85)
+	_acc_flush(acc, n)
+	U.part(n, U.sphere(0.3, 10, 8), gold, Vector3(0, 5.95, 0))
+	U.part(n, U.cyl(0.02, 0.1, 0.6, 6), gold, Vector3(0, 6.4, 0))
 	_lamp(n, Vector3(0, 3.1, 0), Color(1.0, 0.4, 0.2), 1.1)
 	_light(n, Vector3(0, 2.8, 0), Color(1.0, 0.6, 0.35), 1.2, 9.0)
 

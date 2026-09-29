@@ -479,7 +479,7 @@ func _weights(x: float, z: float, h: float, slope: float) -> Color:
 			w = w.lerp(_one(3), smoothstep(2.2, 0.8, pd) * 0.8 * smoothstep(2.0, 3.0, h))
 		_:
 			# 岛：0 草 / 1 土 / 2 石 / 3 沙
-			w = w.lerp(_one(1), smoothstep(0.64, 0.82, n) * 0.6)
+			w = w.lerp(_one(1), smoothstep(0.7, 0.86, n) * 0.4)
 			w = w.lerp(_one(3), 1.0 - smoothstep(0.55, 1.5, h + (n - 0.5) * 0.8))
 			w = w.lerp(Color(0, 0.4, 0, 0.6), smoothstep(-0.4, -1.8, h))
 			for hb in island.habitats:
@@ -532,8 +532,9 @@ func _ground_material() -> ShaderMaterial:
 				Vector4(0.2, 0.3, 0.16, 0.24), Vector4(0.9, 0.95, 0.8, 0.92))
 			sm.set_shader_parameter("wet_level", 0.9)
 			return sm
+	# 镜湖：地面的草色压到和草丛差不多（以前地面比草丛亮一截、偏黄，草丛像一个个深色斑点撒在黄土上）；土偏褐不偏黄
 	return _terrain_material(["grass", "dirt", "rock", "sand"],
-		[Color(0.7, 0.78, 0.6), Color(0.85, 0.8, 0.72), Color(1.0, 1.0, 0.98), Color(1.0, 0.97, 0.92)],
+		[Color(0.5, 0.66, 0.42), Color(0.72, 0.64, 0.52), Color(1.0, 1.0, 0.98), Color(1.0, 0.97, 0.92)],
 		Vector4(0.3, 0.24, 0.16, 0.22), Vector4(0.95, 0.92, 0.8, 0.9))
 
 
@@ -765,10 +766,22 @@ func _mountains() -> void:
 	var r0 := 290.0 if forest else (560.0 if biome == "sea" else 340.0)
 	if island.hunting:
 		r0 = float(island.half) + 25.0
+	# 镜湖：远山改成一道道分开的山脊（山水画里"远山一层比一层淡"），山脊线圆润起伏；
+	# 以前是一整片脊状噪声，远看是一排尖尖的灰三角锥
+	var layered := biome == "island" and not island.hunting
+	var rings := 30
+	if layered:
+		A = 512
+		rings = 56
 	var radii: Array[float] = []
-	for i in 30:
-		radii.append(r0 + pow(i / 29.0, 1.5) * 1000.0)
+	for i in rings:
+		radii.append(r0 + pow(i / float(rings - 1), 1.3 if layered else 1.5) * 1000.0)
 	var peak: float = {"island": 220.0, "forest": 150.0, "deepforest": 170.0, "snow": 280.0, "sea": 70.0}[biome]
+	var ridges := [[430.0, 70.0, 60.0], [580.0, 95.0, 100.0], [790.0, 125.0, 150.0], [1080.0, 180.0, 230.0]]
+	var sil := FastNoiseLite.new()
+	sil.fractal_type = FastNoiseLite.FRACTAL_FBM
+	sil.fractal_octaves = 4
+	sil.frequency = 0.004
 	var verts := PackedVector3Array()
 	var cols := PackedColorArray()
 	var grid := []
@@ -782,6 +795,19 @@ func _mountains() -> void:
 			var rise := smoothstep(r0, r0 + 260.0, r)
 			var nv := clampf(nz.get_noise_2d(x, z) * 0.5 + 0.5, 0.0, 1.0)
 			var hgt := -18.0 + rise * (25.0 + nv * nv * peak) + (1.0 - rise) * nv * 10.0
+			if layered:
+				hgt = -18.0
+				for li in ridges.size():
+					var rg: Array = ridges[li]
+					var R: float = rg[0]
+					var x2 := (r - R) / float(rg[1])
+					if absf(x2) >= 1.0:
+						continue
+					sil.seed = island.map_seed + 900 + li
+					# 山脊线：沿着这一圈的角度取噪声（在圆上取，首尾接得上）
+					var s1 := sil.get_noise_2d(cos(a) * R, sin(a) * R) * 0.5 + 0.5
+					var crest: float = float(rg[2]) * (0.35 + 0.95 * s1 * s1) + nv * float(rg[2]) * 0.18
+					hgt = maxf(hgt, -18.0 + (crest + 18.0) * pow(cos(x2 * PI * 0.5), 1.25))
 			row.append(hgt)
 		grid.append(row)
 	var norms := PackedVector3Array()
@@ -1236,7 +1262,7 @@ func _hs_pine(r: RandomNumberGenerator, H: float, bark: Material, pad: Material,
 		var out := Vector3(cos(az), 0, sin(az))
 		var L := H * r.randf_range(0.2, 0.36) * (1.25 - t0 * 0.5)
 		var bp := [s, s + out * L * 0.4 + Vector3(0, -L * 0.06, 0), s + out * L * 0.8 + Vector3(0, L * 0.02, 0), s + out * L + Vector3(0, L * 0.12, 0)]
-		var br := r0 * 0.32 * (1.0 - t0 * 0.4)
+		var br := r0 * 0.22 * (1.0 - t0 * 0.4)
 		_tube(sb, cb, bp, [br, br * 0.65, br * 0.4, br * 0.12], 6, 0.1, 0.5)
 		# 枝头一大团 + 旁边两三小团（一团团叠起来，不是一张大饼）
 		var tip: Vector3 = bp[3]
@@ -1261,25 +1287,32 @@ func _hs_pine(r: RandomNumberGenerator, H: float, bark: Material, pad: Material,
 	return {"mesh": mesh, "radius": r0}
 
 
-## 一团平铺的松针：两三层水平的圆盘（上小下大）+ 边上一圈往外斜的松针贴片（有厚度、轮廓毛茸茸）
+## 一团松针：压扁的椭球里十几张斜放的松针团贴片（从上、从侧面、从下面看都有厚度），外圈几张往外斜的毛边。
+## 以前是三层水平大圆盘，从下面、侧面看就是一张张扁饼
 func _pine_pad(sp: SurfaceTool, cp: Array, sn: SurfaceTool, cn: Array, r: RandomNumberGenerator, c: Vector3, R: float) -> void:
-	for layer in 3:
-		var rr := R * (0.55 + layer * 0.25)
-		var y := c.y - layer * R * 0.2
-		var az := r.randf() * TAU
-		var dir := Vector3(cos(az), r.randf_range(-0.06, 0.06), sin(az)).normalized()
-		var right := dir.cross(Vector3.UP).normalized()
-		var shade := lerpf(1.05, 0.72, layer / 2.0) * r.randf_range(0.92, 1.05)
-		var ctr := Vector3(c.x, y, c.z)
-		_card(sp, cp, ctr - dir * rr, dir, right, rr * 2.0, rr * 2.0, ctr - Vector3(0, R * 3.0, 0), 0.5, Color(shade, shade, shade))
-	var n := r.randi_range(7, 9)
+	var n := clampi(9 + int(R * 3.0), 9, 18)
+	var nc := c - Vector3(0, R * 1.6, 0)
 	for k in n:
-		var a := TAU * k / n + r.randf_range(-0.3, 0.3)
+		var q := Vector3(r.randf_range(-1, 1), r.randf_range(-1, 1), r.randf_range(-1, 1))
+		if q.length() > 1.0:
+			q = q.normalized() * sqrt(r.randf())
+		var p := c + Vector3(q.x * R * 0.7, q.y * R * 0.32, q.z * R * 0.7)
+		var az := r.randf() * TAU
+		var tilt := r.randf_range(0.1, 0.75)
+		var dir := Vector3(cos(az), 0, sin(az))
+		var right := dir.cross(Vector3.UP).normalized()
+		var up_dir := (dir * cos(tilt) + Vector3.UP * sin(tilt)).normalized()
+		var size := R * r.randf_range(0.8, 1.15)
+		var shade := lerpf(0.66, 1.06, q.y * 0.5 + 0.5) * lerpf(0.85, 1.0, Vector2(q.x, q.z).length()) * r.randf_range(0.92, 1.05)
+		_card(sp, cp, p - up_dir * size * 0.5, up_dir, right, size, size, nc, 0.5, Color(shade, shade, shade))
+	var m := r.randi_range(5, 6)
+	for k in m:
+		var a := TAU * k / m + r.randf_range(-0.4, 0.4)
 		var out := Vector3(cos(a), 0, sin(a))
-		var up := (out + Vector3(0, r.randf_range(-0.15, 0.4), 0)).normalized()
-		var base := c + out * R * 0.3 - Vector3(0, R * 0.3, 0)
+		var up := (out + Vector3(0, r.randf_range(-0.1, 0.35), 0)).normalized()
+		var base := c + out * R * 0.35 - Vector3(0, R * 0.2, 0)
 		var sh := r.randf_range(0.72, 0.95)
-		_card(sn, cn, base, up, out.cross(Vector3.UP).normalized().rotated(up, r.randf_range(-0.4, 0.4)), R * 1.0, R * 0.95, c - Vector3(0, R, 0), 0.6, Color(sh, sh, sh))
+		_card(sn, cn, base, up, out.cross(Vector3.UP).normalized().rotated(up, r.randf_range(-0.4, 0.4)), R * 0.85, R * 0.75, nc, 0.6, Color(sh, sh, sh))
 
 
 ## 竹丛：十来根细长的竹竿从一小片地里冒出来、往外斜，上半截每隔一段挂一两簇竹叶
@@ -1789,7 +1822,7 @@ func _grass() -> void:
 	r.seed = island.map_seed + 400
 	var xs := []
 	var cols := []
-	var base_count: int = {"island": 50000, "forest": 22000, "deepforest": 20000, "snow": 7000, "sea": 32000}[biome]
+	var base_count: int = {"island": 110000, "forest": 22000, "deepforest": 20000, "snow": 7000, "sea": 32000}[biome]
 	var target := int(base_count * _density() * (_area_k() * 0.6 if island.hunting else 1.0))
 	var tries := 0
 	var meadow := island.habitat("meadow")
@@ -1834,11 +1867,11 @@ func _grass() -> void:
 			# 镜湖（场景样板）：以前五万丛一个颜色的亮绿草、疏密均匀、边缘整齐。现在颜色按大片噪声变
 			# （黄绿 / 深绿 / 带点青，整体压暗压饱和），疏密也按噪声，草地和土地之间是渐变的
 			var pn := _patch.get_noise_2d(x * 0.6, z * 0.6)
-			if r.randf() > 0.5 + 0.5 * smoothstep(-0.45, 0.25, pn):
+			if r.randf() > 0.65 + 0.35 * smoothstep(-0.45, 0.25, pn):
 				continue
 			var k2 := clampf(pn * 0.5 + 0.5, 0.0, 1.0)
 			c = Color(0.8, 0.84, 0.58).lerp(Color(0.58, 0.72, 0.52), k2).lerp(Color(0.66, 0.78, 0.7), r.randf() * 0.35) * r.randf_range(0.88, 1.06)
-			s *= r.randf_range(0.6, 0.9)
+			s *= r.randf_range(0.7, 1.0)
 			if meadow.size() > 0 and p2.distance_to(meadow["center"]) < float(meadow["radius"]):
 				s *= 1.45
 				c = c * Color(1.12, 1.06, 0.85)
@@ -1852,9 +1885,9 @@ func _grass() -> void:
 	var mat := _grass_mat("grass_tuft_dry" if (biome in ["forest", "snow"]) else "grass_tuft", 0.22, fade)
 	if biome == "island":
 		# 镜湖：草叶贴图本身太亮太绿、逆光再一照更亮 → 压暗、压饱和、逆光减半
-		mat.set_shader_parameter("tint", Color(0.74, 0.8, 0.6))
+		mat.set_shader_parameter("tint", Color(0.85, 0.85, 0.75))
 		mat.set_shader_parameter("backlight", Color(0.18, 0.22, 0.08))
-	_scatter(_tuft_mesh(0.95, 0.62), xs, cols, fade + 6.0, false, 32.0, mat)
+	_scatter(_tuft_mesh(1.15 if biome == "island" else 0.95, 0.62), xs, cols, fade + 6.0, false, 32.0, mat)
 
 
 # ------------------------------------------------------------------ 第一章：兔子洞、月光花丛、芦苇
@@ -2734,20 +2767,50 @@ func _altar() -> void:
 # ------------------------------------------------------------------ 路牌
 
 func _sign(pos: Vector2, title: String, sub: String, color: Color) -> void:
+	# 竖着的木牌（2026-09-29）：以前是一根杆子 + 一块空木板，名字是浮在半空的一行彩色大字（带黑边，像游戏菜单）。
+	# 现在两根柱子夹一块木牌，名字用宋体竖着写在牌上（米白漆字，两面都写），牌顶一个小瓦檐，牌面朝着码头；
+	# "抛到这里 · xx"的提示走近 14 米才浮出来
 	var h := island.height_at(pos.x, pos.y)
-	var wood := _wood(Color(0.9, 0.75, 0.6))
-	U.part(root, U.cyl(0.07, 0.08, 2.4, 6), wood, Vector3(pos.x, h + 1.2, pos.y))
-	U.part(root, U.box(Vector3(1.4, 0.35, 0.06)), wood, Vector3(pos.x, h + 2.0, pos.y), Vector3(0, rng.randf() * TAU, 0.05))
-	var t := U.label3d(title, 64, color)
-	t.visibility_range_end = 45.0     # 走近了才看得到，远处不糊一堆字
-	t.pixel_size = 0.012
-	t.position = Vector3(pos.x, h + 3.2, pos.y)
-	root.add_child(t)
-	var s := U.label3d(sub, 36, Color(0.95, 0.95, 0.9))
+	var to_hub := Vector2(island.spawn.x, island.spawn.z) - pos
+	var n := Node3D.new()
+	root.add_child(n)
+	n.position = Vector3(pos.x, h, pos.y)
+	n.rotation.y = atan2(to_hub.x, to_hub.y)
+	var wood := _wood(Color(0.5, 0.38, 0.3))
+	var chars := PackedStringArray()
+	for ch in title:
+		chars.append(ch)
+	var ph := 0.34 * chars.size() + 0.28
+	var top := 1.0 + ph
+	for sx in [-0.3, 0.3]:
+		U.part(n, U.cyl(0.05, 0.06, top + 0.25, 6), wood, Vector3(sx, (top + 0.25) * 0.5 - 0.1, 0))
+	U.part(n, Props.rbox(Vector3(0.5, ph, 0.06)), _wood(Color(0.36, 0.27, 0.21)), Vector3(0, 1.0 + ph * 0.5, 0))
+	U.part(n, U.box(Vector3(0.66, 0.08, 0.1)), wood, Vector3(0, top + 0.08, 0))
+	var tiles := _tiles(Color(0.26, 0.27, 0.3))
+	for s2 in [-1.0, 1.0]:
+		U.part(n, U.box(Vector3(0.44, 0.035, 0.34)), tiles, Vector3(s2 * 0.18, top + 0.25, 0), Vector3(0, 0, -s2 * 0.42))
+	var paint := color.lerp(Color(0.96, 0.9, 0.74), 0.75)
+	for side in 2:
+		var t := Label3D.new()
+		t.text = "\n".join(chars)
+		t.font = Data.font_serif
+		t.font_size = 60
+		t.pixel_size = 0.005
+		t.line_spacing = -6.0
+		t.modulate = paint
+		t.outline_size = 0
+		t.shaded = true
+		t.billboard = BaseMaterial3D.BILLBOARD_DISABLED
+		t.double_sided = false
+		t.visibility_range_end = 70.0
+		t.position = Vector3(0, 1.0 + ph * 0.5, 0.034 if side == 0 else -0.034)
+		t.rotation.y = 0.0 if side == 0 else PI
+		n.add_child(t)
+	var s := U.label3d(sub, 30, Color(0.95, 0.93, 0.86))
 	s.visibility_range_end = 14.0
-	s.pixel_size = 0.01
-	s.position = Vector3(pos.x, h + 2.55, pos.y)
-	root.add_child(s)
+	s.pixel_size = 0.008
+	s.position = Vector3(0, top + 0.7, 0)
+	n.add_child(s)
 
 
 func _signs() -> void:
@@ -2856,7 +2919,27 @@ func _critter_show(n: Node3D, body: StaticBody3D) -> void:
 		body.collision_layer = U.LAYER_BEAST
 
 
+## 岛外的场地（秘境、试炼）建在 900 米外、420 米高的空中：镜头不在附近就整块藏起来。
+## 以前从岛上抬头能看见秘境场地的底面，一个灰色大椭圆挂在天上
+const AWAY_ROOTS := ["DungeonArena", "ChaseArena", "MusouArena"]
+var _away_t := 0.0
+
+
+func _hide_far_arenas(t: float) -> void:
+	if t - _away_t < 0.25:
+		return
+	_away_t = t
+	var cam := root.get_viewport().get_camera_3d() if root.is_inside_tree() else null
+	if cam == null:
+		return
+	for nm in AWAY_ROOTS:
+		var n := root.get_node_or_null(nm) as Node3D
+		if n:
+			n.visible = cam.global_position.distance_to(n.global_position) < 560.0
+
+
 func animate(t: float) -> void:
+	_hide_far_arenas(t)
 	for n in _birds + _moths:
 		if not n.visible:
 			continue
