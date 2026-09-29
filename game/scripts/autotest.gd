@@ -4426,11 +4426,15 @@ func _run_feel() -> void:
 			var f: KingFeel = b.feel
 			# 传送以后镜头才到位：这时候再瞄
 			_aim(w.player, b.global_position + Vector3.UP * 0.4)
-			# 打尾巴：一枪两成血（尾巴只有一成六）
+			# 打尾巴：一次半成血，打到断为止（尾巴一成六；有硬壳的灵兽（铁钳蟹）挨打只吃七成五，一枪两成血打不断——
+			# CI 全流程最后在第五章，猎物是铁钳蟹，以前一枪两成血的写法在这里挂了）
 			var lp := f._center - f._front * f._half * 0.9
 			var before := int(Profile.parts.get("%s|tail" % b.species, 0))
-			b.take_hit(b.max_hp * 0.2, Vector3.ZERO, lp, false, Net.my_id, 10.0)
-			if not _check(f.broken("tail") and f.down_t > 2.0, "尾巴打了两成血没断 / 没摔倒（%s）" % str(f.parts["tail"])):
+			var shots := 0
+			while not f.broken("tail") and shots < 10:
+				b.take_hit(b.max_hp * 0.05, Vector3.ZERO, lp, false, Net.my_id, 10.0)
+				shots += 1
+			if not _check(f.broken("tail") and f.down_t > 2.0, "尾巴打了 %d 下（每下半成血）没断 / 没摔倒（%s）" % [shots, str(f.parts["tail"])]):
 				return
 			if not _check(int(Profile.parts.get("%s|tail" % b.species, 0)) == before + 1, "断尾没拿到部位材料"):
 				return
@@ -4453,6 +4457,10 @@ func _run_feel() -> void:
 			var f: KingFeel = b.feel
 			f.down_t = 0.0
 			f.host_tick(0.01)
+			# 没倒地时打头一下 10 点，记下实际掉多少（有硬壳的灵兽本来就吃得少），后面和倒地时比
+			var h0 := b.hp
+			b.take_hit(10.0, Vector3.ZERO, f._center + f._front * f._half, true, Net.my_id, 10.0)
+			var base := maxf(h0 - b.hp, 0.01)
 			# 打头攒晕值：一次打一成的三分之一，最多 6 下一定晕
 			var hp0 := b.hp
 			var n := 0
@@ -4465,7 +4473,7 @@ func _run_feel() -> void:
 			var h1 := b.hp
 			b.take_hit(10.0, Vector3.ZERO, f._center + f._front * f._half, true, Net.my_id, 10.0)
 			var dealt := h1 - b.hp
-			if not _check(dealt > 20.0, "倒地时打头没有加伤（10 → %.1f）" % dealt):
+			if not _check(dealt > base * 2.0, "倒地时打头没有加伤（平时 %.1f → 倒地 %.1f）" % [base, dealt]):
 				return
 			_note("打头 %d 下晕倒 %.1f 秒（掉了 %.0f 血）；倒地时打头 10 → %.1f" % [n, f.down_t, hp0 - b.hp, dealt])
 			_next(6)
