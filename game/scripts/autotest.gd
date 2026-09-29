@@ -2877,6 +2877,9 @@ func _tour_list(w: World) -> Array:
 		out.append([tag + "_pond", gp.call(pc.x + float(pd["radius"]) + 6, pc.y + 6, 1.7), Vector3(pc.x, 0.5, pc.y)])
 	out.append([tag + "_dock", gp.call(isl.dock_start.x + 8, isl.dock_start.z - 4, 1.7), w.builder.boat_pos + Vector3(0, 1, 0)])
 	out.append([tag + "_shop", gp.call(isl.shop_pos.x + 3, isl.shop_pos.z + 9, 1.7), isl.shop_pos + Vector3(0, 1.5, 0)])
+	var cp: Vector3 = w.builder.camp_pos
+	if cp != Vector3.ZERO:
+		out.append([tag + "_camp", gp.call(cp.x + 5, cp.z + 6, 1.7), cp + Vector3(0, 0.8, 0)])
 	return out
 
 
@@ -2894,7 +2897,7 @@ func _run_sceneshot() -> void:
 			var keep := []
 			for e in _tour_list(w):
 				var nm := str(e[0])
-				if nm.ends_with("_spawn") or nm.ends_with("_hill_view") or nm.ends_with("_pond") or (keep.size() == 1 and e[1] != null):
+				if nm.ends_with("_spawn") or nm.ends_with("_hill_view") or nm.ends_with("_pond") or nm.ends_with("_altar") or nm.ends_with("_camp") or (keep.size() == 1 and e[1] != null):
 					keep.append(e)
 			_tour = keep
 			_next(1)

@@ -421,14 +421,18 @@ func _ward(root: Node3D, c: Vector3) -> void:
 
 
 func _add_rack(root: Node3D, c: Vector3) -> void:
-	var wood := world.builder._wood(Color(0.45, 0.3, 0.2))
-	var dark := world.builder._stone(Color(0.22, 0.21, 0.22))
+	# 兵器架（2026-09-29 质感）：硬木架子 + 铁包角 + 红漆台面
+	var wood := MatLib.hardwood(Color(0.8, 0.65, 0.55), true)
+	var dark := MatLib.lacquer(Color(0.45, 0.08, 0.05))
 	racks.append({"pos": CHASE + c, "id": "", "q": 0, "on": {}})
 	var rn := Node3D.new()
 	root.add_child(rn)
 	rn.position = c
-	U.part(rn, U.box(Vector3(1.6, 0.8, 0.8)), wood, Vector3(0, 0.4, 0))
-	U.part(rn, U.box(Vector3(1.8, 0.08, 0.9)), dark, Vector3(0, 0.82, 0))
+	U.part(rn, Props.rbox(Vector3(1.6, 0.8, 0.8), 0.04), wood, Vector3(0, 0.4, 0))
+	U.part(rn, Props.rbox(Vector3(1.8, 0.08, 0.9), 0.02), dark, Vector3(0, 0.82, 0))
+	for sx in [-1.0, 1.0]:
+		for sz in [-1.0, 1.0]:
+			U.part(rn, Props.rbox(Vector3(0.12, 0.82, 0.12), 0.02), MatLib.iron(Color(1.3, 1.3, 1.3)), Vector3(sx * 0.76, 0.41, sz * 0.36))
 	var holder := Node3D.new()
 	holder.name = "Holder"
 	holder.position = Vector3(0, 1.45, 0)

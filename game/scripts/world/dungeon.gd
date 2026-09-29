@@ -189,8 +189,13 @@ func _box_shape(size: Vector3) -> BoxShape3D:
 func _build_arena() -> void:
 	world.island.add_floor(ARENA, R + 2.0)
 	var b := world.builder
-	var stone := b._stone(Color(0.66, 0.63, 0.7))
-	var dark := b._stone(Color(0.38, 0.36, 0.43))
+	# 质感（2026-09-29，用户看了截图说"灰地灰墙"）：地面石板路 + 汉白玉边、墙是大块青砖、柱子花岗岩 + 青铜箍、火盆青铜
+	var stone := MatLib.brick(Color(0.52, 0.5, 0.56))
+	var dark := MatLib.brick(Color(0.34, 0.32, 0.38))
+	var pillar := MatLib.stone(Color(0.72, 0.7, 0.78))
+	var bronze := MatLib.bronze(Color(0.75, 0.9, 0.82))
+	var paving := MatLib.cobble(Color(0.62, 0.6, 0.66))
+	var paving2 := MatLib.cobble(Color(0.46, 0.44, 0.5))
 	var root := Node3D.new()
 	root.name = "DungeonArena"
 	world.add_child(root)
@@ -198,13 +203,15 @@ func _build_arena() -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 7700 + world.chapter
 	# 地面
-	U.part(root, U.cyl(R + 2.5, R + 3.5, 2.0, 64), dark, Vector3(0, -1.0, 0))
+	U.part(root, U.cyl(R + 2.5, R + 3.5, 2.0, 64), paving2, Vector3(0, -1.0, 0))
 	# 注意：_cyl_collider 的位置是圆柱的底，不是中心（以前传成中心，地面碰撞高出 1 米，人和灵兽出生在碰撞里面卡住）
 	b._cyl_collider(ARENA + Vector3(0, -2.0, 0), R + 2.5, 2.0)
 	# 石板地砖：一圈圈深浅不一
 	for ring in 3:
 		var rr := 8.0 + ring * 8.5
-		U.part(root, U.cyl(rr + 3.6, rr + 3.6, 0.06, 64), stone if ring % 2 == 0 else dark, Vector3(0, 0.02 + ring * 0.001, 0), Vector3.ZERO, Vector3.ONE, false)
+		U.part(root, U.cyl(rr + 3.6, rr + 3.6, 0.06, 64), paving if ring % 2 == 0 else paving2, Vector3(0, 0.02 + ring * 0.001, 0), Vector3.ZERO, Vector3.ONE, false)
+		# 每圈石板外沿一道汉白玉边
+		U.part(root, U.torus(rr + 3.45, rr + 3.75, 96, 6), MatLib.marble(Color(0.85, 0.84, 0.88)), Vector3(0, 0.07, 0), Vector3.ZERO, Vector3(1, 0.3, 1), false)
 	var magic := MeshInstance3D.new()
 	var pm := PlaneMesh.new()
 	pm.size = Vector2(20, 20)
@@ -227,6 +234,11 @@ func _build_arena() -> void:
 		var basis := Basis(Vector3.UP, -a + PI * 0.5)
 		var slab := U.part(root, U.box(Vector3(w, h, 3.0)), stone if i % 3 != 0 else dark, c + Vector3(0, h * 0.5 - 0.5, 0), Vector3(0, -a + PI * 0.5, rng.randf_range(-0.03, 0.03)), Vector3.ONE, false)
 		slab.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		# 墙帽：一道青瓦顶（两面坡）+ 墙根一圈深色石基，看着是院墙，不是水泥板
+		var cap := PrismMesh.new()
+		cap.size = Vector3(w + 0.2, 0.9, 3.8)
+		U.part(root, cap, world.builder._tiles(Color(0.22, 0.23, 0.26)), c + Vector3(0, h - 0.05, 0), Vector3(0, -a + PI * 0.5, 0), Vector3.ONE, false)
+		U.part(root, U.box(Vector3(w + 0.1, 1.2, 3.3)), MatLib.stone(Color(0.4, 0.38, 0.42)), c + Vector3(0, 0.1, 0), Vector3(0, -a + PI * 0.5, 0), Vector3.ONE, false)
 		# 碰撞和看得见的墙一样高（以前高出一截，灵兽落在看不见的墙顶上）
 		b._add_collider(_box_shape(Vector3(w, h, 3.0)), Transform3D(basis, ARENA + c + Vector3(0, h * 0.5 - 0.5, 0)))
 		if i % 5 == 2:
@@ -235,9 +247,11 @@ func _build_arena() -> void:
 	for i in 6:
 		var a := TAU * i / 6.0
 		var c := Vector3(cos(a), 0, sin(a)) * 17.0
-		U.part(root, U.cyl(1.1, 1.35, 8.0, 12), stone, c + Vector3(0, 4.0, 0))
-		U.part(root, U.cyl(1.6, 1.6, 0.5, 12), dark, c + Vector3(0, 0.25, 0))
-		U.part(root, U.cyl(1.5, 1.5, 0.4, 12), dark, c + Vector3(0, 8.1, 0))
+		U.part(root, U.cyl(1.1, 1.35, 8.0, 20), pillar, c + Vector3(0, 4.0, 0))
+		U.part(root, U.cyl(1.6, 1.75, 0.5, 20), dark, c + Vector3(0, 0.25, 0))
+		U.part(root, U.cyl(1.5, 1.4, 0.4, 20), dark, c + Vector3(0, 8.1, 0))
+		for yy in [1.2, 6.6]:
+			U.part(root, U.cyl(1.3 - yy * 0.02, 1.3 - yy * 0.02, 0.22, 20), bronze, c + Vector3(0, yy, 0))
 		U.part(root, U.sphere(0.35, 12, 8), U.glow(Color(0.7, 0.55, 1.0), 4.0), c + Vector3(0, 8.7, 0), Vector3.ZERO, Vector3.ONE, false)
 		b._cyl_collider(ARENA + c, 1.25, 8.4)
 	# 矮石台：能跳上去、能躲
@@ -245,7 +259,7 @@ func _build_arena() -> void:
 		var a := TAU * i / 4.0 + PI / 4.0
 		var c := Vector3(cos(a), 0, sin(a)) * 9.0
 		var yaw := -a
-		U.part(root, U.box(Vector3(3.4, 1.2, 2.0)), dark, c + Vector3(0, 0.6, 0), Vector3(0, yaw, 0))
+		U.part(root, Props.rbox(Vector3(3.4, 1.2, 2.0), 0.08), MatLib.marble(Color(0.8, 0.79, 0.84)), c + Vector3(0, 0.6, 0), Vector3(0, yaw, 0))
 		b._add_collider(_box_shape(Vector3(3.4, 1.2, 2.0)), Transform3D(Basis(Vector3.UP, yaw), ARENA + c + Vector3(0, 0.6, 0)))
 	# 三个兽门（北边一个，两边斜前方各一个）：灵兽从这里冲出来
 	for k in 3:
@@ -258,7 +272,8 @@ func _build_arena() -> void:
 		gate.rotation.y = -a - PI * 0.5
 		U.part(gate, U.box(Vector3(5.0, 7.0, 1.0)), U.mat(Color(0.03, 0.02, 0.04), 1.0), Vector3(0, 3.5, 0.2), Vector3.ZERO, Vector3.ONE, false)
 		for s in [-1.0, 1.0]:
-			U.part(gate, U.box(Vector3(0.9, 8.0, 1.6)), dark, Vector3(s * 2.9, 4.0, 0), Vector3.ZERO, Vector3.ONE, false)
+			U.part(gate, Props.rbox(Vector3(0.9, 8.0, 1.6), 0.08), pillar, Vector3(s * 2.9, 4.0, 0), Vector3.ZERO, Vector3.ONE, false)
+			U.part(gate, U.box(Vector3(1.0, 0.25, 1.7)), bronze, Vector3(s * 2.9, 7.2, 0), Vector3.ZERO, Vector3.ONE, false)
 		var q := MeshInstance3D.new()
 		var qm := QuadMesh.new()
 		qm.size = Vector2(4.6, 6.6)
@@ -281,7 +296,8 @@ func _build_arena() -> void:
 	for i in 8:
 		var a := TAU * i / 8.0 + PI / 8.0
 		var c := Vector3(cos(a), 0, sin(a)) * (R - 2.0)
-		U.part(root, U.cyl(0.5, 0.3, 1.2, 8), dark, c + Vector3(0, 0.6, 0))
+		U.part(root, U.cyl(0.55, 0.3, 1.2, 16), bronze, c + Vector3(0, 0.6, 0))
+		U.part(root, U.torus(0.5, 0.6, 16, 6), bronze, c + Vector3(0, 1.2, 0), Vector3.ZERO, Vector3.ONE, false)
 		U.part(root, U.sphere(0.35, 10, 8), U.glow(Color(1.0, 0.55, 0.2), 5.0), c + Vector3(0, 1.35, 0), Vector3.ZERO, Vector3(1, 1.3, 1), false)
 		var fl := OmniLight3D.new()
 		fl.light_color = Color(1.0, 0.6, 0.3)
@@ -320,7 +336,7 @@ func _build_arena() -> void:
 			root.add_child(mi)
 	b._motes(ARENA + Vector3(0, 4.0, 0), Vector3(R * 0.8, 3.5, R * 0.8), 90, Color(0.8, 0.65, 1.0) * 0.7, 0.16)
 	# 进出的台子（南边）
-	U.part(root, U.cyl(2.4, 2.6, 0.2, 24), stone, Vector3(0, 0.1, R - 5.0))
+	U.part(root, U.cyl(2.4, 2.6, 0.2, 24), MatLib.marble(Color(0.85, 0.84, 0.88)), Vector3(0, 0.1, R - 5.0))
 	_exit_fx = Node3D.new()
 	root.add_child(_exit_fx)
 	_exit_fx.position = Vector3(0, 0.25, R - 5.0)
@@ -329,16 +345,16 @@ func _build_arena() -> void:
 	_chest = Node3D.new()
 	root.add_child(_chest)
 	_chest.visible = false
-	var gold := U.mat(Color(0.85, 0.62, 0.22), 0.35, 0.8, 0.5)
-	var wood := b._wood(Color(0.7, 0.45, 0.3))
-	U.part(_chest, U.box(Vector3(1.6, 0.9, 1.0)), wood, Vector3(0, 0.45, 0))
+	var gold := MatLib.brass()
+	var wood := MatLib.hardwood(Color(0.8, 0.62, 0.5))
+	U.part(_chest, Props.rbox(Vector3(1.6, 0.9, 1.0), 0.04), wood, Vector3(0, 0.45, 0))
 	for s in [-0.7, 0.0, 0.7]:
-		U.part(_chest, U.box(Vector3(0.12, 0.95, 1.05)), gold, Vector3(s, 0.47, 0))
+		U.part(_chest, Props.rbox(Vector3(0.12, 0.95, 1.05), 0.02), gold, Vector3(s, 0.47, 0))
 	var lid := Node3D.new()
 	lid.name = "Lid"
 	lid.position = Vector3(0, 0.9, -0.5)
 	_chest.add_child(lid)
-	U.part(lid, U.box(Vector3(1.6, 0.35, 1.0)), wood, Vector3(0, 0.17, 0.5))
+	U.part(lid, Props.rbox(Vector3(1.6, 0.35, 1.0), 0.04), wood, Vector3(0, 0.17, 0.5))
 	var cl := OmniLight3D.new()
 	cl.light_color = UiKit.GOLD
 	cl.light_energy = 3.0

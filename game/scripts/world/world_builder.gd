@@ -29,23 +29,25 @@ const ENV := {
 	"island": {"sky": "sky_day", "u": 0.595, "elev": 48.0, "heading": 999.0, "light_elev": 30.0, "sun": Color(1.0, 0.9, 0.76), "energy": 1.4,
 		"ambient": 0.62, "exposure": 0.95, "white": 6.0, "glow": 0.5, "bloom": 0.04, "fog": Color(0.76, 0.82, 0.88), "fog_d": 0.0024,
 		# 低处的雾以前太浓（fog_hd 0.06、aerial 0.8）：十几米外的宝塔朱柱、彩画就被雾洗成粉紫色、发灰。压到一半
-		"scatter": 0.2, "aerial": 0.55, "fog_sky": 0.12, "sat": 1.08, "contrast": 1.08, "fog_h": 3.5, "fog_hd": 0.025, "amb_warm": 0.4,
-		"vol": 0.005, "vol_albedo": Color(0.92, 0.9, 0.86), "vol_e": 1.3},
+		"scatter": 0.08, "aerial": 0.55, "fog_sky": 0.12, "sat": 1.0, "contrast": 1.08, "fog_h": 3.5, "fog_hd": 0.025, "amb_warm": 0.4,
+		"vol": 0.004, "vol_albedo": Color(0.92, 0.9, 0.86), "vol_e": 0.6},
 	# 落霞：用户反馈"整张图巨亮、秘境里太阳亮得什么都看不到"——太阳贴着地平线，体积雾吃了 2.2 倍的阳光、泛光和曝光又偏高，
 	# 朝西一看整屏发白。曝光、泛光、雾里的阳光、天空亮度都压下来
 	"forest": {"sky": "sky_dusk", "u": 0.613, "elev": 4.7, "heading": -70.0, "light_elev": 17.0, "sun": Color(1.0, 0.74, 0.5), "energy": 1.25,
 		"ambient": 0.62, "exposure": 0.82, "white": 5.0, "glow": 0.45, "bloom": 0.02, "fog": Color(0.62, 0.5, 0.42), "fog_d": 0.005,
-		"scatter": 0.12, "aerial": 0.5, "fog_sky": 0.35, "vol": 0.007, "vol_albedo": Color(0.9, 0.78, 0.66), "vol_e": 0.6, "sky_e": 0.6, "sat": 1.1, "contrast": 1.06},
+		"scatter": 0.12, "aerial": 0.5, "fog_sky": 0.35, "vol": 0.007, "vol_albedo": Color(0.9, 0.78, 0.66), "vol_e": 0.6, "sky_e": 0.6, "sat": 1.0, "contrast": 1.06},
 	# 月夜：月光别太亮（用户反馈太亮、月亮从山前面透出来）——月光、曝光、辉光、月晕都压低，天空多被雾盖住
+	# 2026-09-29：月亮还是糊成屏幕上一大团白光（体积雾往前散射 + 泛光把月亮晕开）——天空再暗一点、泛光门槛抬高（glow_th）、体积雾里的月光减半
 	"deepforest": {"sky": "sky_night", "u": 0.600, "elev": 13.8, "heading": -40.0, "light_elev": 28.0, "sun": Color(0.6, 0.72, 1.0), "energy": 0.42,
-		"ambient": 0.6, "exposure": 1.0, "white": 4.0, "glow": 0.5, "bloom": 0.03, "fog": Color(0.08, 0.12, 0.2), "fog_d": 0.0045,
-		"scatter": 0.04, "aerial": 0.3, "fog_sky": 0.85, "vol": 0.01, "vol_albedo": Color(0.6, 0.72, 1.0), "vol_e": 0.6, "sky_e": 0.55, "sat": 1.05, "contrast": 1.08},
+		"ambient": 0.6, "exposure": 1.0, "white": 4.0, "glow": 0.35, "bloom": 0.0, "fog": Color(0.08, 0.12, 0.2), "fog_d": 0.0045,
+		"scatter": 0.0, "aerial": 0.3, "fog_sky": 0.85, "sky_e": 0.4, "sat": 1.0, "contrast": 1.08,
+		"glow_th": 2.2},
 	"snow": {"sky": "sky_snow", "u": 0.62, "elev": 16.6, "heading": 999.0, "light_elev": 32.0, "sun": Color(0.95, 0.97, 1.0), "energy": 1.0,
 		"ambient": 0.95, "exposure": 0.85, "white": 6.0, "glow": 0.4, "bloom": 0.03, "fog": Color(0.82, 0.86, 0.92), "fog_d": 0.003,
 		"scatter": 0.1, "aerial": 0.6, "fog_sky": 0.4, "sat": 1.0, "contrast": 1.05},
 	"sea": {"sky": "sky_sea", "u": 0.600, "elev": 49.8, "heading": 999.0, "light_elev": 49.8, "sun": Color(1.0, 0.96, 0.88), "energy": 1.35,
 		"ambient": 0.75, "exposure": 0.95, "white": 6.0, "glow": 0.5, "bloom": 0.03, "fog": Color(0.7, 0.82, 0.92), "fog_d": 0.0007,
-		"scatter": 0.12, "aerial": 0.5, "fog_sky": 0.1, "sat": 1.12, "contrast": 1.04},
+		"scatter": 0.12, "aerial": 0.5, "fog_sky": 0.1, "sat": 1.0, "contrast": 1.04},
 }
 
 var island: Island
@@ -166,7 +168,8 @@ func _area_k() -> float:
 
 # ------------------------------------------------------------------ 猎场：营地
 
-var camp_pos := Vector3.ZERO           # 营地补给箱（按 F 打开暗器铺买补给）
+var grade_layer: CanvasLayer           # 屏幕后处理（Grade.overlay）
+var camp_pos := Vector3.ZERO          # 营地补给箱（按 F 打开暗器铺买补给）
 
 
 func _camp() -> void:
@@ -198,8 +201,10 @@ func _camp() -> void:
 	root.add_child(fl)
 	# 补给箱（打开是暗器铺）
 	camp_pos = Vector3(c.x - 3.0, island.height_at(c.x - 3.0, c.z - 5.0), c.z - 5.0)
-	U.part(root, U.box(Vector3(1.4, 0.8, 0.9)), wood, camp_pos + Vector3(0, 0.4, 0))
-	U.part(root, U.box(Vector3(1.46, 0.12, 0.96)), U.mat(Color(0.9, 0.7, 0.3), 0.35, 0.0, 0.8), camp_pos + Vector3(0, 0.85, 0))
+	U.part(root, Props.rbox(Vector3(1.4, 0.8, 0.9), 0.03), MatLib.planks(Color(1.3, 1.15, 1.0)), camp_pos + Vector3(0, 0.4, 0))
+	U.part(root, Props.rbox(Vector3(1.46, 0.12, 0.96), 0.02), MatLib.brass(), camp_pos + Vector3(0, 0.85, 0))
+	for s in [-1.0, 1.0]:
+		U.part(root, Props.rbox(Vector3(0.1, 0.84, 0.94), 0.02), MatLib.iron(Color(1.3, 1.3, 1.3)), camp_pos + Vector3(s * 0.55, 0.42, 0))
 	_add_collider(_box(Vector3(1.4, 0.8, 0.9)), Transform3D(Basis(), camp_pos + Vector3(0, 0.4, 0)))
 	var t := U.label3d("营地补给", 56, Color(1.0, 0.85, 0.5))
 	t.visibility_range_end = 30.0
@@ -229,6 +234,8 @@ func apply_quality() -> void:
 	env.ssao_enabled = q >= 1 and full
 	env.ssil_enabled = q >= 2 and full
 	env.volumetric_fog_enabled = (ENV[biome] as Dictionary).has("vol") and q >= 2 and full
+	if grade_layer:
+		grade_layer.visible = q >= 1
 	sun.directional_shadow_max_distance = [70.0, 120.0, 170.0][q] * (0.7 if Settings.is_mobile() else 1.0)
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS if q == 0 else DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
 
@@ -267,6 +274,12 @@ func _environment() -> void:
 	env.ssao_intensity = 1.8
 	env.ssil_radius = 4.0
 	env.adjustment_enabled = true
+	# 调色（学 Road to Vostok，见 Grade）：每章一张颜色查找表 + 屏幕上一层锐化 / 压角 / 颗粒
+	env.adjustment_color_correction = Grade.lut(biome)
+	if e.get("tm", "") == "agx":
+		env.tonemap_mode = Environment.TONE_MAPPER_AGX
+	grade_layer = Grade.overlay()
+	root.add_child(grade_layer)
 
 	# 太阳方向：跟天空图里的太阳对上。太阳贴着地平线时，灯光抬高一点，不然全被山挡住
 	var dir := _sky_dir(float(e["u"]), float(e["elev"]))
@@ -297,6 +310,8 @@ func _environment() -> void:
 	env.tonemap_white = e["white"]
 	env.glow_intensity = e["glow"]
 	env.glow_bloom = e["bloom"]
+	if e.has("glow_th"):
+		env.glow_hdr_threshold = float(e["glow_th"])
 	env.fog_light_color = e["fog"]
 	env.fog_density = e["fog_d"]
 	env.fog_sun_scatter = e["scatter"]
@@ -520,11 +535,11 @@ func _ground_material() -> ShaderMaterial:
 		"forest":
 			return _terrain_material(["forest", "mud", "rock", "moss"],
 				[Color(0.95, 0.88, 0.8), Color(0.8, 0.74, 0.66), Color(0.95, 0.93, 0.88), Color(0.8, 0.86, 0.62)],
-				Vector4(0.3, 0.26, 0.16, 0.22), Vector4(0.92, 0.38, 0.8, 0.9))
+				Vector4(0.3, 0.26, 0.16, 0.22), Vector4(0.92, 0.72, 0.8, 0.9))
 		"deepforest":
 			return _terrain_material(["forest", "mud", "rock", "moss"],
-				[Color(0.5, 0.55, 0.62), Color(0.55, 0.55, 0.6), Color(0.75, 0.78, 0.85), Color(0.45, 0.68, 0.62)],
-				Vector4(0.3, 0.26, 0.16, 0.22), Vector4(0.92, 0.35, 0.8, 0.9))
+				[Color(0.5, 0.55, 0.62), Color(0.42, 0.4, 0.42), Color(0.75, 0.78, 0.85), Color(0.45, 0.68, 0.62)],
+				Vector4(0.3, 0.26, 0.16, 0.22), Vector4(0.92, 0.8, 0.8, 0.9))
 		"snow":
 			var sm := _terrain_material(["snow", "rock", "dirt", "ice"],
 				[Color(1.0, 1.0, 1.0), Color(0.82, 0.84, 0.9), Color(0.78, 0.76, 0.76), Color(0.85, 0.95, 1.05)],
@@ -2726,8 +2741,12 @@ func _altar() -> void:
 	node.name = "Altar"
 	node.position = p
 	root.add_child(node)
+	# 祭坛（2026-09-29 质感）：两层汉白玉八角台 + 青铜包边，四根刻纹石柱，青铜鼎
+	var marble := MatLib.marble(Color(0.9, 0.89, 0.86))
+	var bronze := MatLib.bronze(Color(0.85, 0.95, 0.85))
 	U.part(node, U.cyl(3.4, 3.7, 0.6, 8), dark, Vector3(0, 0.0, 0))
-	U.part(node, U.cyl(2.4, 2.6, 0.45, 8), stone, Vector3(0, 0.5, 0))
+	U.part(node, U.cyl(3.45, 3.45, 0.08, 8), bronze, Vector3(0, 0.29, 0))
+	U.part(node, U.cyl(2.4, 2.6, 0.45, 8), marble, Vector3(0, 0.5, 0))
 	var sh := CylinderShape3D.new()
 	sh.radius = 3.5
 	sh.height = 0.6
@@ -2741,13 +2760,16 @@ func _altar() -> void:
 	for k in 4:
 		var a := TAU * k / 4.0 + PI * 0.25
 		var q := Vector3(cos(a) * 3.0, 0, sin(a) * 3.0)
-		U.part(node, U.box(Vector3(0.45, 2.6, 0.45)), stone, q + Vector3(0, 1.4, 0))
-		U.part(node, U.box(Vector3(0.6, 0.2, 0.6)), dark, q + Vector3(0, 2.75, 0))
+		U.part(node, Props.rbox(Vector3(0.45, 2.6, 0.45), 0.05), stone, q + Vector3(0, 1.4, 0))
+		U.part(node, Props.rbox(Vector3(0.62, 0.3, 0.62), 0.05), dark, q + Vector3(0, 0.25, 0))
+		U.part(node, Props.rbox(Vector3(0.6, 0.2, 0.6), 0.05), dark, q + Vector3(0, 2.75, 0))
+		for yy in [0.9, 2.3]:
+			U.part(node, U.box(Vector3(0.47, 0.06, 0.47)), bronze, q + Vector3(0, yy, 0))
 		U.part(node, U.sphere(0.16, 10, 8), U.glow(rune_col, 3.5), q + Vector3(0, 3.05, 0), Vector3.ZERO, Vector3.ONE, false)
 		_cyl_collider(p + q, 0.35, 2.8)
 	# 香炉（鼎）
-	var bronze := U.mat(Color(0.45, 0.35, 0.2), 0.45, 0.0, 0.7)
-	U.part(node, U.cyl(0.55, 0.42, 0.55, 12), bronze, Vector3(0, 1.0, 0))
+	U.part(node, U.cyl(0.55, 0.42, 0.55, 20), bronze, Vector3(0, 1.0, 0))
+	U.part(node, U.cyl(0.6, 0.6, 0.06, 20), bronze, Vector3(0, 1.28, 0))
 	for k in 3:
 		var a := TAU * k / 3.0
 		U.part(node, U.cyl(0.05, 0.07, 0.35, 6), bronze, Vector3(cos(a) * 0.35, 0.72, sin(a) * 0.35))
