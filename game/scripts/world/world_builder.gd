@@ -15,6 +15,7 @@ extends RefCounted
 const TERRAIN_SHADER := preload("res://shaders/terrain.gdshader")
 const WATER_SHADER := preload("res://shaders/water.gdshader")
 const GRASS_SHADER := preload("res://shaders/grass.gdshader")
+const LITTER_SHADER := preload("res://shaders/litter.gdshader")
 const FOLIAGE_SHADER := preload("res://shaders/foliage.gdshader")
 const SNOW_OVERLAY := preload("res://shaders/snow_overlay.gdshader")
 const GROUND := "res://assets/textures/ground/"
@@ -115,6 +116,7 @@ func build() -> void:
 	_trees()
 	_props()
 	_grass()
+	_litter()
 	match biome:
 		"island":
 			_burrows()
@@ -533,8 +535,9 @@ func _terrain_material(layers: Array, tints: Array, scales: Vector4, roughs: Vec
 func _ground_material() -> ShaderMaterial:
 	match biome:
 		"forest":
+			# 落叶层压暗一截（2026-09-29 地上撒了真落叶，地面和落叶一个颜色的话看不出来）
 			return _terrain_material(["forest", "mud", "rock", "moss"],
-				[Color(0.95, 0.88, 0.8), Color(0.8, 0.74, 0.66), Color(0.95, 0.93, 0.88), Color(0.8, 0.86, 0.62)],
+				[Color(0.72, 0.64, 0.58), Color(0.8, 0.74, 0.66), Color(0.95, 0.93, 0.88), Color(0.8, 0.86, 0.62)],
 				Vector4(0.3, 0.26, 0.16, 0.22), Vector4(0.92, 0.72, 0.8, 0.9))
 		"deepforest":
 			return _terrain_material(["forest", "mud", "rock", "moss"],
@@ -915,10 +918,22 @@ func _multimesh(mesh: Mesh, xforms: Array, colors: Array = [], shadows := true, 
 	mm.use_colors = colors.size() > 0
 	mm.mesh = mesh
 	mm.instance_count = xforms.size()
+	# 一次写整块缓冲（草 11 万丛、落叶十几万片，逐个 set_instance_* 要一两秒）：每个实例 3×4 变换按行 + 颜色
+	var stride := 16 if mm.use_colors else 12
+	var buf := PackedFloat32Array()
+	buf.resize(xforms.size() * stride)
+	var o := 0
 	for i in xforms.size():
-		mm.set_instance_transform(i, xforms[i])
+		var t: Transform3D = xforms[i]
+		var bs := t.basis
+		buf[o] = bs.x.x; buf[o + 1] = bs.y.x; buf[o + 2] = bs.z.x; buf[o + 3] = t.origin.x
+		buf[o + 4] = bs.x.y; buf[o + 5] = bs.y.y; buf[o + 6] = bs.z.y; buf[o + 7] = t.origin.y
+		buf[o + 8] = bs.x.z; buf[o + 9] = bs.y.z; buf[o + 10] = bs.z.z; buf[o + 11] = t.origin.z
 		if mm.use_colors:
-			mm.set_instance_color(i, colors[i])
+			var c: Color = colors[i]
+			buf[o + 12] = c.r; buf[o + 13] = c.g; buf[o + 14] = c.b; buf[o + 15] = c.a
+		o += stride
+	mm.buffer = buf
 	var mmi := MultiMeshInstance3D.new()
 	mmi.multimesh = mm
 	if material:
@@ -1913,6 +1928,88 @@ func _grass() -> void:
 		mat.set_shader_parameter("tint", Color(1.0, 1.0, 0.92))
 		mat.set_shader_parameter("backlight", Color(0.18, 0.22, 0.08))
 	_scatter(_tuft_mesh(1.15 if biome == "island" else 0.95, 0.62), xs, cols, fade + 6.0, false, 32.0, mat)
+
+
+## 地上的小零碎：落叶、松针、枯枝、碎石（2026-09-29，学 Road to Vostok——它满地都是，我们的地面干净得像刚扫过）。
+## 平铺在地上的贴片，树下密、空地稀，小路上是碎石；图集 tools/make_litter.py（格子编号见那里）。
+## cells：[格子, 权重]；under：多少放在树下
+## tint：整体压暗多少（月夜的苍梧林海不压的话碎石像一颗颗发光的豆子）
+const LITTER := {
+	"island": {"n": 50000, "under": 0.5, "tint": 0.85, "cells": [[4, 2], [5, 1], [10, 2], [11, 2], [12, 2], [13, 2], [14, 1], [8, 1]]},
+	# 落霞林：秋天，满地红叶黄叶（地面压暗了一截，叶子才跳得出来）
+	"forest": {"n": 150000, "under": 0.4, "tint": 1.0, "cells": [[0, 3], [1, 3], [2, 3], [3, 3], [6, 3], [7, 3], [5, 1], [10, 1], [11, 1], [8, 1]]},
+	"deepforest": {"n": 110000, "under": 0.45, "tint": 0.55, "cells": [[4, 3], [5, 3], [8, 3], [9, 3], [10, 2], [11, 2], [15, 2], [12, 1]]},
+	# 雪地：只有树底下露出几根松针、枯枝
+	"snow": {"n": 8000, "under": 0.85, "tint": 0.9, "cells": [[8, 3], [9, 2], [10, 3], [11, 3], [15, 2]]},
+	"sea": {"n": 30000, "under": 0.45, "tint": 0.9, "cells": [[12, 3], [13, 3], [8, 2], [9, 2], [10, 1], [11, 1], [4, 1]]},
+}
+
+
+func _litter() -> void:
+	var cfg: Dictionary = LITTER.get(biome, LITTER["island"])
+	var r := RandomNumberGenerator.new()
+	r.seed = island.map_seed + 500
+	# 猎场地图大四倍：落叶只按一半面积撒（摆放是 GDScript 一片片算的，15 万片约 1.5 秒）
+	var target := mini(int(float(cfg["n"]) * _density() * (_area_k() * 0.5 if island.hunting else 1.0)), 160000)
+	var cells: Array = cfg["cells"]
+	var total := 0.0
+	for c in cells:
+		total += float(c[1])
+	var under := float(cfg["under"])
+	var tree_spot := _spot_under_trees(5.0)
+	var xs := []
+	var cols := []
+	var tries := 0
+	while xs.size() < target and tries < target * 4:
+		tries += 1
+		var p: Vector3 = Vector3.INF
+		if r.randf() < under:
+			p = tree_spot.call(r)
+		else:
+			var x := r.randf_range(-_ext(), _ext())
+			var z := r.randf_range(-_ext(), _ext())
+			p = Vector3(x, island.height_at(x, z), z)
+		if p == Vector3.INF or p.y < 0.9:
+			continue
+		var slope := island.slope_at(p.x, p.z)
+		if slope > 0.8:
+			continue
+		var q := r.randf() * total
+		var cell := int(cells[0][0])
+		for c in cells:
+			q -= float(c[1])
+			if q <= 0.0:
+				cell = int(c[0])
+				break
+		# 小路上被踩干净了，只有零星碎石
+		if path_d(p.x, p.z) < 1.2:
+			if biome == "snow" or r.randf() < 0.75:
+				continue
+			cell = 12 + r.randi() % 2
+		var s := r.randf_range(0.8, 1.4)
+		if cell in [8, 9]:
+			s *= 1.1
+		elif cell in [12, 13]:
+			s *= 0.7
+		# 贴着地面的坡度（平地不算，省时间：一张图十几万片）
+		var n := Vector3.UP
+		if slope > 0.1:
+			var hx := island.height_at(p.x + 0.5, p.z) - island.height_at(p.x - 0.5, p.z)
+			var hz := island.height_at(p.x, p.z + 0.5) - island.height_at(p.x, p.z - 0.5)
+			n = Vector3(-hx, 1.0, -hz).normalized()
+		var b := Basis(Quaternion(Vector3.UP, n)) * Basis(Vector3.UP, r.randf() * TAU) * Basis.from_scale(Vector3(s, 1.0, s))
+		xs.append(Transform3D(b, p + n * 0.025))
+		var v := r.randf_range(0.8, 1.05) * float(cfg["tint"])
+		cols.append(Color(v, v, v, cell / 15.0))
+	var pm := PlaneMesh.new()
+	pm.size = Vector2.ONE
+	var mat := ShaderMaterial.new()
+	mat.shader = LITTER_SHADER
+	mat.set_shader_parameter("atlas", load(FOLIAGE + "litter.png"))
+	var fade: float = [18.0, 26.0, 34.0][quality]
+	mat.set_shader_parameter("fade_start", fade * 0.65)
+	mat.set_shader_parameter("fade_end", fade)
+	_scatter(pm, xs, cols, fade + 4.0, false, 24.0, mat)
 
 
 # ------------------------------------------------------------------ 第一章：兔子洞、月光花丛、芦苇

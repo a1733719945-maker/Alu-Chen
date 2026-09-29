@@ -20,6 +20,8 @@ void vertex() {
 	float d = length(wp - CAMERA_POSITION_WORLD);
 	float shrink = 1.0 - smoothstep(fade_start, fade_end, d);
 	VERTEX *= shrink;
+	// 贴片底边往地里多埋 15 厘米：坡上贴片的底边露出来，是一道锯齿形的暗线
+	VERTEX.y -= step(0.999, UV.y) * 0.15;
 	// 一阵阵的风：沿一个方向推进的波
 	float gust = sin(dot(wp.xz, vec2(0.11, 0.07)) - TIME * 1.7) * 0.5 + 0.5;
 	float t = TIME * 2.3 + wp.x * 0.3 + wp.z * 0.23;
