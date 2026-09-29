@@ -1,7 +1,8 @@
 extends SceneTree
 ## 把 AI 生成的大 GLB（几十万面、2K/4K 贴图）压小，方便 GitHub 网页上传、游戏里也不卡。
 ## 减面用 Godot 自带的 LOD 生成（ImporterMesh.generate_lods），贴图缩到指定尺寸、存成 JPEG。
-## 用法：godot --headless --path <任意空项目> --script shrink_glb.gd -- 输入.glb 输出.glb [目标三角面数=100000] [贴图边长=1024]
+## 用法：godot --headless --path <任意空项目> --script shrink_glb.gd -- 输入.glb 输出.glb [目标三角面数=100000] [贴图边长=1024] [JPEG|PNG]
+## 带透明贴图的（植物叶子 alphaMode MASK / BLEND）要用 PNG，JPEG 没有透明通道。输出路径别带中文（写文件会失败）
 
 
 func _init() -> void:
@@ -44,7 +45,7 @@ func _init() -> void:
 			after += _tris_importer(im)
 	print("减到 ", after, " 面")
 	var out := GLTFDocument.new()
-	out.image_format = "JPEG"
+	out.image_format = str(a[4]) if a.size() > 4 else "JPEG"
 	out.lossy_quality = 0.85
 	var st2 := GLTFState.new()
 	if out.append_from_scene(root, st2) != OK or out.write_to_filesystem(st2, a[1]) != OK:

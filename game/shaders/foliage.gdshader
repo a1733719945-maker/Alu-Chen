@@ -1,5 +1,6 @@
 shader_type spatial;
-render_mode cull_disabled, diffuse_burley, specular_schlick_ggx, depth_prepass_alpha;
+render_mode cull_disabled, diffuse_burley, specular_schlick_ggx;
+// 2026-09-29 去掉了 depth_prepass_alpha：它让每棵树都走一遍透明管线（再画一次、按远近排序、不能合批），镂空用 ALPHA_SCISSOR 就够了
 // 树叶贴片：透明镂空 + 随风摆动 + 透光（逆光时叶子发亮）。
 // 法线在生成网格时指向树冠中心的外侧，整棵树的明暗像一个蓬松的球，而不是一片片纸。
 // UV2.x = 摆动权重（树干根部 0，枝梢 1）

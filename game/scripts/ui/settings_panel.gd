@@ -36,7 +36,7 @@ func _ready() -> void:
 	_slider(v, "界面大小", 0.8, 1.4, 0.05, Settings.ui_scale, func(x): Settings.ui_scale = x)
 	v.add_child(UiKit.section("画面", UiKit.GOLD))
 	_slider(v, "视野 FOV", 70.0, 120.0, 1.0, Settings.fov, func(x): Settings.fov = x)
-	_option(v, "画质", ["低（老电脑 / 手机）", "中", "高"], Settings.quality, func(i): Settings.quality = i)
+	_option(v, "画质", ["低（老电脑 / 手机）", "中", "高", "极高（好显卡）"], Settings.quality, func(i): Settings.quality = i)
 	_slider(v, "渲染分辨率（手机调低更流畅）", 0.5, 1.0, 0.05, Settings.render_scale, func(x): Settings.render_scale = x)
 	_check(v, "全屏（F11）", Settings.fullscreen, func(b): Settings.fullscreen = b)
 	_check(v, "垂直同步（更稳，但多一点延迟）", Settings.vsync, func(b): Settings.vsync = b)

@@ -57,7 +57,7 @@ func _ready() -> void:
 			_plan = ["phys", "hunt:burrow,meadow,flowers,water,reel", "shop", "recoil", "sniper", "ring", "boss", "boat", "hunt:den,swamp,mud", "boss", "boat",
 				"hunt:glade,roost,thicket,nest,bog", "boss", "boat",
 				"hunt:snowden,frostgrove,icefield,icecave,icelake", "boss", "boat",
-				"hunt:beach,cliff,reef,deep,abyss", "boss", "dungeon", "chase", "musou", "huntrun", "huntfail", "touch", "feel", "hunt2", "garts", "gear", "tempered", "omen", "done"]
+				"hunt:beach,cliff,reef,deep,abyss", "boss", "dungeon", "chase", "musou", "huntrun", "huntfail", "touch", "feel", "hunt2", "garts", "gear", "tempered", "omen", "pet", "done"]
 			# 新暗器测试放在第一章买完暗器后面（要第一章的草地摆靶子；第五章归墟没有草地）
 			_plan.insert(_plan.find("shop") + 1, "guns2")
 			_plan.insert(_plan.find("guns2") + 1, "pills")
@@ -317,6 +317,18 @@ func _process(dt: float) -> void:
 			_run_tempered()
 		"omen":
 			_run_omen()
+		"pet":
+			_run_pet()
+		"fps":
+			_run_fps()
+		"fpssteps":
+			_run_fps_steps()
+		"fpsempty":
+			_run_fps_empty()
+		"fpsnomsaa":
+			_run_fps_nomsaa()
+		"fpscats":
+			_run_fps_cats()
 		"hunt2shot":
 			_run_hunt2shot()
 		"fpshot":
@@ -4968,6 +4980,317 @@ func _run_omen() -> void:
 		return
 	_note(notes + "；猎灵榜上有")
 	_next_phase()
+
+
+## 帧数：站在出生点看 6 秒，记平均和最低（本机量性能用，不进默认流程）
+## 然后一样一样关掉看帧数：影子、体积雾 / SSIL / SSAO（画质）、调色后处理、草、落叶
+const FPS_STEPS := ["现在的高（MSAA 4x、SSIL、影子四层 170 米）", "候选高 A：FXAA、关 SSIL、影子两层 120 米", "A + 调色层不锐化（不读屏幕）", "候选高 B：A 换 MSAA 2x", "B + 影子贴图 2048"]
+
+
+func _fps_sample(w: World, label: String) -> bool:
+	if _step_t < 1.5:
+		_mem["fps"] = []
+		RenderingServer.viewport_set_measure_render_time(get_viewport().get_viewport_rid(), true)
+		return false
+	(_mem["fps"] as Array).append(Engine.get_frames_per_second())
+	if _step_t < 4.0:
+		return false
+	var a: Array = _mem["fps"]
+	var s := 0.0
+	for v in a:
+		s += float(v)
+	var rid := get_viewport().get_viewport_rid()
+	_note("%s：%.1f 帧，每帧 %.1f 毫秒，draw call %d；渲染 CPU %.1f 毫秒、GPU %.1f 毫秒、准备 %.1f 毫秒" % [label, s / maxf(a.size(), 1), Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0, int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)),
+		RenderingServer.viewport_get_measured_render_time_cpu(rid), RenderingServer.viewport_get_measured_render_time_gpu(rid), RenderingServer.get_frame_setup_time_cpu()])
+	return true
+
+
+func _run_fps_steps() -> void:
+	var w := _ready_world()
+	if not w:
+		return
+	var i := _step
+	if i >= FPS_STEPS.size():
+		_next_phase()
+		return
+	var vp := get_viewport()
+	if not _fps_sample(w, FPS_STEPS[i]):
+		return
+	match i + 1:
+		1:
+			vp.msaa_3d = Viewport.MSAA_DISABLED
+			vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA
+			w.builder.env.ssil_enabled = false
+			w.builder.sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
+			w.builder.sun.directional_shadow_max_distance = 120.0
+		2:
+			var cr := w.builder.grade_layer.get_child(0) as ColorRect
+			(cr.material as ShaderMaterial).set_shader_parameter("sharpen", 0.0)
+			w.builder.grade_layer.visible = false
+		3:
+			w.builder.grade_layer.visible = true
+			vp.msaa_3d = Viewport.MSAA_2X
+			vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED
+		4:
+			RenderingServer.directional_shadow_atlas_set_size(2048, true)
+	_next(i + 1)
+
+
+## 每一类东西各吃多少 GPU：一次只藏一类（藏完放回来），看 GPU 时间少了多少（MSAA 按玩家设置）
+const FPS_CATS := ["全开", "树", "草", "落叶", "石头灌木", "地形", "水", "房子装饰（场景里别的）", "太阳影子", "灵兽"]
+
+
+func _cat_nodes(w: World, cat: String) -> Array:
+	var out: Array = []
+	match cat:
+		"树", "草", "落叶", "石头灌木":
+			for n in w.builder.root.find_children("*", "MultiMeshInstance3D", true, false):
+				var mmi := n as MultiMeshInstance3D
+				var mm := mmi.multimesh
+				var sh: Shader = (mmi.material_override as ShaderMaterial).shader if mmi.material_override is ShaderMaterial else null
+				var tree := mm != null and mm.mesh != null and mm.mesh.get_surface_count() >= 2 and mm.mesh.surface_get_material(1) is ShaderMaterial and (mm.mesh.surface_get_material(1) as ShaderMaterial).shader == WorldBuilder.FOLIAGE_SHADER
+				var c := "树" if tree else ("草" if sh == WorldBuilder.GRASS_SHADER else ("落叶" if sh == WorldBuilder.LITTER_SHADER else "石头灌木"))
+				if c == cat:
+					out.append(mmi)
+		"地形", "水", "房子装饰（场景里别的）":
+			for n in w.builder.root.find_children("*", "MeshInstance3D", true, false):
+				var mi := n as MeshInstance3D
+				var sh: Shader = (mi.material_override as ShaderMaterial).shader if mi.material_override is ShaderMaterial else null
+				var c := "地形" if sh == WorldBuilder.TERRAIN_SHADER else ("水" if sh == WorldBuilder.WATER_SHADER else "房子装饰（场景里别的）")
+				if c == cat:
+					out.append(mi)
+			if cat == "房子装饰（场景里别的）" and w.decor:
+				out.append(w.decor)
+		"灵兽":
+			for b in w.beasts.values():
+				out.append(b)
+	return out
+
+
+func _run_fps_cats() -> void:
+	var w := _ready_world()
+	if not w:
+		return
+	var i := _step
+	if i >= FPS_CATS.size():
+		_next_phase()
+		return
+	var cat := str(FPS_CATS[i])
+	if not _mem.has("cat_%d" % i):
+		_mem["cat_%d" % i] = true
+		if cat == "太阳影子":
+			w.builder.sun.shadow_enabled = false
+		else:
+			for n in _cat_nodes(w, cat):
+				(n as Node3D).visible = false
+	var rid := get_viewport().get_viewport_rid()
+	RenderingServer.viewport_set_measure_render_time(rid, true)
+	if _step_t < 1.5:
+		_mem["gpu"] = []
+		return
+	(_mem["gpu"] as Array).append(RenderingServer.viewport_get_measured_render_time_gpu(rid))
+	if _step_t < 3.5:
+		return
+	var a: Array = _mem["gpu"]
+	var s := 0.0
+	for v in a:
+		s += float(v)
+	var avg := s / maxf(a.size(), 1)
+	if i == 0:
+		_mem["gpu0"] = avg
+		_note("全开：GPU %.1f 毫秒（MSAA %d）" % [avg, get_viewport().msaa_3d])
+	else:
+		_note("藏掉%s（%d 个）：GPU %.1f 毫秒，省 %.1f" % [cat, _cat_nodes(w, cat).size(), avg, float(_mem["gpu0"]) - avg])
+	# 放回来
+	if cat == "太阳影子":
+		w.builder.sun.shadow_enabled = true
+	else:
+		for n in _cat_nodes(w, cat):
+			(n as Node3D).visible = true
+	_next(i + 1)
+
+
+## 不开 MSAA（FXAA）的全场景：配合 --gpu-profile
+func _run_fps_nomsaa() -> void:
+	var w := _ready_world()
+	if not w:
+		return
+	if _step == 0:
+		get_viewport().msaa_3d = Viewport.MSAA_DISABLED
+		get_viewport().screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA
+		_next(1)
+		return
+	if _fps_sample(w, "不开 MSAA"):
+		_next_phase()
+
+
+## 什么都不画（场景、HUD 藏掉、低画质）还剩多少：配合 --gpu-profile 看是哪一步
+func _run_fps_empty() -> void:
+	var w := _ready_world()
+	if not w:
+		return
+	if _step == 0:
+		Settings.quality = 0
+		w.builder.apply_quality()
+		get_viewport().msaa_3d = Viewport.MSAA_DISABLED
+		w.builder.root.visible = false
+		w.hud.visible = false
+		_next(1)
+		return
+	if _fps_sample(w, "什么都不画"):
+		_next_phase()
+
+
+func _run_fps() -> void:
+	var w := _ready_world()
+	if not w:
+		return
+	if _step_t < 3.0:
+		_mem["fps"] = []
+		return
+	(_mem["fps"] as Array).append(Engine.get_frames_per_second())
+	if _step_t < 9.0:
+		return
+	var a: Array = _mem["fps"]
+	var s := 0.0
+	var lo := 9999.0
+	for v in a:
+		s += float(v)
+		lo = minf(lo, float(v))
+	_note("帧数：平均 %.1f，最低 %.1f（画质 %d，%s，max_fps %d）" % [s / maxf(a.size(), 1), lo, Settings.quality, RenderingServer.get_video_adapter_name(), Engine.max_fps])
+	var vp := get_viewport()
+	_note("窗口 %s，画面 %s，3D 缩放 %.2f（%d），MSAA %d，屏幕 AA %d，TAA %s，屏幕缩放 %.2f" % [str(DisplayServer.window_get_size()), str(vp.get_visible_rect().size), vp.scaling_3d_scale, vp.scaling_3d_mode, vp.msaa_3d, vp.screen_space_aa, str(vp.use_taa), DisplayServer.screen_get_scale()])
+	_note("每帧：process %.1f 毫秒、physics %.1f 毫秒、draw call %d、三角形 %d 万、节点 %d、物理物体 %d" % [
+		Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0, Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0,
+		int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)), int(Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME) / 10000.0),
+		int(Performance.get_monitor(Performance.OBJECT_NODE_COUNT)), int(Performance.get_monitor(Performance.PHYSICS_3D_ACTIVE_OBJECTS))])
+	# 找是谁吃 CPU：把 HUD、灵兽、手里的暗器一个个关掉看 process 掉多少
+	var t0 := Time.get_ticks_usec()
+	w.hud._process(0.016)
+	var t_hud := Time.get_ticks_usec() - t0
+	t0 = Time.get_ticks_usec()
+	w._process(0.016)
+	var t_world := Time.get_ticks_usec() - t0
+	t0 = Time.get_ticks_usec()
+	w.player._process(0.016)
+	var t_player := Time.get_ticks_usec() - t0
+	t0 = Time.get_ticks_usec()
+	w.builder.animate(1.0)
+	var t_anim := Time.get_ticks_usec() - t0
+	_note("单独跑一次：Hud._process %.1f 毫秒、World._process %.1f、Player._process %.1f、builder.animate %.1f" % [t_hud / 1000.0, t_world / 1000.0, t_player / 1000.0, t_anim / 1000.0])
+	# 批量摆的东西：每种网格多少三角形 × 一共几个
+	var per := {}
+	for n in w.builder.root.find_children("*", "MultiMeshInstance3D", true, false):
+		var mm := (n as MultiMeshInstance3D).multimesh
+		if mm == null or mm.mesh == null:
+			continue
+		var tri := 0
+		for si in mm.mesh.get_surface_count():
+			var am := mm.mesh as ArrayMesh
+			if am == null:
+				continue
+			var il: int = am.surface_get_array_index_len(si)
+			tri += (il if il > 0 else am.surface_get_array_len(si)) / 3
+		var key := "%s%d" % ["树" if mm.mesh.get_surface_count() >= 2 else "", tri]
+		per[key] = int(per.get(key, 0)) + mm.instance_count
+	var big := []
+	for k in per:
+		var tri := int(str(k).trim_prefix("树"))
+		big.append([tri * int(per[k]), "%s三角形×%d" % [k, int(per[k])]])
+	big.sort_custom(func(a, b): return a[0] > b[0])
+	var top := []
+	for e in big.slice(0, 10):
+		top.append("%s=%d万" % [e[1], int(e[0]) / 10000])
+	_note("最重的：%s" % "，".join(top))
+	_next_phase()
+
+
+## 灵宠：带上一只 → 跟着走 → 在猎场里咬猎物 → 单人倒下被海鸥叼走，它把海鸥撞下来、人站起来 → 灵宠页
+func _run_pet() -> void:
+	var w := _ready_world()
+	if not w:
+		return
+	var p := w.player
+	match _step:
+		0:
+			if _step_t < 0.5:
+				return
+			Profile.pets["wolf"] = 1
+			Profile.pet = "wolf"
+			w.refresh_pet(true)
+			p.invuln_t = 9999.0
+			p.hp = 99999.0
+			_next(1)
+		1:
+			if _step_t < 1.5:
+				return
+			if not _check(w.pet != null and is_instance_valid(w.pet) and w.pet.global_position.distance_to(p.global_position) < 10.0, "灵宠没跟上来"):
+				return
+			if _shots and not _mem.has("petshot"):
+				_mem["petshot"] = true
+				p.cam.cull_mask = p.cam.cull_mask | 2
+				_next(10)
+				return
+			var b: Beast = w.beasts.get(w.hunt.target_id) if w.island.hunting else null
+			if b == null or not b.alive():
+				_mem["pet_bite"] = "（不在猎场，没测咬）"
+				_next(3)
+				return
+			b.root_t = 9999.0
+			b.root_pos = b.global_position
+			if b.arts:
+				b.arts.cur.clear()
+				b.arts.cd = 99.0
+			var at := b.global_position + Vector3(5.0, 0.0, 0.0)
+			at.y = w.island.height_at(at.x, at.z) + 0.4
+			p.teleport(at)
+			_mem["hp0"] = b.hp
+			_mem["bid"] = b.id
+			_next(2)
+		2:
+			if _step_t < 4.0:
+				return
+			var b: Beast = w.beasts.get(int(_mem["bid"]))
+			if not _check(b != null and b.hp < float(_mem["hp0"]), "灵宠没咬猎物（%.0f → %.0f）" % [float(_mem["hp0"]), b.hp if b else -1.0]):
+				return
+			_mem["pet_bite"] = "咬了猎物 %.0f 血" % (float(_mem["hp0"]) - b.hp)
+			b.root_t = 0.0
+			if b.arts:
+				b.arts.cd = 2.0
+			_next(3)
+		3:
+			# 单人倒下：海鸥叼走 → 灵宠撞下来
+			Pet._revive_ready = 0.0
+			p.invuln_t = 0.0
+			p.hp = 1.0
+			p.take_damage(9999.0, p.global_position + Vector3.FORWARD)
+			_next(4)
+		4:
+			if p.dead and p.carried:
+				if _step_t > 9.0:
+					_fail("倒下 9 秒灵宠还没把海鸥撞下来")
+				return
+			if p.dead:
+				if _step_t > 20.0:
+					_fail("海鸥撞下来了人没站起来")
+				return
+			_note("灵宠跟着走、%s、单人倒下把海鸥撞下来（%.1f 秒站起来）" % [str(_mem.get("pet_bite", "")), _step_t])
+			w.hud._shop._tab = "pets"
+			w.hud._shop.refresh()
+			p.invuln_t = 9999.0
+			p.hp = 99999.0
+			Profile.pet = ""
+			w.refresh_pet()
+			_next_phase()
+		10:
+			# 截图：回头看跟着的灵宠
+			_aim(p, w.pet.global_position + Vector3.UP * 0.4)
+			if _step_t < 1.0:
+				return
+			_next(11)
+			await _shot("pet_follow")
+		11:
+			_next(1)
 
 
 ## 锻造页截图（接在 gear 后面：材料和护具是 gear 给的）

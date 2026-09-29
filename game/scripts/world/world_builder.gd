@@ -234,17 +234,18 @@ func apply_quality() -> void:
 	# 手机渲染器没有 SSAO / SSIL / 体积雾（开了只会刷警告）
 	var full := RenderingServer.get_current_rendering_method() == "forward_plus"
 	env.ssao_enabled = q >= 1 and full
-	env.ssil_enabled = q >= 2 and full
+	env.ssil_enabled = q >= 3 and full
 	env.volumetric_fog_enabled = (ENV[biome] as Dictionary).has("vol") and q >= 2 and full
 	if grade_layer:
 		grade_layer.visible = q >= 1
-	sun.directional_shadow_max_distance = [70.0, 120.0, 170.0][q] * (0.7 if Settings.is_mobile() else 1.0)
-	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS if q == 0 else DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
+	sun.directional_shadow_max_distance = [70.0, 100.0, 120.0, 170.0][clampi(q, 0, 3)] * (0.7 if Settings.is_mobile() else 1.0)
+	# 影子：极高才四层（四层每一层都要把满地的树叶再画一遍，笔记本 4060 上一层要好几毫秒）
+	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS if q >= 3 else DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
 
 
 func _density() -> float:
 	# 手机上草和小植物再少一点（手机显卡画大片半透明的草最吃力）
-	return [0.35, 0.65, 1.0][quality] * (0.6 if Settings.is_mobile() else 1.0)
+	return [0.35, 0.65, 1.0, 1.0][clampi(quality, 0, 3)] * (0.6 if Settings.is_mobile() else 1.0)
 
 
 # ------------------------------------------------------------------ 天空与光照
@@ -1650,7 +1651,11 @@ func _prop(name: String) -> Array:
 	if _prop_cache.has(name):
 		return _prop_cache[name]
 	var out := []
-	var path := MODELS + name + "/" + name + "_1k.gltf"
+	# 减过面的版本（tools/shrink_glb.gd，2026-09-29）：Poly Haven 原模型一块石头 6~10 万面、一丛蒲公英 5 万面，
+	# 一张图摆几百个，笔记本 4060 高画质只有 12 帧。减到几千面，看不出区别
+	var path := MODELS + name + "/" + name + "_lo.glb"
+	if not ResourceLoader.exists(path):
+		path = MODELS + name + "/" + name + "_1k.gltf"
 	if ResourceLoader.exists(path):
 		var ps: PackedScene = load(path)
 		var inst := ps.instantiate()
@@ -1861,7 +1866,7 @@ func _grass_mat(tex: String, sway: float, fade: float, glow := Color.BLACK) -> S
 
 
 func _grass() -> void:
-	var fade: float = [32.0, 45.0, 60.0][quality]
+	var fade: float = [32.0, 45.0, 60.0, 70.0][clampi(quality, 0, 3)]
 	var r := RandomNumberGenerator.new()
 	r.seed = island.map_seed + 400
 	var xs := []
@@ -2010,7 +2015,7 @@ func _litter() -> void:
 	var mat := ShaderMaterial.new()
 	mat.shader = LITTER_SHADER
 	mat.set_shader_parameter("atlas", load(FOLIAGE + "litter.png"))
-	var fade: float = [18.0, 26.0, 34.0][quality]
+	var fade: float = [18.0, 26.0, 34.0, 38.0][clampi(quality, 0, 3)]
 	mat.set_shader_parameter("fade_start", fade * 0.65)
 	mat.set_shader_parameter("fade_end", fade)
 	_scatter(pm, xs, cols, fade + 4.0, false, 24.0, mat)
@@ -2376,7 +2381,7 @@ func _blue_silver_grass() -> void:
 			var s := r.randf_range(0.7, 1.2)
 			xs.append(Transform3D(Basis(Vector3.UP, r.randf() * TAU).scaled(Vector3(s * 0.8, s * 1.3, s * 0.8)), Vector3(x, h - 0.04, z)))
 			cols.append(Color(0.45, 0.75, 1.3).lerp(Color(0.6, 0.9, 1.4), r.randf()))
-	var fade: float = [32.0, 45.0, 60.0][quality]
+	var fade: float = [32.0, 45.0, 60.0, 70.0][clampi(quality, 0, 3)]
 	_scatter(_tuft_mesh(0.8, 0.62), xs, cols, fade + 20.0, false, 32.0, _grass_mat("grass_tuft", 0.25, fade + 14.0, Color(0.15, 0.4, 1.0)))
 	for c in centers.slice(0, 12):
 		_motes(island.ground_point(c.x, c.y) + Vector3(0, 1.2, 0), Vector3(6, 1.2, 6), 20, Color(0.5, 0.8, 1.6), 0.06)
@@ -2439,7 +2444,7 @@ func _ice_floes_build() -> void:
 ## 飘雪：跟着镜头走的一团雪花
 func _snowfall_build() -> void:
 	var p := GPUParticles3D.new()
-	p.amount = [1200, 2200, 3500][quality]
+	p.amount = [1200, 2200, 3500, 3500][clampi(quality, 0, 3)]
 	p.lifetime = 8.0
 	p.preprocess = 8.0
 	p.visibility_aabb = AABB(Vector3(-40, -30, -40), Vector3(80, 50, 80))

@@ -21,7 +21,8 @@ var vsync := false
 var max_fps := 0                   # 0 = 不限
 var server_url := DEFAULT_SERVER
 var show_fps := false
-var quality := 2                   # 画质：0 低 / 1 中 / 2 高（草和植被密度下次进地图生效）
+var quality := 2                   # 画质：0 低 / 1 中 / 2 高 / 3 极高（草和植被密度下次进地图生效）
+const QUALITY_MAX := 3
 var save_slot := 1                # 用哪个存档位（1~3）
 var scope_zoom := 6.0              # 狙击镜倍率（开镜时滚轮调，4~12 倍，记住上次的）
 # 手机 / 触屏
@@ -177,7 +178,7 @@ func load_settings() -> void:
 	vsync = bool(cfg.get_value("video", "vsync", vsync))
 	max_fps = int(cfg.get_value("video", "max_fps", max_fps))
 	show_fps = bool(cfg.get_value("video", "show_fps", show_fps))
-	quality = clampi(int(cfg.get_value("video", "quality", quality)), 0, 2)
+	quality = clampi(int(cfg.get_value("video", "quality", quality)), 0, QUALITY_MAX)
 	master_volume = float(cfg.get_value("audio", "master", master_volume))
 	sfx_volume = float(cfg.get_value("audio", "sfx", sfx_volume))
 	music_volume = float(cfg.get_value("audio", "music", music_volume))
@@ -227,9 +228,13 @@ func apply() -> void:
 	Engine.max_fps = max_fps
 	var vp := get_viewport()
 	if vp:
-		vp.msaa_3d = [Viewport.MSAA_DISABLED, Viewport.MSAA_2X, Viewport.MSAA_4X][quality]
-		vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA if quality == 0 else Viewport.SCREEN_SPACE_AA_DISABLED
-		RenderingServer.directional_shadow_atlas_set_size([2048, 4096, 4096][quality], true)
+		# 2026-09-30 量过（笔记本 RTX 4060，1080p，第一 / 二章）：以前的"高"（MSAA 4x、SSIL、影子四层 170 米）只有 11~12 帧——
+		# 满地镂空的树叶草叶，MSAA 4x 每一层都要多算好几倍。现在低 / 中 / 高都用 FXAA、影子两层，高 28~33 帧；
+		# 以前的"高"挪到"极高"（好显卡用）
+		var q := clampi(quality, 0, QUALITY_MAX)
+		vp.msaa_3d = Viewport.MSAA_4X if q >= 3 else Viewport.MSAA_DISABLED
+		vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_DISABLED if q >= 3 else Viewport.SCREEN_SPACE_AA_FXAA
+		RenderingServer.directional_shadow_atlas_set_size(4096 if q >= 3 else 2048, true)
 		# 3D 画面按比例渲染再放大（手机上省很多），界面还是原分辨率
 		# 电脑上降分辨率用 FSR（放大后更清楚），手机用最省的双线性
 		vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR if is_mobile() or render_scale > 0.99 else Viewport.SCALING_3D_MODE_FSR
