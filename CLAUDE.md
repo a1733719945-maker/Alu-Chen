@@ -426,6 +426,14 @@
    - 3D 模型提示词一次列全在 `docs/3D模型提示词.md`（混元 3D Studio 用的中文提示词：朱厌、玩家人物（也当第一人称的手）、三把暗器、青崖子、乌篷船、石狮子），用户生成后放 `tools/incoming_models/`
    - 两个账号同时改了代码：两边都写了 `chaseshot`，合并时留了 31 那个（摆一排僵尸近看，更全）
    - **截图要把窗口放到屏幕外**：`--position 2500,0`（用户只有一块 1920×1080 屏幕，窗口弹在桌面上会打扰用户，用户点到窗口（比如开了暂停菜单）自动测试会停住，看起来像卡死）。别用 `--always-on-top`。用 `Start-Process … -PassThru` + `WaitForExit(毫秒)`，超时就 Kill
+33. 朱厌：混元 3D 生成 + 混元 3D Studio 绑骨骼 + 8 段动作（2026-09-29，大号，和 32 同时进行）：
+   - 用户的流程：混元国际版（3d.hunyuanglobal.com）图生 3D（面数选 50k）→ **3D Studio** 里骨骼绑定 + 动作模板 → **每个动作单独导出一个 FBX**（每个都带整个模型，约 53 MB，文件名和动作名都是乱码）→ 聊天附件放不下，**传到 GitHub Release 草稿**（我用 `curl https://api.github.com/repos/…/releases` 能列出草稿、按 asset id 带 `Accept: application/octet-stream` 下载）
+   - 骨架是 Mixamo 命名的 28 根人形骨头（Hips / Spine / LeftArm …，没有尾巴骨）
+   - `tools/fbx_to_glb.gd`：`-- 输出.glb 贴图边长 名字=文件.fbx …`（第一个当底，其他只取动作；`名字@90=` 整段动作绕竖轴转 90°）。做三件事：动作合进一个库、**尾巴改绑到 Hips**（人形骨架没尾巴骨，尾巴被绑到腿上一动就拉成长条；在身后、胯以下、离腿远的点做种子沿三角形长，按贴图颜色排除红色的手脚）、贴图缩 2K（50 MB → 5.8 MB）
+   - 认动作：`animsheet.gd` 类的脚本（xvfb + SubViewport）每个文件抽 7 帧拼成一张总表看。这次 8 段：idle 2.0 秒、walk 1.22、run 0.53、attack 抡臂过头砸下 2.67、attack2 快拳 0.75（**整段是侧着的，转了 90°**）、jump 双臂上举 → 起跳 → 双拳砸地 3.7、roar 张臂咆哮 4.15、death 仰头吼 → 倒地 4.15
+   - 接进游戏：`BeastModels.ROLE_KEYS` 加 walk / attack2 / attack3 / roar / jump；`_animate_model` 慢的时候走、快了跑（`walk_max` = 身高 × 0.5），巨兽动作按体型放慢（`gait_len` = 身高 × 0.35）；`play_role("attack")` 在 attack / attack2 / attack3 里随机；跃击一开始放 jump（×0.7 速，落地对上砸下来）；`Boss.roar_anim()` 出场镜头（`BossCine`）和暴怒（`World._on_boss_phase2`）时咆哮；只有死亡动作时不会被当成待机循环；没骨骼 / 没走跑动作的 Boss 用程序步态（`_static_model`：一步一沉、左右晃、前倾、喘气）
+   - 自动测试：第三章 boss、bossarts（朱厌 8 招）全过；**还没在游戏里截图看动作**
+   - 以后别的灵主照这个流程：混元生成 → Studio 绑骨骼（只支持人形；蛛母 / 蛟 / 鲲不是人形，要另想：程序化腿、身体波浪摆）
 
 ## 还没做 / 可以继续
 

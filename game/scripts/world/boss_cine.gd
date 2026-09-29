@@ -9,6 +9,7 @@ extends CanvasLayer
 
 const DUR := 6.5
 const ROAR := 1.3
+var _roar_anim := false
 
 var world: World
 var boss: Boss
@@ -130,6 +131,9 @@ func _process(dt: float) -> void:
 	_shake = maxf(_shake - dt * 1.6, 0.0)
 	var jitter := Vector3(randf_range(-1, 1), randf_range(-1, 1), randf_range(-1, 1)) * _shake * 0.6
 	cam.look_at(_look_at() + jitter, Vector3.UP)
+	if _t >= ROAR - 0.5 and not _roar_anim:
+		_roar_anim = true
+		boss.roar_anim()
 	if _t >= ROAR and not _roared:
 		_roared = true
 		_shake = 1.0

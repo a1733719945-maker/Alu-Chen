@@ -37,9 +37,17 @@ func _init() -> void:
 		var src: Node = base if pr[1] == pairs[0][1] else _load(pr[1])
 		var sap: AnimationPlayer = src.find_children("*", "AnimationPlayer", true, false)[0]
 		var an: Animation = sap.get_animation(sap.get_animation_list()[0]).duplicate(true)
-		an.loop_mode = Animation.LOOP_LINEAR if pr[0] in LOOP else Animation.LOOP_NONE
-		lib.add_animation(pr[0], an)
-		print("动作 ", pr[0], " ← ", pr[1].get_file(), "（", snappedf(an.length, 0.01), " 秒）")
+		# 名字后面带 @角度：整段动作绕竖轴转这么多度（混元有的动作整个人是侧着的，比如快拳）
+		var nm: String = pr[0]
+		var yaw := 0.0
+		if "@" in nm:
+			yaw = float(nm.get_slice("@", 1))
+			nm = nm.get_slice("@", 0)
+		if yaw != 0.0:
+			_turn(an, src, deg_to_rad(yaw))
+		an.loop_mode = Animation.LOOP_LINEAR if nm in LOOP else Animation.LOOP_NONE
+		lib.add_animation(nm, an)
+		print("动作 ", nm, " ← ", pr[1].get_file(), "（", snappedf(an.length, 0.01), " 秒", ("，转 %d°" % int(yaw)) if yaw != 0.0 else "", "）")
 		if src != base:
 			src.free()
 	for ln in ap.get_animation_library_list():
@@ -87,6 +95,26 @@ func _init() -> void:
 		return
 	print("写好了 ", out_path)
 	quit(0)
+
+
+## 整段动作绕竖轴转 ang：只改 Hips（根）的旋转和位置轨道，在 Hips 父骨头的空间里转
+func _turn(an: Animation, scene: Node, ang: float) -> void:
+	var sk: Skeleton3D = scene.find_children("*", "Skeleton3D", true, false)[0]
+	var hip := sk.find_bone("Hips")
+	var par := sk.get_bone_parent(hip)
+	var pb := _xf(scene, sk).basis * (sk.get_bone_global_rest(par).basis if par >= 0 else Basis())
+	var up := (pb.inverse() * Vector3.UP).normalized()
+	var r := Quaternion(up, ang)
+	for t in an.get_track_count():
+		var path := String(an.track_get_path(t))
+		if not path.ends_with(":Hips"):
+			continue
+		for k in an.track_get_key_count(t):
+			var v: Variant = an.track_get_key_value(t, k)
+			if an.track_get_type(t) == Animation.TYPE_ROTATION_3D:
+				an.track_set_key_value(t, k, (r * (v as Quaternion)).normalized())
+			elif an.track_get_type(t) == Animation.TYPE_POSITION_3D:
+				an.track_set_key_value(t, k, r * (v as Vector3))
 
 
 func _load(path: String) -> Node:

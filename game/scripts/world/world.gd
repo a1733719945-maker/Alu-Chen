@@ -2626,7 +2626,8 @@ func _on_boss_phase2() -> void:
 	hud.toast("灵主暴怒了！出招更快", Color(1, 0.4, 0.3), 4.0)
 	if boss:
 		hud.say(Story.lord(boss.kind, "who"), Story.lord(boss.kind, "half"), LORD_SAY)
-		# 暴怒：一声长啸，全场一震，身上炸开一圈红光
+		# 暴怒：一声长啸，全场一震，身上炸开一圈红光（有咆哮动作的灵主做一遍）
+		boss.roar_anim()
 		var bp: Vector3 = boss.center()
 		fx.ring_breakthrough(bp, Color(1.0, 0.25, 0.15), 0)
 		fx._shake(bp, 0.9, 120.0)

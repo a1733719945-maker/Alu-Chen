@@ -14,6 +14,12 @@ const ROLE_KEYS := {
 	"attack": ["attack_headbutt", "attack", "headbutt", "punch", "bite_front"],
 	"hit": ["idle_hitreact1", "hitreact", "hit"],
 	"death": ["death", "die"],
+	# AI 生成、混元绑好骨骼的 Boss（朱厌）多出来的几段：走路（慢的时候用）、第二种攻击、咆哮、跃击
+	"walk": ["walk"],
+	"attack2": ["attack2"],
+	"attack3": ["attack3"],
+	"roar": ["roar", "scream", "taunt"],
+	"jump": ["jump"],
 }
 
 static var _measure := {}
@@ -140,7 +146,8 @@ static func instance_custom(path: String, cfg: Dictionary) -> Node3D:
 					if _pick_anim(PackedStringArray([nm]), ROLE_KEYS["death"]) == "":
 						roles[role] = nm
 						break
-			if roles[role] != "" and role in ["idle", "run", "air"]:
+			# 空中那段也循环（飞的灵主），但混元那种"起跳砸地"的 jump 只放一遍
+			if roles[role] != "" and (role in ["idle", "run", "walk"] or (role == "air" and roles[role] != _pick_anim(names, ROLE_KEYS["jump"]))):
 				ap.get_animation(roles[role]).loop_mode = Animation.LOOP_LINEAR
 		holder.set_meta("ap", ap)
 		holder.set_meta("roles", roles)
@@ -658,12 +665,22 @@ static func _animate_model(holder: Node3D, airborne: bool, speed: float, motion:
 	var role := "air" if airborne else ("run" if speed > 1.2 else "idle")
 	if motion in ["fly", "flutter"]:
 		role = "run" if airborne or speed > 1.2 else "idle"
+	# 有走路动作的（朱厌）：慢的时候走、快了才跑（walk_max 由 Boss 按体型给）
+	if role == "run" and str(roles.get("walk", "")) != "" and speed < float(holder.get_meta("walk_max", 6.0)):
+		role = "walk"
 	var anim: String = roles.get(role, "")
 	if anim == "":
 		anim = roles.get("idle", "")
 	if anim != "" and ap.current_animation != anim:
-		ap.play(anim, 0.2)
+		ap.play(anim, 0.3 if holder.has_meta("walk_max") else 0.2)
 	ap.speed_scale = clampf(speed / 5.0, 0.8, 1.8) if role == "run" and motion not in ["fly", "flutter"] else 1.0
+	# 巨兽的动作按体型放慢（二十几米的朱厌迈一步要比人慢得多），跟着实际速度走
+	if holder.has_meta("gait_len"):
+		var gl: float = holder.get_meta("gait_len")
+		if role == "walk":
+			ap.speed_scale = clampf(speed / gl, 0.5, 1.4)
+		elif role == "run":
+			ap.speed_scale = clampf(speed / (gl * 3.0), 0.45, 1.2)
 
 
 ## 攻击动作（咬、撞、扔）
@@ -681,7 +698,16 @@ static func play_role(holder: Node3D, role: String) -> void:
 	if not holder.has_meta("ap"):
 		return
 	var ap: AnimationPlayer = holder.get_meta("ap")
-	var anim: String = (holder.get_meta("roles") as Dictionary).get(role, "")
+	var roles: Dictionary = holder.get_meta("roles")
+	var anim: String = roles.get(role, "")
+	# 攻击有好几种的，随机出一种
+	if role == "attack":
+		var alts: Array = []
+		for r in ["attack", "attack2", "attack3"]:
+			if str(roles.get(r, "")) != "":
+				alts.append(roles[r])
+		if not alts.is_empty():
+			anim = alts[randi() % alts.size()]
 	if anim == "":
 		return
 	ap.play(anim, 0.1)

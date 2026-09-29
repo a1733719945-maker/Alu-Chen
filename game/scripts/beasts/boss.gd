@@ -81,6 +81,7 @@ var _pose_dur := 0.0
 var _slam_t := 0.0               # 砸下去那一下往前一顿
 var _model_y0 := 0.0
 var _static_model := false        # 没有骨骼动画的模型（程序步态，见 _update_visual）
+var _was_air := false              # 上一帧在不在空中（跃击起跳那一下放 jump 动作）
 var _gait := 0.0                   # 步态相位（一步 = PI）
 var _gait_k := 0.0                 # 走起来的程度 0~1（平滑过渡）
 
@@ -226,6 +227,10 @@ func _build() -> void:
 	# AI 生成的模型大多没有骨骼动画：用代码让整个身子动（走路一步一沉、左右晃、跑起来前倾、站着喘气）
 	# 有骨骼但没有走 / 跑动作的（比如只导出了死亡动作）也用程序步态
 	_static_model = not model.has_meta("ap") or str((model.get_meta("roles") as Dictionary).get("run", "")) == ""
+	if _custom and not _static_model:
+		# 巨兽的动作按体型放慢：一个走路循环大概走 0.35 个身高
+		model.set_meta("walk_max", size.y * 0.5)
+		model.set_meta("gait_len", size.y * 0.35)
 	FxLib.no_decals(model)
 	var d := BeastModels._dims(str(cfg["model"]))
 	var k := BeastModels._model_scale(cfg)
@@ -1073,6 +1078,12 @@ const LEAP_LAND := 3.2           # 这时砸到地上（红圈给 1.3 秒跑出�
 const LEAP_DMG := 95.0           # 圈里挨一下（招式数，乘章节系数；第三章 55 级大约掉一半血）
 
 
+## 咆哮动作（出场镜头、暴怒）：没有 roar 动作的模型什么都不做
+func roar_anim() -> void:
+	if model:
+		BeastModels.play_role(model, "roar")
+
+
 func _leap(peer: int, t: Vector3, again: bool) -> void:
 	_act = {"type": "leap", "t": 0.0, "peer": peer, "at": t, "from": head.global_position, "again": again}
 	_busy = 0.5
@@ -1373,6 +1384,13 @@ func _update_visual(dt: float) -> void:
 		_speed = lerpf(_speed, p.distance_to(_last_pos) / dt, 1.0 - exp(-5.0 * dt))
 	_last_pos = p
 	var airborne := ai == "air" or state == "leap" or str(_act.get("type", "")) == "leap"
+	# 跃击：有"起跳砸地"动作的（朱厌）一开始就放，放慢到落地那一下对上砸下来的时间
+	if airborne and not _was_air and ai != "air" and model.has_meta("roles") and str((model.get_meta("roles") as Dictionary).get("jump", "")) != "":
+		BeastModels.play_role(model, "jump")
+		var jap: AnimationPlayer = model.get_meta("ap")
+		jap.speed_scale = 0.7
+		model.set_meta("busy_until", Time.get_ticks_msec() / 1000.0 + jap.current_animation_length / 0.7 * 0.95)
+	_was_air = airborne
 	BeastModels._animate_model(model, airborne, _speed, "fly" if ai == "air" else "run")
 	# 起手：往后仰、抬起来（前 60% 的时间抬到顶、停住），到点往前一顿
 	var lift := 0.0
