@@ -345,13 +345,14 @@ func _on_gone(msg: Array) -> void:
 	match kind:
 		"mat":
 			Profile.add_mat(key, n)
-			world.hud.toast("捡到 %s（按 T 丢进收购箱能卖 %d 灵石）" % [nm, Data.item_value(kind, key)], Data.item_color(kind, key), 2.5)
+			world.hud.toast("捡到 %s" % nm, Data.item_color(kind, key), 1.8)
+			KingFeel.tip(world, "sell", "按 T 丢进收购箱能卖钱")
 		"bone":
 			var had := Profile.bones.size()
 			Profile.add_bone(key)
 			if Profile.bones.size() > had:
 				var on := Profile.is_equipped(key)
-				world.hud.toast("捡到灵骨【%s】%s  %s" % [nm, Data.bone_desc(key), "已装上" if on else "（按 5 拿出来，左键装上）"], UiKit.GOLD, 5.0)
+				world.hud.toast("灵骨【%s】%s" % [nm, " · 已装上" if on else ""], UiKit.GOLD, 2.5)
 				Sfx.play("level_up", -6.0)
 				world.player.on_bones_changed()
 		"item":
@@ -738,7 +739,7 @@ func flock_dive(gid: int, iid: int) -> void:
 	g["dive"] = it["pos"]
 	g["cargo"] = it["node"]
 	_on_gone([iid, 0, 2])
-	world.hud.feed("海鸥叼走了 %s（把它打下来就能拿回来）" % Data.item_name(str(it["kind"]), str(it["key"])), Color(0.8, 0.85, 0.9))
+	world.hud.feed("海鸥叼走了 %s" % Data.item_name(str(it["kind"]), str(it["key"])), Color(0.8, 0.85, 0.9))
 	Sfx.play_at("gull_cry", it["pos"] + Vector3(0, 10, 0), 2.0, 0.1)
 
 
@@ -845,5 +846,5 @@ func _on_flock_down(msg: Array) -> void:
 		var money := int(float(Data.CH_MONEY.get(world.chapter, 12.0)) * 1.5 * k)
 		Profile.add_money(money)
 		Profile.count("gulls")
-		world.hud.toast("打下了海鸥 · %d 米%s  +%d 灵石" % [int(dist), ("  远距离 ×%d" % int(k)) if k > 1.0 else "", money], UiKit.GOLD, 2.5)
+		world.hud.toast("打下了海鸥  +%d 灵石" % money, UiKit.GOLD, 2.0)
 		Sfx.play("coin", -2.0)

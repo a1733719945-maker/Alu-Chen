@@ -219,7 +219,7 @@ func _ready() -> void:
 		Profile.mark_dirty()
 		var tw := create_tween()
 		tw.tween_interval(5.5)
-		tw.tween_callback(func(): hud._show_banner("新玩法", "野外不再刷怪 · 按 L 打开猎灵榜，挑一只灵兽去猎（它决定你学什么神通）\n地图上的「秘」是秘境：刷修为、灵石、灵骨", UiKit.GOLD, 8.0))
+		tw.tween_callback(func(): hud._show_banner("按 L 打开猎灵榜", "", UiKit.GOLD, 5.0))
 	if Net.is_host():
 		get_tree().create_timer(0.5).timeout.connect(_host_check_quest)
 
@@ -819,9 +819,9 @@ func _host_spawn(owner: int, pos: Vector3, species: String, age: int, owner_pos:
 	b.reward_k = float(Data.BAITS.get(bait, Data.BAITS["grass"])["reward"])
 	Net.send(0, "bsp", [id, species, age, spawn, vel, owner, temper, affixes])
 	if temper == "fierce" and owner == Net.my_id:
-		hud.toast("凶暴的%s！它会一直追着你打" % Data.BEASTS[species]["name"], Color(1.0, 0.45, 0.35), 2.5)
+		pass   # 凶暴的看红眼就知道，不写字
 	elif temper == "bone":
-		hud.feed("灵骨兽出现了！打死它必掉灵骨", UiKit.GOLD)
+		pass   # 灵骨兽一身金光，不写字
 	return b
 
 
@@ -1110,7 +1110,7 @@ func _codex_kill(species: String, age: int, affixes: Array, elite: bool) -> void
 	if gained & 4:
 		what.append("打倒千年 / 精英")
 	var stars := Profile.species_stars(species)
-	hud.toast("猎灵录 · %s %s（%s）  体力 +2  伤害 +0.5%%" % [Data.BEASTS[species]["name"], "★".repeat(stars) + "☆".repeat(3 - stars), "，".join(what)], UiKit.GOLD, 4.0)
+	hud.toast("猎灵录 · %s %s" % [Data.BEASTS[species]["name"], "★".repeat(stars) + "☆".repeat(3 - stars)], UiKit.GOLD, 3.0)
 	Sfx.play("quest_done", -4.0)
 	player.on_bones_changed()
 	# 这张图的灵兽全部三颗星：送专属皮肤
@@ -1121,7 +1121,7 @@ func _codex_kill(species: String, age: int, affixes: Array, elite: bool) -> void
 	var skin := str(Data.CODEX_MAP_SKIN.get(island.map_id, ""))
 	if all3 and skin != "" and Profile.unlock_look("skin", skin):
 		Profile.count("codex_maps")
-		hud._show_banner("猎灵录 · %s 集齐！" % str(Data.CHAPTERS[chapter]["name"]), "解锁专属暗器皮肤【%s】（暗器铺 → 外观）" % Data.GUN_SKINS[skin]["name"], UiKit.GOLD, 6.0)
+		hud._show_banner("猎灵录 · %s 集齐！" % str(Data.CHAPTERS[chapter]["name"]), "皮肤【%s】" % Data.GUN_SKINS[skin]["name"], UiKit.GOLD, 6.0)
 
 
 ## 这张图猎灵录的进度（灵相面板用）：[[灵兽 id, 星星数], ...]
@@ -1230,7 +1230,7 @@ func _on_tide(msg: Array = []) -> void:
 	var ch := int(msg[0]) if msg.size() > 0 else chapter
 	var ev: Dictionary = Data.CH_EVENTS.get(ch, {})
 	_tide_until = Time.get_ticks_msec() / 1000.0 + Data.TIDE_TIME
-	hud._show_banner("奇遇 · %s" % ev.get("name", "兽潮"), str(ev.get("desc", "")), ev.get("color", Color(1.0, 0.4, 0.3)), 5.0)
+	hud._show_banner("奇遇 · %s" % ev.get("name", "兽潮"), "", ev.get("color", Color(1.0, 0.4, 0.3)), 4.0)
 	Sfx.play("boss_roar", 0.0, 0.0, 1.2)
 	player.trauma = minf(player.trauma + 0.5, 1.0)
 	_event_env(str(ev.get("env", "")), Data.TIDE_TIME)
@@ -1564,7 +1564,7 @@ func _on_king_sleep(msg: Array) -> void:
 		return
 	var zz := b.get_node_or_null("Zzz")
 	if bool(msg[1]):
-		hud.feed("%s 逃回巢穴睡着了——悄悄摸过去偷袭（伤害 ×2.5）" % b.display_name(), Color(0.7, 0.8, 1.0))
+		KingFeel.tip(self, "sleep", "它睡着了：摸过去偷袭")
 		if zz == null:
 			var l := U.label3d("Zzz", 72, Color(0.75, 0.85, 1.0), 10)
 			l.name = "Zzz"
@@ -1578,11 +1578,10 @@ func _on_king_sleep(msg: Array) -> void:
 			zz.queue_free()
 		var who := int(msg[2])
 		if who != 0:
-			hud.feed("偷袭！%s 打醒了 %s" % [peer_name(who), b.display_name()], UiKit.GOLD)
 			if who == Net.my_id:
-				hud._show_banner("偷袭", "伤害 ×2.5", UiKit.GOLD, 1.6)
+				hud._show_banner("偷袭", "", UiKit.GOLD, 1.6)
 		else:
-			hud.feed("%s 醒了" % b.display_name(), Color(1.0, 0.6, 0.3))
+			pass   # 醒了：它站起来就看得到，不写字
 
 
 func king_retreat(b: Beast) -> void:
@@ -1658,16 +1657,16 @@ func _on_king_rope(msg: Array) -> void:
 		fx.chain_fx([pp + Vector3.UP * 1.2, b.global_position + Vector3.UP], Color(0.45, 0.8, 1.0))
 	if int(msg[2]) < 0:
 		if int(msg[1]) == Net.my_id:
-			hud.toast("它刚挣脱捆魂，过一会儿才能再捆", Color(0.9, 0.9, 0.9), 1.5)
+			hud.toast("还捆不住", Color(0.9, 0.9, 0.9), 1.2)
 		return
-	hud.toast("%s 拽住了灵兽王（%d/%d）！再来一根引魂索就能捆住它" % [peer_name(int(msg[1])), int(msg[2]), int(msg[3])], Color(0.5, 0.85, 1.0), 2.5)
+	hud.toast("拽住了（%d/%d）" % [int(msg[2]), int(msg[3])], Color(0.5, 0.85, 1.0), 2.0)
 
 
 func _on_king_bind(msg: Array) -> void:
 	var b: Beast = beasts.get(int(msg[0]))
 	if not b:
 		return
-	hud._show_banner("捆魂！", "%s被按住了 %d 秒，受到伤害 +50%%" % [b.display_name(), int(Data.KING_BIND_TIME)], Color(0.5, 0.85, 1.0), 3.0)
+	hud._show_banner("捆住了", "", Color(0.5, 0.85, 1.0), 2.0)
 	fx.vines(b.global_position, 3.0 * b.size_k, Color(0.45, 0.8, 1.0), 16)
 	fx.shockwave(b.global_position, 6.0, Color(0.45, 0.8, 1.0))
 	Sfx.play_at("skill_root", b.global_position, 4.0)
@@ -1804,12 +1803,12 @@ func _apply_trait(ch_trait: String, from: Vector3, dmg: float) -> void:
 			player.poison(maxf(dmg * 0.25, 2.0), 4.0)
 		"frost":
 			player.slow(0.45, 2.5)
-			hud.toast("被冻住了，走不快", Color(0.6, 0.85, 1.0), 1.5)
+			pass   # 冻住了：画面结霜、走不快，不写字
 		"drag":
 			var to := from - player.global_position
 			to.y = 0.0
 			player.velocity += to.normalized() * 9.0 + Vector3.UP * 3.0
-			hud.toast("被拖过去了！", Color(0.6, 0.8, 1.0), 1.2)
+			pass
 
 
 ## 山魈扔石头
@@ -1901,7 +1900,7 @@ func _apply_beast_special(msg: Array) -> void:
 	if sk.is_empty() or player.dead:
 		return
 	if player.invuln_t > 0.0:
-		hud.toast("躲开了%s！" % sk["name"], Color(0.6, 1.0, 0.7), 1.0)
+		hud.toast("躲开了", Color(0.6, 1.0, 0.7), 0.8)
 		return
 	var dmg := float(msg[1])
 	var base := float(msg[2])
@@ -2036,7 +2035,7 @@ func _on_kill(msg: Array) -> void:
 	# 灵兽王：打死的人和附近 80 米的队友每人一个王魄（附魔材料）
 	if msg.size() > 10 and bool(msg[10]) and (killer == Net.my_id or player.global_position.distance_to(pos) < 80.0):
 		Profile.add_material(species, 1)
-		hud.feed("获得 %s王魄 ×1（暗器铺 → 附魔）" % Data.BEASTS[species]["name"], UiKit.GOLD)
+		hud.feed("+ %s王魄" % Data.BEASTS[species]["name"], UiKit.GOLD)
 		fx.ring_breakthrough(pos, Data.AGES[age]["glow"], 0)
 	if killer == Net.my_id:
 		Profile.kills += 1
@@ -2071,10 +2070,10 @@ func _mastery_kill(age: int, tags: Array, elite: bool) -> void:
 		return
 	var perk: Dictionary = Data.MASTERY_PERKS.get(lv, {})
 	var sub := str(perk.get("text", ""))
-	hud._show_banner("%s 熟练度 %d 级" % [Data.WEAPONS[w]["name"], lv], sub if sub != "" else "继续用它打", UiKit.GOLD, 3.5)
+	hud._show_banner("%s 熟练度 %d 级" % [Data.WEAPONS[w]["name"], lv], "", UiKit.GOLD, 3.0)
 	Sfx.play("level_up", -6.0, 0.0, 1.2)
 	if perk.has("skin"):
-		hud.feed("解锁皮肤【%s】（暗器铺 → 外观）" % Data.GUN_SKINS[str(perk["skin"])]["name"], UiKit.GOLD)
+		hud.feed("皮肤【%s】" % Data.GUN_SKINS[str(perk["skin"])]["name"], UiKit.GOLD)
 	# 数值加成马上生效
 	player.rebuild_guns()
 
@@ -2084,7 +2083,7 @@ func _gain_essence(age: int, species: String) -> void:
 	var xp := int(Data.kill_xp(species, age) * 4.0)
 	fx.absorb(player, Data.age_color(age))
 	Sfx.play("absorb", -6.0, 0.0, 1.3)
-	hud.toast("炼化了%s灵环精华：修为 +%d" % [Data.age_name(age), xp], Data.AGES[age]["glow"], 2.0)
+	hud.toast("修为 +%d" % xp, Data.AGES[age]["glow"], 1.6)
 	_gain(0, xp)
 
 
@@ -2103,7 +2102,7 @@ func _gain(money: int, xp: int) -> void:
 			_broadcast_prog()
 			_check_god()
 		if Profile.at_bottleneck() and not was_cap:
-			hud.toast("到瓶颈了！猎杀灵兽，吸收第%d灵环才能继续修炼（至少%s）" % [Profile.next_ring_index() + 1, Data.age_name(Data.RING_MIN_AGE[Profile.next_ring_index()])], Color(1.0, 0.85, 0.4), 6.0)
+			hud.toast("瓶颈：需要第%d灵环（%s以上）" % [Profile.next_ring_index() + 1, Data.age_name(Data.RING_MIN_AGE[Profile.next_ring_index()])], Color(1.0, 0.85, 0.4), 4.0)
 
 
 func _on_escape(msg: Array) -> void:
@@ -2224,7 +2223,7 @@ func _on_ring(msg: Array) -> void:
 	var life := float(msg[4]) if msg.size() > 4 else 90.0
 	rings[rid] = {"pos": pos, "age": age, "species": str(msg[3]), "node": node, "t": 0.0, "life": life}
 	if Profile.can_absorb(age) == "":
-		hud.feed("掉落了%s灵环！走过去按 F 吸收" % Data.age_name(age), Data.age_color(age))
+		hud.feed("%s灵环" % Data.age_name(age), Data.age_color(age))
 	Sfx.play_at("ring_drop", pos, 0.0)
 
 
@@ -2274,7 +2273,7 @@ func _reveal_skill(age: int, species: String) -> void:
 	var slot := Profile.skill_slots.find(skills.current)
 	if slot >= 0:
 		key = "已经装在 %s 键上（K 面板里可以换）" % ["Q", "E", "F"][slot]
-	hud._show_banner("领悟神通 · %s" % s["name"], "%s\n%s" % [s["desc"], key], Data.AGES[age]["glow"], 6.0)
+	hud._show_banner("领悟神通 · %s" % s["name"], key, Data.AGES[age]["glow"], 4.5)
 
 
 ## 灵环变了（散魂丹散掉一个）：神通、体力灵力上限、队友看到的灵环跟着变
@@ -2297,7 +2296,6 @@ func finish_absorb(age: int, species: String, sid: String) -> void:
 	fx.ring_breakthrough(player.global_position, Data.age_color(age), Profile.rings.size())
 	player.trauma = 0.7
 	player.hud_flash(Data.age_color(age))
-	hud.toast("吸收了%s灵环！获得神通【%s】" % [Data.age_name(age), Data.SKILLS[sid]["name"]], Data.AGES[age]["glow"], 6.0)
 	# 灵环带着这只灵兽的记忆
 	if Story.RING_MEMORY.has(species):
 		hud.say("%s灵环 · %s" % [Data.age_name(age), Data.BEASTS[species]["name"]], str(Story.RING_MEMORY[species]), Data.AGES[age]["glow"])
@@ -2624,7 +2622,7 @@ func boss_phase2() -> void:
 
 
 func _on_boss_phase2() -> void:
-	hud.toast("灵主暴怒了！出招更快", Color(1, 0.4, 0.3), 4.0)
+	pass   # 暴怒：长啸、全场一震，不写字
 	if boss:
 		hud.say(Story.lord(boss.kind, "who"), Story.lord(boss.kind, "half"), LORD_SAY)
 		# 暴怒：一声长啸，全场一震，身上炸开一圈红光（有咆哮动作的灵主做一遍）
@@ -2700,10 +2698,10 @@ func _on_boss_dead(msg: Array) -> void:
 		tier_k *= 1.5
 		Profile.count("nohit_" + kind)
 		Profile.count("nohit")
-		hud.feed("无伤击败 %s！报酬 +50%%" % str(d["name"]), UiKit.GOLD)
+		pass
 		get_tree().create_timer(2.5).timeout.connect(func():
 			if is_instance_valid(hud):
-				hud._show_banner("无伤击败", "一下都没挨——报酬 +50%", UiKit.GOLD, 4.0))
+				hud._show_banner("无伤击败", "", UiKit.GOLD, 3.5))
 	boss_nohit = false
 	_gain(int(float(mine[0]) * tier_k), int(float(mine[1]) * tier_k))
 	Profile.count("boss_" + kind)
@@ -2713,10 +2711,10 @@ func _on_boss_dead(msg: Array) -> void:
 	# 每章 Boss 送一款专属外观
 	for sid in Data.GUN_SKINS:
 		if str(Data.GUN_SKINS[sid].get("boss", "")) == kind and Profile.unlock_look("skin", sid):
-			hud.feed("解锁了暗器皮肤【%s】（暗器铺 → 外观）" % Data.GUN_SKINS[sid]["name"], UiKit.GOLD)
+			hud.feed("皮肤【%s】" % Data.GUN_SKINS[sid]["name"], UiKit.GOLD)
 	for oid in Data.OUTFITS:
 		if str(Data.OUTFITS[oid].get("boss", "")) == kind and Profile.unlock_look("outfit", oid):
-			hud.feed("解锁了装扮【%s】（暗器铺 → 外观）" % Data.OUTFITS[oid]["name"], UiKit.GOLD)
+			hud.feed("装扮【%s】" % Data.OUTFITS[oid]["name"], UiKit.GOLD)
 	var got := ""
 	var bone_age := mini(int(d["age"]) + boss_tier / 2, 4)    # 二重、三重掉的灵骨年份更高
 	for bid in d["bones"]:
@@ -2938,7 +2936,7 @@ func _on_ultimate(msg: Array) -> void:
 	for s in msg[2]:
 		nodes.append(fx.telegraph(s, 5.0, 0.3, Color(0.3, 1.0, 0.4)))
 	_zones.append({"c": msg[0], "r": float(msg[1]), "safes": msg[2], "t": float(msg[3]), "dmg": float(msg[4]), "nodes": nodes})
-	hud._show_banner("躲进绿圈！", "Boss 要砸整片地了", Color(0.5, 1.0, 0.5), float(msg[3]))
+	hud._show_banner("躲进绿圈", "", Color(0.5, 1.0, 0.5), float(msg[3]))
 	Sfx.play("boss_roar", 3.0, 0.0, 0.7)
 	player.trauma = minf(player.trauma + 0.6, 1.0)
 
@@ -3023,7 +3021,7 @@ func _update_hazards(dt: float) -> void:
 					if inside:
 						player.take_damage(float(h["dmg"]), at)
 						player.add_buff("speed", -0.5, 3.0)
-						hud.toast("被蛛网缠住了，移动变慢", Color(0.9, 0.9, 0.95))
+						pass   # 蛛网：看得见缠在身上、走不快，不写字
 				"rock":
 					fx.dirt_puff(at)
 					Sfx.play_at("thud", at, 2.0)
@@ -3143,7 +3141,7 @@ func skill_fx(sid: String, center: Vector3, dir: Vector3, caster: int, origin: V
 		if who0.distance_to(player.global_position) < 150.0:
 			player.trauma = 1.0
 			hud.flash(Color(col.r, col.g, col.b, 0.5))
-			hud._show_banner("神技 · %s" % s["name"], "%s 的灵相法相降临" % peer_name(caster), col, 3.5)
+			hud._show_banner("神技 · %s" % s["name"], "", col, 3.0)
 	match str(s["type"]):
 		"summon":
 			var kind := str(s.get("kind", ""))
@@ -3233,7 +3231,7 @@ func _on_player_died() -> void:
 	Net.send(0, "gullbody", [Net.my_id])
 	Sfx.play("death", 0.0)
 	Net.send(0, "died", [])
-	hud.feed("%s 倒下了，被海鸥叼走了" % Settings.display_name(), Color(1, 0.5, 0.4))
+	pass
 	# 手里的暗器掉在地上（袖箭除外），队友可以捡起来用，也可以还给你
 	for e in player.drop_guns_on_death():
 		loot.spawn("gun", str(e[0]), 1, int(e[1]), player.global_position + Vector3(0, 1.0, 0), Vector3(randf_range(-2, 2), 4.0, randf_range(-2, 2)), 0)
@@ -3258,7 +3256,7 @@ func _update_down(dt: float) -> void:
 			hud.death_countdown(-1.0)
 			fx.heal_burst(player.global_position)
 			Sfx.play("heal", -2.0)
-			hud.toast("被队友救下来了！", Color(0.6, 1.0, 0.7), 2.5)
+			hud.toast("被救起", Color(0.6, 1.0, 0.7), 1.5)
 		return
 	if _carry_t < 0.0:
 		return
@@ -3302,7 +3300,7 @@ func gull_dropped_me() -> void:
 	_fall_t = 0.0
 	player.carried = false
 	player.velocity = Vector3.ZERO
-	hud.feed("海鸥被打下来了，你往下掉……", Color(0.6, 1.0, 0.7))
+	pass
 
 
 ## 按住 F 把倒地的队友拉起来
@@ -3582,7 +3580,7 @@ func on_message(from: int, type: String, data: Variant) -> void:
 			if player.global_position.distance_to(d[3]) <= float(d[4]):
 				player.add_buff(str(d[0]), float(d[1]), float(d[2]))
 				fx.aura_burst(player.global_position, caster_color(from), 1.5)
-				hud.toast("%s 给你加了增益" % peer_name(from), caster_color(from), 2.0)
+				pass   # 身上会亮起队友灵相的颜色，不写字
 		"heal":
 			var d: Array = data
 			if player.global_position.distance_to(d[1]) <= float(d[2]):
@@ -3661,7 +3659,8 @@ func on_message(from: int, type: String, data: Variant) -> void:
 		"ksleep":
 			_on_king_sleep(data)
 		"died":
-			hud.feed("%s 倒下了，被海鸥叼到天上了！把海鸥打下来救他" % peer_name(from), Color(1, 0.5, 0.4))
+			hud.feed("%s 倒下了" % peer_name(from), Color(1, 0.5, 0.4))
+			KingFeel.tip(self, "gull", "打下海鸥救他")
 		"gullend":
 			loot.end_carry(-int(data[0]))
 		"revive":
@@ -3720,7 +3719,7 @@ func _on_boat_ready(msg: Array) -> void:
 	if str(msg[2]) != "":
 		hud.feed("%s 上船了（%d/%d%s）" % [str(msg[2]), int(msg[0]), int(msg[1]), dname], Color(0.6, 0.85, 1.0))
 	if int(msg[0]) < int(msg[1]):
-		hud.toast("已上船 %d/%d，等所有人走到船边按 F" % [int(msg[0]), int(msg[1])], Color(0.6, 0.85, 1.0), 3.0)
+		hud.toast("等队友上船 %d/%d" % [int(msg[0]), int(msg[1])], Color(0.6, 0.85, 1.0), 2.5)
 
 
 func _travel(next: int) -> void:

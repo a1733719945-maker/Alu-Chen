@@ -56,9 +56,9 @@ func cast_slot(k: int) -> void:
 	var r := slot_ring(k)
 	if r < 0:
 		if Profile.rings.is_empty():
-			world.hud.toast("还没有神通。到 10 级瓶颈后吸收灵环就能获得", Color(0.9, 0.9, 0.9))
+			world.hud.toast("还没有神通", Color(0.9, 0.9, 0.9), 1.5)
 		else:
-			world.hud.toast("这个神通槽空着：按 K 打开灵相面板，把神通装到 Q / E / F", Color(0.9, 0.9, 0.9))
+			world.hud.toast("这个槽空着（K）", Color(0.9, 0.9, 0.9), 1.5)
 		return
 	current = r
 	cast(r)
@@ -105,10 +105,10 @@ func pick(cat: String) -> int:
 func cast_cat(cat: String) -> void:
 	var i := pick(cat)
 	if i < 0:
-		world.hud.toast("还没有%s类神通（吸收灵环时选）" % CAT_NAMES[cat], Color(0.85, 0.85, 0.85), 1.6)
+		world.hud.toast("还没有%s类神通" % CAT_NAMES[cat], Color(0.85, 0.85, 0.85), 1.4)
 		return
 	if cooldowns[i] > 0.0:
-		world.hud.toast("%s还要 %.1f 秒" % [Data.SKILLS[slot_skill(i)]["name"], cooldowns[i]], Color(0.8, 0.85, 1.0), 1.0)
+		pass   # 冷却看神通格子上的扇形，不写秒数
 		Sfx.play("dry", -8.0)
 		return
 	current = i
@@ -121,18 +121,18 @@ func cast(slot: int) -> void:
 	var p: Player = world.player
 	var sid := slot_skill(slot)
 	if sid == "":
-		world.hud.toast("还没有神通。到 10 级瓶颈后吸收灵环就能获得", Color(0.9, 0.9, 0.9))
+		world.hud.toast("还没有神通", Color(0.9, 0.9, 0.9), 1.5)
 		return
 	var s: Dictionary = Data.SKILLS[sid]
 	if p.silence_t > 0.0:
-		world.hud.toast("被电麻了，%.1f 秒内放不了神通" % p.silence_t, Color(0.5, 0.8, 1.0), 1.0)
+		world.hud.toast("放不了神通", Color(0.5, 0.8, 1.0), 1.0)
 		Sfx.play("dry", -8.0)
 		return
 	if cooldowns[slot] > 0.0:
 		Sfx.play("dry", -8.0)
 		return
 	if p.soul < float(s["cost"]):
-		world.hud.toast("灵力不够（需要 %d）" % int(s["cost"]), Color(0.6, 0.8, 1.0))
+		world.hud.toast("灵力不够", Color(0.6, 0.8, 1.0), 1.2)
 		Sfx.play("dry", -8.0)
 		return
 	p.soul -= float(s["cost"])

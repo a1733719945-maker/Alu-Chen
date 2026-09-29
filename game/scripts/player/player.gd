@@ -344,7 +344,7 @@ func _perfect_dodge() -> void:
 	soul = minf(soul + Profile.max_soul() * 0.15, Profile.max_soul())
 	Profile.count("perfect_dodges")
 	world.hud.flash(Color(0.45, 0.85, 1.0, 0.35))
-	world.hud._show_banner("极限闪避", "伤害 +30%（4 秒）", Color(0.55, 0.9, 1.0), 1.0)
+	world.hud._show_banner("极限闪避", "", Color(0.55, 0.9, 1.0), 1.0)
 	world.fx._air_ring(global_position + Vector3.UP * 0.2, Color(0.5, 0.9, 1.0), 0.6, 3.5, 0.45, 0.6, "ring", 3.0)
 	world.fx._sparks(global_position + Vector3.UP, Vector3.UP, Color(0.6, 0.95, 1.0), 20, 8.0, 0.5, 0.06, -4.0, 180.0)
 	Sfx.play("skill_dash", -2.0, 0.0, 1.5)
@@ -414,7 +414,7 @@ func pick_gun(id: String, owner: int) -> void:
 	if owner == Net.my_id:
 		world.hud.toast("捡回了%s" % Data.WEAPONS[id]["name"], Color(0.6, 0.9, 1.0))
 	else:
-		world.hud.toast("捡到了%s（%s 的，按 T 可以丢还给他）" % [Data.WEAPONS[id]["name"], world.peer_name(owner)], Color(0.6, 0.9, 1.0), 4.0)
+		world.hud.toast("捡到 %s 的%s" % [world.peer_name(owner), Data.WEAPONS[id]["name"]], Color(0.6, 0.9, 1.0), 2.5)
 	rebuild_guns()
 	for i in guns.size():
 		if guns[i].id == id:
@@ -1238,7 +1238,7 @@ func select_slot(i: int) -> void:
 				var ps := owned_pills()
 				_slot4 = str(ps[(ps.find(cur_pill()) + 1) % ps.size()])
 				var pd: Dictionary = Data.ITEMS[_slot4]
-				world.hud.toast("%s ×%d：%s" % [pd["name"], Profile.item_count(_slot4), pd["desc"]], pd.get("color", Color.WHITE), 2.2)
+				world.hud.toast("%s ×%d" % [pd["name"], Profile.item_count(_slot4)], pd.get("color", Color.WHITE), 1.6)
 			elif slot == i:
 				return
 			if slot < 2:
@@ -1307,7 +1307,7 @@ func _update_poison(dt: float) -> void:
 ## 中毒：一段时间内持续掉血（第二章落霞林的灵兽带毒）
 func poison(dps: float, dur: float) -> void:
 	if _poison_t <= 0.0:
-		world.hud.toast("中毒了！持续掉血（回血丹能解）", Color(0.6, 1.0, 0.4), 2.0)
+		world.hud.toast("中毒", Color(0.6, 1.0, 0.4), 1.5)
 	_poison_dps = maxf(_poison_dps if _poison_t > 0.0 else 0.0, dps)
 	_poison_t = maxf(_poison_t, dur)
 
@@ -1341,7 +1341,7 @@ func eat_pill(id: String) -> void:
 	var col: Color = d.get("color", Color.WHITE)
 	Sfx.play("heal", -4.0, 0.0, 1.25)
 	world.fx.aura_burst(global_position + Vector3(0, 0.8, 0), col, 1.6)
-	world.hud.toast("吃了%s：%s" % [d["name"], d["desc"]], col, 2.5)
+	world.hud.toast(str(d["name"]), col, 1.6)
 
 
 ## 鱼饵：B 换下一种（有的才换得到，青草饵不要钱）
@@ -1366,7 +1366,7 @@ func cycle_bait() -> void:
 			world.hud.toast("鱼饵：%s" % bait_text(), Color(0.8, 1.0, 0.8), 1.8)
 			Sfx.play("ui_click", -6.0)
 			return
-	world.hud.toast("只有青草饵。去暗器铺买血腥饵、灵晶饵、金骨饵", Color(0.9, 0.9, 0.9), 2.5)
+	world.hud.toast("只有青草饵", Color(0.9, 0.9, 0.9), 1.6)
 
 
 func bait_text() -> String:
@@ -1392,7 +1392,7 @@ func _use_slot_item() -> void:
 			Profile.equip_bone(e)
 			on_bones_changed()
 			Sfx.play("level_up", -8.0)
-			world.hud.toast("装上了【%s】%s%s" % [Data.bone_name(e), Data.bone_desc(e), ("，换下来的%s在 5 号位" % Data.bone_name(old)) if old != "" else ""], UiKit.GOLD, 4.0)
+			world.hud.toast("装上【%s】" % Data.bone_name(e), UiKit.GOLD, 2.0)
 			_spare_idx = 0
 	if slot_ready(slot):
 		_show_slot_item()
@@ -1515,7 +1515,7 @@ func _fire() -> void:
 
 func _throw_grenade() -> void:
 	if not Profile.use_item("grenade"):
-		world.hud.toast("没有九转雷莲了，去暗器铺买", Color(1, 0.7, 0.5))
+		world.hud.toast("没有九转雷莲了", Color(1, 0.7, 0.5), 1.5)
 		return
 	viewmodel.throw_anim()
 	var dir := aim_dir()
@@ -1527,7 +1527,7 @@ func _use_pill() -> void:
 	if hp >= Profile.max_hp() - 1.0:
 		return
 	if not Profile.use_item("pill"):
-		world.hud.toast("没有回血丹了，去暗器铺买", Color(1, 0.7, 0.5))
+		world.hud.toast("没有回血丹了", Color(1, 0.7, 0.5), 1.5)
 		return
 	heal(60.0)
 	_poison_t = 0.0

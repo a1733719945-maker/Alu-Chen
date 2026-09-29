@@ -1615,13 +1615,13 @@ func quest_done(text: String, reward: int) -> void:
 
 ## shard：这是第几块天枢碎片（0 = 不写）；shards：一共夺回了几块
 func boss_defeated(name: String, money: int, bone: String, ring_age := 2, shard := 0, shards := 0) -> void:
+	# 只写拿到了什么，不解释（用户：描述得太详细）
 	var sub := "+%d 灵石" % money
 	if bone != "":
-		sub += "    获得灵骨【%s】：%s" % [Data.bone_name(bone), Data.bone_desc(bone)]
-	sub += "\n地上掉落了%s灵环" % Data.age_name(ring_age)
+		sub += "    灵骨【%s】" % Data.bone_name(bone)
 	if shard > 0:
-		sub += "\n夺回天枢碎片 · 其%s（%d / 5）%s" % [["一", "二", "三", "四", "五"][clampi(shard - 1, 0, 4)], shards, "——五块齐了，修到真仙圆满，天门就会重开" if shards >= 5 else ""]
-	_show_banner("击败 %s" % name, sub, Color(1.0, 0.85, 0.4), 8.0)
+		sub += "\n天枢碎片 %d / 5" % shards
+	_show_banner("击败 %s" % name, sub, Color(1.0, 0.85, 0.4), 6.0)
 
 
 func skill_callout(slot: int, sid: String) -> void:
