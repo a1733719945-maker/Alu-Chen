@@ -227,10 +227,18 @@ static func build(id: String, skin := "", outfit := "", on: Variant = null, arms
 ## 有 assets/models/weapons/<id>.glb 就用它换掉代码拼的枪身；手、袖子、瞄具配件、挂件和各种挂点（Muzzle / Sight / Mag…）照旧。
 ## 摆法：yaw 模型要转多少（枪口朝 +Z 的转 180°）；k 模型长度 = 代码枪身长度 × k；off 再挪一点（米，暗器坐标）
 const MODEL_DIR := "res://assets/models/weapons/"
+## 第二批（用户 2026-09-29 做的七把）：枪口朝 -X 的转 -90°，朝 +Z 的转 180°
 const MODEL_FIT := {
 	"zhuge": {"yaw": 0.0, "k": 1.12, "off": Vector3(0, 0.0, 0.0)},
 	"kongque": {"yaw": PI, "k": 1.08, "off": Vector3(0, 0.0, 0.0)},
 	"xiujian": {"yaw": 0.0, "k": 1.3, "off": Vector3(0, 0.0, 0.0)},
+	"guanyin": {"yaw": -PI / 2, "k": 0.95, "off": Vector3(0, 0.0, -0.04)},
+	"longxu": {"yaw": -PI / 2, "k": 0.9, "off": Vector3(0, 0.0, -0.06)},
+	"meihua": {"yaw": -PI / 2, "k": 1.0, "off": Vector3(0, 0.0, 0.0)},
+	"zhuihun": {"yaw": -PI / 2, "k": 0.95, "off": Vector3(0, 0.0, -0.04)},
+	"zimu": {"yaw": PI, "k": 1.0, "off": Vector3(0, 0.0, -0.02)},
+	"hansha": {"yaw": PI, "k": 0.85, "off": Vector3(0, -0.01, -0.08)},
+	"baoyu": {"yaw": PI, "k": 1.1, "off": Vector3(0, 0.0, 0.0)},
 }
 
 
@@ -238,20 +246,19 @@ static func has_model(id: String) -> bool:
 	return MODEL_FIT.has(id) and ResourceLoader.exists(MODEL_DIR + id + ".glb")
 
 
-## 代码枪身（蒙皮材质的零件 + 玉、翎羽、弦）藏起来，量出它的范围，把模型按这个范围摆进去
+## 代码枪身藏起来（除了手、另外装上去的瞄具 / 配件、挂件），量出蒙皮零件的范围，把模型按这个范围摆进去
 static func _swap_model(root: Node3D, id: String, skin: String, pb: Vector4) -> void:
-	var body_extra: Array = []
 	var m0 := _mats(skin, "default", id)
-	for k in ["jade", "feather", "string"]:
-		body_extra.append(m0[k])
+	var keep_mats: Array = [m0["optic"], m0["acc"], m0["lens"]]
 	var box := AABB()
 	var first := true
 	for n in root.find_children("*", "MeshInstance3D", true, false):
 		var mi := n as MeshInstance3D
-		if _in_hand(mi, root):
+		if _in_hand(mi, root) or _under(mi, root, "Charm"):
 			continue
 		var skin_part := GunSkin.is_skin_mat(mi.material_override)
-		if not skin_part and not mi.material_override in body_extra:
+		# 配件：黑色瞄具 / 配件材质、镜片和准星（着色器，但不是皮肤）
+		if not skin_part and (mi.material_override in keep_mats or mi.material_override is ShaderMaterial):
 			continue
 		mi.visible = false
 		if skin_part:
@@ -299,6 +306,15 @@ static func _place_model(parent: Node3D, id: String, length: float, center: Vect
 			mi.set_surface_override_material(s, sm)
 		GunSkin.bind_part(mi)
 	return inst
+
+
+static func _under(n: Node, root: Node, nm: String) -> bool:
+	var c: Node = n
+	while c != null and c != root:
+		if c.name == nm:
+			return true
+		c = c.get_parent()
+	return false
 
 
 ## 这个零件是不是手 / 袖子（fist / sleeve 搭的，带 meta "hand"）
