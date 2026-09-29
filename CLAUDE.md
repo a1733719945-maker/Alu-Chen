@@ -406,6 +406,12 @@
    - 消息：trst（[mode, phase, cp, hold, t, lives, kills]）/ trenter / trin / trleave / trrack（[[id, q, 配件]]）/ trgate / trhold / trlife / trslam / trburst / trend / hdsp / hdhit
    - 纪录：`stats["chase_best_<章>"]`（过了几道门，逃出去 = 4）、`stats["chase_time_<章>"]`；`Trial.best_text` 给试炼面板和结算用
    - 自动测试 `chase`（默认 plan 里代替了 siege）：兵器架配件 → 捡枪带配件 → **站着不动会被咬** → 开枪飘数字、血条 → 三道门守到渡口 → 结算 → 枪还回去 → 第二局续命用完失败
+31. 第一个 AI 生成模型：跳尸（2026-09-29，`10ecbfd`，质感提升的试验，**成功**，截图用户看过）：
+   - 用户用 Meshy 生成（A 字姿势、19.6 万面、12 MB）→ `tools/shrink_glb.gd` 减到 6112 面、贴图 1K（780 KB）→ `tools/pose_jiangshi.py`（numpy 直接改 GLB 顶点）：胳膊绕肩膀转到**向前平伸**（按沿胳膊的距离和离胳膊中轴的距离做平滑权重，衣服不撕）、转 180°（glTF 正面 +Z → 游戏 -Z）、脚底放 0、缩到 1.9 米
+   - `Horde._load_model()` 读 `assets/models/horde/jiangshi.glb` 的网格和贴图，`SHADER_TEX`（颜色 / 法线 / ORM 贴图，`TEX_TINT` 按种类调色，下摆跳起来往后飘、伸直的手上下晃，轮廓淡绿尸气、尸王暗红，挨打红闪）；没文件就退回程序模型 `_build_mesh`；场上超过 140 只关影子
+   - 截图阶段 `chaseshot`（近看一排僵尸、挨打血条、长街远景）
+   - **这套流程可以复用**：AI 模型 → shrink_glb 减面 → 必要时 numpy 改姿势 / 朝向 → 预览图（xvfb + 一个 SubViewport 脚本，三个角度拼一张，约 1 分钟）→ 接进游戏 → 截图
+   - 截图里还能看到的问题：起点兵器架的光柱太粗太亮挡视线；第一人称"巧克力手"；街边房子是方块
 
 ## 还没做 / 可以继续
 
