@@ -411,8 +411,8 @@ func _add_rack(root: Node3D, c: Vector3) -> void:
 	rn.add_child(holder)
 	var beam := MeshInstance3D.new()
 	var cm := CylinderMesh.new()
-	cm.top_radius = 0.5
-	cm.bottom_radius = 0.7
+	cm.top_radius = 0.05
+	cm.bottom_radius = 0.16      # 细细一道光（以前半径 0.7，一排三根挡住整条街）
 	cm.height = 6.0
 	cm.cap_top = false
 	cm.cap_bottom = false
@@ -1288,7 +1288,7 @@ func _on_racks(d: Array) -> void:
 			var tw := holder.create_tween().set_loops()
 			tw.tween_property(holder, "rotation:y", TAU, 4.0).as_relative()
 		var beam: MeshInstance3D = nodes[2]
-		beam.material_override = FxLib.smat("pillar", {"color": q[1], "hdr": 1.2 + int(d[i][1]) * 0.6, "half_h": 3.0, "speed": 1.0, "top": 0.0, "rim_k": 0.7})
+		beam.material_override = FxLib.smat("pillar", {"color": q[1], "hdr": 0.9 + int(d[i][1]) * 0.45, "half_h": 3.0, "speed": 1.0, "top": 0.0, "rim_k": 0.7})
 		(nodes[3] as OmniLight3D).light_color = q[1]
 
 
