@@ -4526,7 +4526,19 @@ func _run_decorshot() -> void:
 			elif _step_t > 7.0 and not _mem.has("d5"):
 				_mem["d5"] = true
 				await _shot("decor_shop")
-			elif _step_t > 7.5:
+			elif _step_t > 7.5 and not _mem.has("d6"):
+				_mem["d6"] = true
+				# 青崖子近看
+				if w.sage:
+					var sp2: Vector3 = w.sage.global_position + w.sage.global_transform.basis.z * -3.2
+					sp2.y = w.island.height_at(sp2.x, sp2.z) + 0.3
+					p.teleport(sp2)
+					_aim(p, w.sage.global_position + Vector3(0, 1.3, 0))
+			elif _step_t > 9.5 and not _mem.has("d7"):
+				_mem["d7"] = true
+				if w.sage:
+					await _shot("decor_sage")
+			elif _step_t > 10.0:
 				_next_phase()
 
 

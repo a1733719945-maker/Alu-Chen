@@ -130,8 +130,8 @@ func _shop_xf() -> Transform3D:
 func _base() -> void:
 	var b := _b()
 	var isl := world.island
-	if not isl.hunting and b.boat:
-		# 船：两舷一道朱漆 + 金边，船尾两盏灯，船头一面小三角旗
+	if not isl.hunting and b.boat and not b.boat.has_meta("model"):
+		# 船：两舷一道朱漆 + 金边，船尾两盏灯，船头一面小三角旗（混元的船模型自己有灯笼，不加）
 		var red := MatLib.lacquer(Color(0.55, 0.08, 0.06), false)
 		var gold := MatLib.gold()
 		for sx in [-1.0, 1.0]:
@@ -348,6 +348,9 @@ func _d_sail() -> void:
 		return
 	var n := Node3D.new()
 	boat.add_child(n)
+	# 模型船中间是乌篷，桅杆挪到船头那段
+	if boat.has_meta("model"):
+		n.position.z = -3.0
 	var wood := _b()._wood(Color(0.35, 0.24, 0.15))
 	var cloth := MatLib.canvas(Color(0.66, 0.1, 0.07))
 	var gold := MatLib.gold()
@@ -413,6 +416,11 @@ func _d_lions() -> void:
 		var lp := xf * Vector3(sx * 3.4, 0, 4.4)
 		lp.y = world.island.height_at(lp.x, lp.z)
 		n.global_transform = Transform3D(xf.basis, lp)
+		# 混元生成的石狮子（带雕花石座），脸朝铺子外面（+z）。不做镜像：缩放取负会让法线贴图的光照反过来（发暗发红）
+		if ResourceLoader.exists(Props.LION_MODEL):
+			Props.place_model(n, Props.LION_MODEL, 2.3, "h", Vector3(0, -0.05, 0), -0.12 * sx)
+			_col(_live, _boxs(Vector3(1.0, 2.2, 1.3)), Transform3D(xf.basis, lp + Vector3(0, 1.1, 0)))
+			continue
 		U.part(n, U.box(Vector3(1.0, 0.7, 1.3)), dark, Vector3(0, 0.35, 0))
 		U.part(n, U.box(Vector3(1.1, 0.1, 1.4)), stone, Vector3(0, 0.72, 0))
 		# 蹲着的狮子：后身、前胸、头、鬃毛卷、前腿、绣球

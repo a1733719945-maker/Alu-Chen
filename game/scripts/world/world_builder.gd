@@ -2486,9 +2486,17 @@ func _boat() -> void:
 	boat.name = "Boat"
 	boat.position = boat_pos
 	root.add_child(boat)
-	var hull_mat := MatLib.variant(MatLib.planks(Color(1.35, 1.2, 1.05), false), true)
 	var L := 7.0
 	var W := 1.9
+	# 混元生成的乌篷船（assets/models/props/boat.glb）：有就用它，代码船身不搭；Decor 看到 meta "model" 就不加船舷、船尾灯
+	if ResourceLoader.exists(Props.BOAT_MODEL):
+		Props.place_model(boat, Props.BOAT_MODEL, L + 0.3, "l", Vector3(0, -0.3, 0))
+		boat.set_meta("model", true)
+		var shm := BoxShape3D.new()
+		shm.size = Vector3(W, 0.6, L)
+		_add_collider(shm, Transform3D(Basis(), boat_pos + Vector3(0, 0.3, 0)))
+		return
+	var hull_mat := MatLib.variant(MatLib.planks(Color(1.35, 1.2, 1.05), false), true)
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var secs := 12

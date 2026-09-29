@@ -435,6 +435,15 @@
    - 自动测试：第三章 boss、bossarts（朱厌 8 招）全过；**还没在游戏里截图看动作**
    - 以后别的灵主照这个流程：混元生成 → Studio 绑骨骼（只支持人形；蛛母 / 蛟 / 鲲不是人形，要另想：程序化腿、身体波浪摆）
 
+33. 混元模型第一批接进游戏（2026-09-29，小号；用户把模型放在 GitHub Release **草稿**里，`gh api` 按 asset id 下载到 `tools/_downloads/hunyuan`，不进仓库）：
+   - 流程：`tools/preview_model.gd`（三个角度拼一张图，看朝向 / 大小 / 面数 / 骨头）→ 静态的用 `tools/shrink_glb.gd` 减到约 1.25 万面 → 带骨骼的用 `tools/fbx_to_glb.gd -- --notail …`（人形**要加 --notail**，不然长衫后摆被当尾巴绑到胯上，跑起来脚边拉出长条）
+   - 队友 `assets/models/player/player.glb`（六段动作 idle / walk / run / sprint / jump / crouch）：`RemotePlayer` 按速度、冲刺、蹲、空中选动作；`player/aim_ik.gd`（`AimIK`，SkeletonModifier3D）两节 IK 让两只手端着暗器、枪口跟着 pitch；暗器挂在 `_gun_root`（每帧摆到右手目标点）
+   - 暗器 `assets/models/weapons/<id>.glb`（zhuge / kongque / xiujian）：`WeaponModels.MODEL_FIT`（yaw：流光翎枪口朝 +Z 要转 180°；k：长度倍数），`_swap_model` 藏掉代码枪身（蒙皮材质 + 玉 / 翎羽 / 弦），模型按原范围摆；手、配件、Muzzle / Sight / Mag 挂点照旧；`build_small` 也用模型。
+     皮肤：`GunSkin.model_material`（着色器 `d_uv = 1`）：按模型 UV 取明暗 + 法线 + ORM，金属（ORM.b）保留原色，其他换皮肤颜色 / 花纹；默认皮肤用原材质。流光翎模型自带瞄准镜
+   - 乌篷船 `props/boat.glb`（`WorldBuilder._boat`，meta "model"：Decor 不加船舷灯，锦帆桅杆挪到船头）、石狮子 `props/stone_lion.glb`（`Decor._d_lions`，**别用负缩放镜像**：法线贴图光照会反）、青崖子 `npc/sage.glb`（老将军，待机动作；`Sage` 整个人慢慢侧身看玩家）
+   - `Props.place_model(parent, path, size, fit, base, yaw)`：按长 / 高缩放、底面贴地
+   - **截图 / 自动测试的启动方式改成** `Start-Process … -WindowStyle Hidden` + Godot 的 `--log-file 文件`（不重定向 stdout）：窗口不出现在用户桌面上；以前重定向 stdout + 屏幕外窗口有两次渲染卡住（用户看到"无响应"窗口）
+
 ## 还没做 / 可以继续
 
 - 国风 CG、模型质感、蛛母 / 玄鲲新模型：见文末"交接"

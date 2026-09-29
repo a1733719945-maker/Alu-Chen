@@ -7,6 +7,40 @@ extends RefCounted
 
 static var _meshes := {}
 
+## AI 生成的道具模型（混元，assets/models/props）
+const BOAT_MODEL := "res://assets/models/props/boat.glb"
+const LION_MODEL := "res://assets/models/props/stone_lion.glb"
+
+
+## 摆一个模型：按 fit（"l" 长度 z / "h" 高度 y / "w" 宽度 x）缩到 size 米，水平居中、底面放在 base.y；yaw 转多少
+static func place_model(parent: Node3D, path: String, size: float, fit := "h", base := Vector3.ZERO, yaw := 0.0) -> Node3D:
+	var inst := (load(path) as PackedScene).instantiate() as Node3D
+	var holder := Node3D.new()
+	holder.name = "Model"
+	parent.add_child(holder)
+	holder.add_child(inst)
+	inst.rotation.y = yaw
+	var box := AABB()
+	var first := true
+	for n in inst.find_children("*", "MeshInstance3D", true, false):
+		var t := Transform3D.IDENTITY
+		var c: Node = n
+		while c != null and c != holder:
+			if c is Node3D:
+				t = (c as Node3D).transform * t
+			c = c.get_parent()
+		var bb := t * (n as MeshInstance3D).get_aabb()
+		box = bb if first else box.merge(bb)
+		first = false
+	var dim: float = {"l": box.size.z, "h": box.size.y, "w": box.size.x}.get(fit, box.size.y)
+	var k := size / maxf(dim, 0.001)
+	inst.scale = Vector3.ONE * k
+	var c0 := box.get_center()
+	inst.position = Vector3(-c0.x * k, -box.position.y * k, -c0.z * k) + base
+	for gi: GeometryInstance3D in inst.find_children("*", "GeometryInstance3D", true, false):
+		gi.gi_mode = GeometryInstance3D.GI_MODE_DISABLED
+	return holder
+
 
 ## 倒角方块。bevel：斜面宽（米），默认取最短边的 12%
 static func rbox(size: Vector3, bevel := -1.0) -> ArrayMesh:

@@ -25,7 +25,27 @@ func setup(p_world: Node, pos: Vector3, face: Vector3) -> void:
 	_build()
 
 
+const MODEL := "res://assets/models/npc/sage.glb"
+var _model: Node3D
+
+
 func _build() -> void:
+	# 混元生成的老将军（独眼、白须、青铜发冠、乌铁鱼鳞甲，带待机动作）：有就用它
+	if ResourceLoader.exists(MODEL):
+		_body = Node3D.new()
+		add_child(_body)
+		_model = BeastModels.instance_custom(MODEL, {"fit": "h", "size": 1.95})
+		_model.position.y = 0.975
+		_body.add_child(_model)
+		FxLib.no_decals(_body)
+		head = Node3D.new()
+		_body.add_child(head)
+		var l0 := U.label3d("青崖子", 34, Color(1.0, 0.9, 0.7), 8)
+		l0.position = Vector3(0, 2.4, 0)
+		l0.pixel_size = 0.004
+		l0.visibility_range_end = 18.0
+		add_child(l0)
+		return
 	var straw := U.mat(Color(0.62, 0.52, 0.32), 0.95)
 	var straw_dark := U.mat(Color(0.42, 0.34, 0.2), 0.95)
 	var robe := U.mat(Color(0.3, 0.27, 0.24), 0.9)
@@ -94,8 +114,9 @@ func _build() -> void:
 
 func _process(dt: float) -> void:
 	_t += dt
-	# 呼吸：身子微微起伏
-	_body.position.y = sin(_t * 1.3) * 0.012
+	# 呼吸：身子微微起伏（模型自己有待机动作，不用）
+	if _model == null:
+		_body.position.y = sin(_t * 1.3) * 0.012
 	# 你走近了，他转过头来看你
 	var p: Node3D = world.player
 	if not is_instance_valid(p):
@@ -105,6 +126,9 @@ func _process(dt: float) -> void:
 	if to.length() < 10.0:
 		want = clampf(wrapf(atan2(-to.x, -to.z) - _yaw, -PI, PI), -1.0, 1.0)
 	head.rotation.y = lerp_angle(head.rotation.y, want, 1.0 - exp(-4.0 * dt))
+	if _model:
+		# 模型没有单独的头可以转：整个人慢慢侧过身来看你
+		_body.rotation.y = lerp_angle(_body.rotation.y, want * 0.7, 1.0 - exp(-2.0 * dt))
 
 
 ## 按 F 说的话：跟着主线走（到了哪一章、灵主打没打、有没有轮回过）。每按一次说下一句
