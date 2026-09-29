@@ -1234,14 +1234,20 @@ func _hs_pine(r: RandomNumberGenerator, H: float, bark: Material, pad: Material,
 		var s := _along(pts, t0)
 		var az := TAU * b / nb + r.randf_range(-0.5, 0.5)
 		var out := Vector3(cos(az), 0, sin(az))
-		var L := H * r.randf_range(0.2, 0.38) * (1.25 - t0 * 0.5)
-		var bp := [s, s + out * L * 0.4 + Vector3(0, -L * 0.06, 0), s + out * L * 0.8 + Vector3(0, L * 0.02, 0), s + out * L + Vector3(0, L * 0.14, 0)]
-		var br := r0 * 0.45 * (1.0 - t0 * 0.4)
-		_tube(sb, cb, bp, [br, br * 0.7, br * 0.45, br * 0.25], 6, 0.1, 0.5)
-		pads.append([bp[3] + Vector3(0, 0.1, 0), L * r.randf_range(0.42, 0.55)])
+		var L := H * r.randf_range(0.2, 0.36) * (1.25 - t0 * 0.5)
+		var bp := [s, s + out * L * 0.4 + Vector3(0, -L * 0.06, 0), s + out * L * 0.8 + Vector3(0, L * 0.02, 0), s + out * L + Vector3(0, L * 0.12, 0)]
+		var br := r0 * 0.32 * (1.0 - t0 * 0.4)
+		_tube(sb, cb, bp, [br, br * 0.65, br * 0.4, br * 0.12], 6, 0.1, 0.5)
+		# 枝头一大团 + 旁边两三小团（一团团叠起来，不是一张大饼）
+		var tip: Vector3 = bp[3]
+		pads.append([tip + Vector3(0, 0.15, 0), L * r.randf_range(0.3, 0.38)])
+		for j in r.randi_range(2, 3):
+			var off := Vector3(r.randf_range(-1, 1), 0, r.randf_range(-1, 1)).normalized() * L * r.randf_range(0.15, 0.3)
+			pads.append([tip + off + Vector3(0, r.randf_range(-0.2, 0.3), 0), L * r.randf_range(0.18, 0.26)])
 		if r.randf() < 0.6:
-			pads.append([(bp[2] as Vector3) + Vector3(0, L * 0.08, 0), L * 0.32])
-	pads.append([(pts[8] as Vector3) + Vector3(0, 0.25, 0), H * 0.2])
+			pads.append([(bp[2] as Vector3) + Vector3(0, L * 0.08, 0), L * 0.24])
+	pads.append([(pts[8] as Vector3) + Vector3(0, 0.25, 0), H * 0.15])
+	pads.append([(pts[7] as Vector3) + Vector3(r.randf_range(-0.8, 0.8), 0.1, r.randf_range(-0.8, 0.8)), H * 0.11])
 	for pd in pads:
 		_pine_pad(sp, cp, sn, cn, r, pd[0], pd[1])
 	var mesh := ArrayMesh.new()
@@ -1258,22 +1264,22 @@ func _hs_pine(r: RandomNumberGenerator, H: float, bark: Material, pad: Material,
 ## 一团平铺的松针：两三层水平的圆盘（上小下大）+ 边上一圈往外斜的松针贴片（有厚度、轮廓毛茸茸）
 func _pine_pad(sp: SurfaceTool, cp: Array, sn: SurfaceTool, cn: Array, r: RandomNumberGenerator, c: Vector3, R: float) -> void:
 	for layer in 3:
-		var rr := R * (0.7 + layer * 0.22)
-		var y := c.y - layer * R * 0.16
+		var rr := R * (0.55 + layer * 0.25)
+		var y := c.y - layer * R * 0.2
 		var az := r.randf() * TAU
 		var dir := Vector3(cos(az), r.randf_range(-0.06, 0.06), sin(az)).normalized()
 		var right := dir.cross(Vector3.UP).normalized()
 		var shade := lerpf(1.05, 0.72, layer / 2.0) * r.randf_range(0.92, 1.05)
 		var ctr := Vector3(c.x, y, c.z)
 		_card(sp, cp, ctr - dir * rr, dir, right, rr * 2.0, rr * 2.0, ctr - Vector3(0, R * 3.0, 0), 0.5, Color(shade, shade, shade))
-	var n := r.randi_range(5, 7)
+	var n := r.randi_range(7, 9)
 	for k in n:
 		var a := TAU * k / n + r.randf_range(-0.3, 0.3)
 		var out := Vector3(cos(a), 0, sin(a))
-		var up := (out + Vector3(0, 0.35, 0)).normalized()
-		var base := c + out * R * 0.35 - Vector3(0, R * 0.25, 0)
-		var sh := r.randf_range(0.75, 0.95)
-		_card(sn, cn, base, up, out.cross(Vector3.UP).normalized(), R * 1.1, R * 0.85, c - Vector3(0, R, 0), 0.6, Color(sh, sh, sh))
+		var up := (out + Vector3(0, r.randf_range(-0.15, 0.4), 0)).normalized()
+		var base := c + out * R * 0.3 - Vector3(0, R * 0.3, 0)
+		var sh := r.randf_range(0.72, 0.95)
+		_card(sn, cn, base, up, out.cross(Vector3.UP).normalized().rotated(up, r.randf_range(-0.4, 0.4)), R * 1.0, R * 0.95, c - Vector3(0, R, 0), 0.6, Color(sh, sh, sh))
 
 
 ## 竹丛：十来根细长的竹竿从一小片地里冒出来、往外斜，上半截每隔一段挂一两簇竹叶
@@ -1468,7 +1474,7 @@ func _tree_kinds(r: RandomNumberGenerator) -> Array:
 			for i in 2:
 				kinds.append(_broad_tree(r, r.randf_range(6, 8.5), 1.15, dark_bark, bloss).merged({"kind": "blossom"}))
 			for i in 3:
-				kinds.append(_hs_pine(r, r.randf_range(9, 14), _bark(Color(0.62, 0.52, 0.46)), pad, pine).merged({"kind": "hspine"}))
+				kinds.append(_hs_pine(r, r.randf_range(9, 14), _bark(Color(0.85, 0.74, 0.66)), pad, pine).merged({"kind": "hspine"}))
 			for i in 3:
 				kinds.append(_bamboo(r, r.randf_range(10, 14), culm, bleaf).merged({"kind": "bamboo"}))
 			for i in 2:

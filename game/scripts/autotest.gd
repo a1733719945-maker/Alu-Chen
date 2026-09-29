@@ -2883,19 +2883,18 @@ func _run_sceneshot() -> void:
 		1:
 			if _tour.is_empty():
 				w.hud.visible = true
-				p.viewmodel.process_mode = Node.PROCESS_MODE_INHERIT
+				p.cam.cull_mask = p.cam.cull_mask | 2
 				_next_phase()
 				return
 			var e: Array = _tour[0]
 			if e[1] != null:
 				p.teleport((e[1] as Vector3) - Vector3(0, 1.6, 0))
 				_aim(p, e[2])
-			p.viewmodel.process_mode = Node.PROCESS_MODE_DISABLED
-			p.viewmodel.visible = false
+			# 手在第 2 渲染层（灵兽、队友也在这层），拍风景时镜头不画这层
+			p.cam.cull_mask = p.cam.cull_mask & ~2
 			_next(2)
 		2:
 			p.hp = 99999.0
-			p.viewmodel.visible = false
 			if _step_t < 2.5:
 				return
 			var e: Array = _tour.pop_front()
