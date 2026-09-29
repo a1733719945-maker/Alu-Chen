@@ -1431,7 +1431,10 @@ func _bark(tint: Color) -> StandardMaterial3D:
 func _leaves(tex: String, tint: Color, backlight: Color) -> ShaderMaterial:
 	var m := ShaderMaterial.new()
 	m.shader = FOLIAGE_SHADER
-	m.set_shader_parameter("leaf_tex", load(FOLIAGE + tex + ".png"))
+	var t: Texture2D = load(FOLIAGE + tex + ".png")
+	m.set_shader_parameter("leaf_tex", t)
+	# 阔叶贴图 2026-09-29 换成 1024（tools/make_leaves.py），凹凸按贴图的像素算
+	m.set_shader_parameter("tex_size", float(t.get_width()))
 	m.set_shader_parameter("tint", tint)
 	m.set_shader_parameter("backlight", backlight)
 	return m
