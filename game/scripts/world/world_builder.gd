@@ -28,7 +28,8 @@ const ENV := {
 	# 远处的峰林和远山一层比一层淡；高画质开一点体积雾，阳光从树冠里透下来
 	"island": {"sky": "sky_day", "u": 0.595, "elev": 48.0, "heading": 999.0, "light_elev": 30.0, "sun": Color(1.0, 0.9, 0.76), "energy": 1.4,
 		"ambient": 0.62, "exposure": 0.95, "white": 6.0, "glow": 0.5, "bloom": 0.04, "fog": Color(0.76, 0.82, 0.88), "fog_d": 0.0024,
-		"scatter": 0.2, "aerial": 0.8, "fog_sky": 0.12, "sat": 1.06, "contrast": 1.08, "fog_h": 3.5, "fog_hd": 0.06,
+		# 低处的雾以前太浓（fog_hd 0.06、aerial 0.8）：十几米外的宝塔朱柱、彩画就被雾洗成粉紫色、发灰。压到一半
+		"scatter": 0.2, "aerial": 0.55, "fog_sky": 0.12, "sat": 1.08, "contrast": 1.08, "fog_h": 3.5, "fog_hd": 0.025, "amb_warm": 0.4,
 		"vol": 0.005, "vol_albedo": Color(0.92, 0.9, 0.86), "vol_e": 1.3},
 	# 落霞：用户反馈"整张图巨亮、秘境里太阳亮得什么都看不到"——太阳贴着地平线，体积雾吃了 2.2 倍的阳光、泛光和曝光又偏高，
 	# 朝西一看整屏发白。曝光、泛光、雾里的阳光、天空亮度都压下来
@@ -288,6 +289,10 @@ func _environment() -> void:
 	sun.light_color = e["sun"]
 	sun.light_energy = e["energy"]
 	env.ambient_light_energy = e["ambient"]
+	# 天光偏蓝：背光面的朱漆、白墙被染成粉紫色。一部分环境光换成暖灰（amb_warm：暖灰占多少）
+	if e.has("amb_warm"):
+		env.ambient_light_sky_contribution = 1.0 - float(e["amb_warm"])
+		env.ambient_light_color = Color(0.86, 0.8, 0.7)
 	env.tonemap_exposure = e["exposure"]
 	env.tonemap_white = e["white"]
 	env.glow_intensity = e["glow"]

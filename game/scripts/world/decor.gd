@@ -617,8 +617,9 @@ func _pagoda(p: Vector3) -> void:
 	n.name = "Pagoda"
 	add_child(n)
 	n.global_position = p
-	var M := {"wall": MatLib.plaster(Color(0.86, 0.82, 0.74)), "red": MatLib.lacquer(Color(0.52, 0.09, 0.06)),
-		"teal": MatLib.lacquer(Color(0.1, 0.34, 0.32)), "dark": MatLib.wood(Color(0.42, 0.34, 0.28)),
+	# 朱色偏橙一点（纯红在蓝天光下发粉紫），白墙压一点（以前 ×1.39 以后超过 1，一片死白）
+	var M := {"wall": MatLib.plaster(Color(0.72, 0.68, 0.6)), "red": MatLib.lacquer(Color(0.55, 0.12, 0.04)),
+		"teal": MatLib.lacquer(Color(0.06, 0.3, 0.26)), "dark": MatLib.wood(Color(0.42, 0.34, 0.28)),
 		"gold": MatLib.gold(true), "stone": _b()._stone(Color(0.62, 0.6, 0.56))}
 	var tiles := _roof_tiles(Color(0.25, 0.26, 0.29))
 	var acc := {}
@@ -667,6 +668,8 @@ func _pagoda(p: Vector3) -> void:
 
 
 ## 塔的一层：八根柱、柱间墙、地栿、额枋 + 彩画；k 为偶数的面开隔扇门，奇数面开直棂窗
+## 注意：零件的朝向 b = Basis(x, UP, d) 必须是右手系（x = (sin, 0, -cos)）。以前写成 (-sin, 0, cos)，行列式是 -1，
+## 合进网格以后三角形正反面颠倒、看到的是背面（整座塔的窗棂、额枋、斗拱发粉发灰，不受光）
 func _story(acc: Dictionary, M: Dictionary, y: float, r: float, h: float, f: int) -> void:
 	var ap := r * cos(PI / 8.0)
 	var L := 2.0 * r * sin(PI / 8.0)
@@ -674,7 +677,7 @@ func _story(acc: Dictionary, M: Dictionary, y: float, r: float, h: float, f: int
 		var a0 := k * PI / 4.0
 		var am := a0 + PI / 8.0
 		var d := Vector3(cos(am), 0, sin(am))
-		var b := Basis(Vector3(-sin(am), 0, cos(am)), Vector3.UP, d)
+		var b := Basis(Vector3(sin(am), 0, -cos(am)), Vector3.UP, d)
 		_acc_add(acc, U.cyl(0.15, 0.17, h, 10), M["red"], Transform3D(Basis(), Vector3(cos(a0) * r, y + h * 0.5, sin(a0) * r)))
 		_acc_add(acc, U.box(Vector3(L - 0.2, h - 0.5, 0.14)), M["wall"], Transform3D(b, d * (ap - 0.1) + Vector3(0, y + 0.2 + (h - 0.5) * 0.5, 0)))
 		_acc_add(acc, U.box(Vector3(L, 0.2, 0.22)), M["red"], Transform3D(b, d * (ap - 0.04) + Vector3(0, y + 0.1, 0)))
@@ -707,7 +710,7 @@ func _pingzuo(acc: Dictionary, M: Dictionary, y: float, rr: float) -> void:
 		var a0 := k * PI / 4.0
 		var am := a0 + PI / 8.0
 		var d := Vector3(cos(am), 0, sin(am))
-		var b := Basis(Vector3(-sin(am), 0, cos(am)), Vector3.UP, d)
+		var b := Basis(Vector3(sin(am), 0, -cos(am)), Vector3.UP, d)
 		_acc_add(acc, U.box(Vector3(0.1, 0.8, 0.1)), M["red"], Transform3D(Basis(), Vector3(cos(a0) * rr * 0.97, y + 0.4, sin(a0) * rr * 0.97)))
 		_acc_add(acc, U.box(Vector3(0.08, 0.7, 0.08)), M["red"], Transform3D(b, d * ap * 0.97 + Vector3(0, y + 0.35, 0)))
 		_acc_add(acc, U.box(Vector3(L, 0.07, 0.09)), M["red"], Transform3D(b, d * ap * 0.97 + Vector3(0, y + 0.76, 0)))
@@ -717,7 +720,7 @@ func _pingzuo(acc: Dictionary, M: Dictionary, y: float, rr: float) -> void:
 ## 一朵斗拱：栌斗 + 十字交叉的拱 + 上面的散斗（朝外挑出去托檐）
 func _dougong(acc: Dictionary, M: Dictionary, at: Vector3, a: float) -> void:
 	var d := Vector3(cos(a), 0, sin(a))
-	var b := Basis(Vector3(-sin(a), 0, cos(a)), Vector3.UP, d)
+	var b := Basis(Vector3(sin(a), 0, -cos(a)), Vector3.UP, d)
 	_acc_add(acc, U.box(Vector3(0.3, 0.12, 0.3)), M["red"], Transform3D(b, at + Vector3(0, 0.06, 0)))
 	_acc_add(acc, U.box(Vector3(0.75, 0.1, 0.14)), M["teal"], Transform3D(b, at + Vector3(0, 0.17, 0)))
 	_acc_add(acc, U.box(Vector3(0.14, 0.1, 0.8)), M["teal"], Transform3D(b, at + Vector3(0, 0.17, 0) + d * 0.2))

@@ -69,9 +69,15 @@ static func lacquer(c := Color(0.56, 0.07, 0.05), world := true) -> StandardMate
 	if _cache.has(ck):
 		return _cache[ck]
 	var m := surf("lacquer", c, 0.8, world, 0.0, 0.75, 0.6).duplicate() as StandardMaterial3D
+	# 旧的朱漆太亮（粗糙度贴图 × 0.75 + 厚清漆）：反着淡蓝的天，红柱子、额枋远看发紫发灰。粗一点、清漆薄一点
+	m.roughness_texture = null
+	m.roughness = 0.62
+	# 漆面是平的；法线贴图在合并过的细零件（窗棂、额枋）上算歪了，整面泛白发粉。去掉
+	m.normal_enabled = false
+	m.metallic_specular = 0.35
 	m.clearcoat_enabled = true
-	m.clearcoat = 0.6
-	m.clearcoat_roughness = 0.25
+	m.clearcoat = 0.25
+	m.clearcoat_roughness = 0.4
 	_cache[ck] = m
 	return m
 

@@ -28,15 +28,19 @@ void vertex() {
 }
 
 void fragment() {
+	// 草叶贴图 512（2026-09-29 从 256 加大：近处草叶边缘一格一格的很硬）
 	vec4 c = texture(grass_tex, UV);
-	vec2 dx = dFdx(UV * 256.0);
-	vec2 dy = dFdy(UV * 256.0);
+	vec2 dx = dFdx(UV * 512.0);
+	vec2 dy = dFdy(UV * 512.0);
 	float mip = 0.5 * log2(max(dot(dx, dx), dot(dy, dy)));
-	ALBEDO = c.rgb * tint * COLOR.rgb * mix(root_dark, vec3(1.0), smoothstep(0.0, 0.6, tip));
+	// 每根草叶颜色稍微不一样（按贴图横向位置分条）
+	float strip = fract(sin(floor(UV.x * 26.0) * 91.7 + COLOR.r * 13.0) * 4375.5) - 0.5;
+	vec3 var_c = vec3(1.0 + strip * 0.16, 1.0 + strip * 0.08, 1.0 - strip * 0.1);
+	ALBEDO = c.rgb * tint * COLOR.rgb * var_c * mix(root_dark, vec3(1.0), smoothstep(0.0, 0.6, tip));
 	ALPHA = c.a * (1.0 + max(mip, 0.0) * 0.35);
-	ALPHA_SCISSOR_THRESHOLD = 0.4;
-	ALPHA_ANTIALIASING_EDGE = 0.3;
-	ALPHA_TEXTURE_COORDINATE = UV * 256.0;
+	ALPHA_SCISSOR_THRESHOLD = 0.45;
+	ALPHA_ANTIALIASING_EDGE = 0.55;
+	ALPHA_TEXTURE_COORDINATE = UV * 512.0;
 	ROUGHNESS = 0.85;
 	BACKLIGHT = backlight;
 	EMISSION = glow * c.rgb * (0.4 + tip * 1.2);
