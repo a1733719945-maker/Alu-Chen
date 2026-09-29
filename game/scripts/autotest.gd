@@ -4715,10 +4715,22 @@ func _run_hunt2shot() -> void:
 			b._sk_cd = 999.0
 			w.player.invuln_t = 9999.0
 			w.player.hp = 99999.0
-			var f := -b.global_basis.z
-			f.y = 0.0
-			var at := b.global_position + f.normalized() * 16.0 + f.cross(Vector3.UP).normalized() * 4.0
-			at.y = w.island.height_at(at.x, at.z) + 0.4
+			# 找一个看得见它的位置（以前正好隔着一块大石头，狼和金光都被挡住了）
+			var at := Vector3.INF
+			var space := w.get_world_3d().direct_space_state
+			for k in 16:
+				var a := TAU * k / 16.0
+				var q := b.global_position + Vector3(cos(a), 0, sin(a)) * 15.0
+				if not w.island.is_land(q.x, q.z):
+					continue
+				q.y = w.island.height_at(q.x, q.z) + 0.4
+				var rq := PhysicsRayQueryParameters3D.create(q + Vector3.UP * 1.6, b.global_position + Vector3.UP * 1.0, U.LAYER_WORLD)
+				if space.intersect_ray(rq).is_empty():
+					at = q
+					break
+			if at == Vector3.INF:
+				at = b.global_position + Vector3(15.0, 0, 0)
+				at.y = w.island.height_at(at.x, at.z) + 0.4
 			w.player.teleport(at)
 			_aim(w.player, b.global_position + Vector3.UP * 1.0)
 			_mem["bid"] = b.id
@@ -4750,7 +4762,9 @@ func _run_hunt2shot() -> void:
 			_aim(w.player, b.global_position + Vector3.UP * 1.0)
 			_next(14)
 		14:
-			if _step_t < 0.5:
+			# 等冲锋的红光退掉再拍
+			w.player.hp = 99999.0
+			if _step_t < 1.5:
 				return
 			_next(15)
 			await _shot("hunt2_open")

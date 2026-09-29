@@ -164,7 +164,7 @@ func host_tick(delta: float, tp: Dictionary, m: String, touching: bool) -> void:
 var _target_dry := true
 
 
-## 从 g 往 dir 走 L 米，到水边就停（陆地的冲锋不冲进水里）
+## 从 g 往 dir 走 L 米，到水边就停（陆地的冲锋不冲进水里），前面有石头 / 树也在它前面停——地上的预警画多长就冲多长
 func _land_len(g: Vector3, dir: Vector3, L: float) -> float:
 	var d := 0.0
 	while d < L:
@@ -172,6 +172,11 @@ func _land_len(g: Vector3, dir: Vector3, L: float) -> float:
 		if not world.island.is_land(q.x, q.z):
 			break
 		d += 2.0
+	var from := g + Vector3.UP * 1.0
+	var rq := PhysicsRayQueryParameters3D.create(from, from + dir * d, U.LAYER_WORLD)
+	var hit: Dictionary = b.get_world_3d().direct_space_state.intersect_ray(rq)
+	if not hit.is_empty():
+		d = minf(d, from.distance_to(hit["position"]) - 1.5)
 	return maxf(d, 6.0)
 
 
