@@ -47,6 +47,15 @@ var _base_rot := Vector3.ZERO
 var _tilt := 0.0
 var _fx_t := 0.0
 var _pieces: Array = []       # 掉下来的断肢 {"n", "v", "w", "t", "g"}
+## 样板狩猎第二步（KingArts）：破绽（招打空了 / 落地没站稳：受伤 ×1.3、打头再 ×1.5）、第几回合、起手的姿势
+const OPEN_K := 1.3
+const OPEN_HEAD := 1.5
+var open_t := 0.0
+var act := 1
+var _pose := ""
+var _pose_t := 0.0
+var _pose_len := 1.0
+var _open_label: Label3D
 
 
 ## 房主：给猎物挂上
@@ -152,6 +161,8 @@ func host_hit(real: float, lp: Vector3, headshot: bool) -> float:
 		k *= 1.4 * (1.6 if headshot else 1.0)
 	if broken("back"):
 		k *= 1.25
+	if open_t > 0.0:
+		k *= OPEN_K * (OPEN_HEAD if headshot else 1.0)
 	real *= k
 	var part := "head" if headshot else _part_at(lp)
 	if part != "" and parts.has(part) and not broken(part):
@@ -174,6 +185,9 @@ func host_hit(real: float, lp: Vector3, headshot: bool) -> float:
 
 ## Beast._elite 调：倒地计时、怒气 → 暴怒 → 疲劳 → 平静
 func host_tick(dt: float) -> void:
+	if b.arts and b.arts.act != act:
+		act = b.arts.act
+		_dirty = true
 	if down_t > 0.0:
 		down_t = maxf(down_t - dt, 0.0)
 		if down_t <= 0.0:
@@ -219,6 +233,8 @@ func _host_down(why: String, t: float) -> void:
 	down_why = why
 	b._king_wind = 0.0
 	b._sk_wind = 0.0
+	if b.arts:
+		b.arts.cancel()
 	if why == "stun":
 		_event("down", why)
 	_dirty = true
@@ -237,7 +253,7 @@ func _send_state() -> void:
 	var ps: Array = []
 	for p in parts:
 		ps.append([p, -1.0 if broken(p) else float(parts[p]["hp"]) / maxf(float(parts[p]["max"]), 1.0)])
-	Net.send(0, "kfeel", [b.id, ps, stun / maxf(stun_max, 1.0), down_t, mood, mood_t, rage])
+	Net.send(0, "kfeel", [b.id, ps, stun / maxf(stun_max, 1.0), down_t, mood, mood_t, rage, act, open_t])
 
 
 ## 这一刻能不能放这招（Beast._king_tick 调）：累了不放大招；断尾没有震地；断角不会咆哮；倒地什么都不放
@@ -249,6 +265,18 @@ func allows(move: String) -> bool:
 	if move == "roar" and broken("head"):
 		return false
 	return true
+
+
+## 房主（KingArts）：露破绽 t 秒
+func open(t: float) -> void:
+	open_t = t
+	_event("open", "%.2f" % t)
+
+
+## 房主（KingArts）：起手的姿势（crouch 压低 / rear 仰起来），t 秒后出招
+func pose(kind: String, t: float) -> void:
+	Net.send(0, "kfev", [b.id, "pose", "%s:%.2f" % [kind, t]])
+	_on_event("pose", "%s:%.2f" % [kind, t])
 
 
 func speed_k() -> float:
@@ -299,6 +327,9 @@ func _apply_state(d: Array) -> void:
 	mood = str(d[4])
 	mood_t = float(d[5])
 	rage = float(d[6])
+	if d.size() > 8:
+		act = int(d[7])
+		open_t = float(d[8])
 
 
 func _on_event(kind: String, arg: String) -> void:
@@ -328,10 +359,35 @@ func _on_event(kind: String, arg: String) -> void:
 				hud.toast("%s 暴怒！" % nm, Color(1.0, 0.35, 0.2), 2.5)
 			world.fx.aura_burst(b.global_position, Color(1.0, 0.25, 0.1), 5.0)
 			Sfx.play_at("boss_roar", b.global_position, 6.0, 0.05, 0.9)
+		"pose":
+			var sp := arg.split(":")
+			_pose = sp[0]
+			_pose_len = maxf(float(sp[1]) if sp.size() > 1 else 0.8, 0.1)
+			_pose_t = _pose_len
+		"open":
+			open_t = float(arg)
+			_show_open(open_t)
 		"tired":
 			hud.feed("%s 累了——变慢、不放大招，捆住它更久（三成五血以下能活捉）" % nm, Color(0.6, 0.85, 1.0))
 			if near:
 				hud.toast("%s 累了：捆住它的好时机" % nm, Color(0.6, 0.85, 1.0), 3.0)
+
+
+## 露破绽：头上一闪一闪的「破绽」，近的人听到一声、看到一句提示
+func _show_open(t: float) -> void:
+	if _open_label == null:
+		_open_label = U.label3d("破绽", 90, Color(1.0, 0.85, 0.35), 14)
+		_open_label.no_depth_test = true
+		_open_label.fixed_size = true
+		_open_label.pixel_size = 0.0012
+		_open_label.top_level = true
+		add_child(_open_label)
+	_open_label.global_position = b.global_position + Vector3.UP * (_height + 1.2)
+	var fx: Node = world.fx
+	fx._flash(b.global_position + Vector3.UP * _height * 0.6, Color(1.0, 0.9, 0.5), 2.5 * b.size_k, 0.25, "flare", 2.0)
+	if world.player.global_position.distance_to(b.global_position) < 70.0:
+		Sfx.play_at("snap", b.global_position, 2.0, 0.05, 0.9)
+		world.hud.toast("破绽！%.0f 秒内伤害 ×1.3，打头 ×2" % t, Color(1.0, 0.85, 0.35), 1.4)
 
 
 func _break_effect(p: String) -> String:
@@ -433,6 +489,25 @@ func _process(dt: float) -> void:
 	if _tilt > 0.001:
 		b.model.rotate(_front, _tilt)
 		b.model.position.y -= _tilt * _height * 0.22
+	# 起手（KingArts）：压低身子（扑、冲、跳）或者仰起来（吼、砸、飞的招），越到出招越明显
+	if _pose_t > 0.0:
+		_pose_t = maxf(_pose_t - dt, 0.0)
+		var k := 1.0 - _pose_t / _pose_len
+		k = k * k * (3.0 - 2.0 * k)
+		var side := _front.cross(Vector3.UP).normalized()
+		if _pose == "crouch":
+			b.model.rotate(side, -0.12 * k)
+			b.model.position.y -= _height * 0.12 * k
+		else:
+			b.model.rotate(side, 0.3 * k)
+			b.model.position.y += _height * 0.04 * k
+	if open_t > 0.0:
+		open_t = maxf(open_t - dt, 0.0)
+	if _open_label:
+		_open_label.visible = open_t > 0.0
+		if open_t > 0.0:
+			_open_label.global_position = b.global_position + Vector3.UP * (_height + 1.2)
+			_open_label.modulate.a = 0.55 + 0.45 * absf(sin(Time.get_ticks_msec() / 1000.0 * 6.0))
 	# 暴怒冒红气、累了喘白气（从头那里出来）
 	_fx_t -= dt
 	if _fx_t <= 0.0 and mood != "calm" and world.player.global_position.distance_to(b.global_position) < 70.0:

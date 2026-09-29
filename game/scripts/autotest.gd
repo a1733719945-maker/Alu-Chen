@@ -57,7 +57,7 @@ func _ready() -> void:
 			_plan = ["phys", "hunt:burrow,meadow,flowers,water,reel", "shop", "recoil", "sniper", "ring", "boss", "boat", "hunt:den,swamp,mud", "boss", "boat",
 				"hunt:glade,roost,thicket,nest,bog", "boss", "boat",
 				"hunt:snowden,frostgrove,icefield,icecave,icelake", "boss", "boat",
-				"hunt:beach,cliff,reef,deep,abyss", "boss", "dungeon", "chase", "musou", "huntrun", "huntfail", "touch", "feel", "done"]
+				"hunt:beach,cliff,reef,deep,abyss", "boss", "dungeon", "chase", "musou", "huntrun", "huntfail", "touch", "feel", "hunt2", "done"]
 			# 新暗器测试放在第一章买完暗器后面（要第一章的草地摆靶子；第五章归墟没有草地）
 			_plan.insert(_plan.find("shop") + 1, "guns2")
 			_plan.insert(_plan.find("guns2") + 1, "pills")
@@ -305,6 +305,8 @@ func _process(dt: float) -> void:
 			_run_kbshot()
 		"feel":
 			_run_feel()
+		"hunt2":
+			_run_hunt2()
 		"fpshot":
 			_run_fpshot()
 		"gripshot":
@@ -4507,6 +4509,188 @@ func _run_feel() -> void:
 			var b: Beast = w.beasts.get(int(_mem["bid"]))
 			if b:
 				b.root_t = 0.0
+			_next_phase()
+
+
+## 样板狩猎第二步（KingArts）：猎物每一招都放一遍（出预警、放完回到走位）→ 破绽加伤 → 七成血负伤换地方（跑出 90 米以上、第二回合）
+## → 三成五逃回巢穴 → 醒了是第三回合；顺便算一下新血量公式单人要一直开火多少秒
+const HUNT2_LAND := ["bite", "sweep", "charge", "leap", "quake"]
+const HUNT2_FLY := ["buffet", "gust", "dive", "feathers", "vortex"]
+
+
+func _arts_count(w: World) -> int:
+	return w.arts._lanes.size() + w.arts._sweeps.size() + w.arts._circles.size() + w.arts._vortexes.size() + w.arts._walls.size()
+
+
+func _run_hunt2() -> void:
+	var w := _world()
+	match _step:
+		0:
+			w = _ready_world()
+			if not w or _step_t < 1.0:
+				return
+			w.player.invuln_t = 9999.0
+			w.player.hp = 99999.0
+			var ref := Data.ref_output(w.chapter)
+			var old_hp := Data.hp_floor(w.chapter, 2, ref) * Data.ELITE_FLOOR * Data.HUNT_HP_SOLO
+			_note("新血量：单人一直开火 %.0f 秒（以前 %.0f 秒）" % [Data.hunt_hp(w.chapter, ref, 1) / ref.y, old_hp / ref.y])
+			if w.island.hunting and w.hunt.target_id != 0 and w.beasts.has(w.hunt.target_id):
+				_next(2)
+				return
+			var h := w.hunt
+			var list := h.species_list()
+			if not _check(not list.is_empty(), "猎灵榜上没有灵兽"):
+				return
+			var sp := str(list[0])
+			for s2 in list:
+				if str(s2) in ["wolf", "deer", "rhino", "ape", "crab"]:
+					sp = str(s2)
+					break
+			h.request(sp, h.base_age())
+			_mem["old_wid"] = w.get_instance_id()
+			_next(1)
+		1:
+			w = _ready_world()
+			if not w or w.get_instance_id() == int(_mem["old_wid"]) or not w.island.hunting:
+				if _step_t > 15.0:
+					_fail("挑了猎物没去猎场")
+				return
+			if w.hunt.target_id == 0 or not w.beasts.has(w.hunt.target_id):
+				if _step_t > 20.0:
+					_fail("猎物没出现")
+				return
+			_next(2)
+		2:
+			var b: Beast = w.beasts[w.hunt.target_id]
+			if not _check(b.arts != null and b.feel != null, "猎物身上没有 KingArts"):
+				return
+			# 从头来：满血、没逃、没换过地方、不累
+			b.root_t = 0.0
+			b.hp = b.max_hp
+			b._retreat = false
+			b._rested = false
+			b.napping = false
+			b.feel.down_t = 0.0
+			b.feel.mood = "calm"
+			b.feel.rage = 0.0
+			b.arts.relocated = false
+			b.arts.act = 1
+			b.arts.cur.clear()
+			_mem["bid"] = b.id
+			_mem["i"] = 0
+			var fly := b.motion() in ["fly", "flutter"] and not b.feel.grounded()
+			_mem["fly"] = fly
+			var at := b.global_position + Vector3(9.0, 0, 5.0)
+			at.y = w.island.height_at(at.x, at.z) + 0.4
+			w.player.teleport(at)
+			_aim(w.player, b.global_position + Vector3.UP * 0.8)
+			_note("猎物 %s（%s）：%s 血" % [b.display_name(), "飞的" if fly else "走的", str(int(b.max_hp))])
+			_next(3)
+		3:
+			# 一招一招放
+			var b: Beast = w.beasts.get(int(_mem["bid"]))
+			if not _check(b != null, "猎物没了"):
+				return
+			w.player.hp = 99999.0
+			var list: Array = HUNT2_FLY if bool(_mem["fly"]) else HUNT2_LAND
+			var i := int(_mem["i"])
+			if i >= list.size():
+				_note("整套招都放过了：%s" % str(b.arts.moves_done))
+				_next(5)
+				return
+			var mv := str(list[i])
+			b._aggro_t = 12.0
+			b.arts.cur.clear()
+			var c0 := _arts_count(w)
+			b.arts._start(mv, w.player.global_position, Net.my_id, bool(_mem["fly"]))
+			if not _check(_arts_count(w) > c0, "「%s」没出预警" % mv):
+				return
+			_mem["mv"] = mv
+			_next(4)
+		4:
+			var b: Beast = w.beasts.get(int(_mem["bid"]))
+			if b.arts.cur.is_empty() or str(b.arts.cur.get("move", "")) == "rest" or _step_t > 6.0:
+				if not _check(_step_t <= 6.0, "「%s」放了 6 秒还没放完（%s）" % [str(_mem["mv"]), str(b.arts.cur)]):
+					return
+				_mem["i"] = int(_mem["i"]) + 1
+				_next(3)
+		5:
+			# 破绽：同样一枪，露破绽时更痛
+			var b: Beast = w.beasts.get(int(_mem["bid"]))
+			b.arts.cur.clear()
+			b.feel.open_t = 0.0
+			var lp := b.feel._center
+			var h0 := b.hp
+			b.take_hit(20.0, Vector3.ZERO, lp, false, Net.my_id, 10.0)
+			var base := h0 - b.hp
+			b.arts._rest(2.0)
+			var h1 := b.hp
+			b.take_hit(20.0, Vector3.ZERO, lp, false, Net.my_id, 10.0)
+			var opened := h1 - b.hp
+			if not _check(b.feel.open_t > 0.0 and opened > base * 1.25, "破绽没加伤（平时 %.1f → 破绽 %.1f）" % [base, opened]):
+				return
+			_note("破绽：同一枪 %.1f → %.1f" % [base, opened])
+			# 七成血：负伤换地方
+			b.arts.cur.clear()
+			b.feel.open_t = 0.0
+			b.hp = b.max_hp * 0.69
+			_mem["from"] = b.global_position
+			Engine.time_scale = 4.0
+			_next(6)
+		6:
+			var b: Beast = w.beasts.get(int(_mem["bid"]))
+			w.player.hp = 99999.0
+			if not b.arts.relocated:
+				if _step_t > 8.0:
+					Engine.time_scale = 1.0
+					_fail("七成血没换地方")
+				return
+			if b.arts.relocating():
+				if _step_t > 120.0:
+					Engine.time_scale = 1.0
+					_fail("换地方跑了太久没到（离目标 %.0f 米）" % b.global_position.distance_to(b.arts._reloc_to))
+				return
+			Engine.time_scale = 1.0
+			var from: Vector3 = _mem["from"]
+			var moved := Vector2(b.global_position.x - from.x, b.global_position.z - from.z).length()
+			if not _check(moved > 80.0 and b.arts.act == 2, "换地方只跑了 %.0f 米 / 回合 %d" % [moved, b.arts.act]):
+				return
+			_note("七成血负伤换地方：跑了 %.0f 米，到「%s」，第二回合" % [moved, w.island.zone_name(b.global_position)])
+			# 追过去：三成五逃回巢穴
+			var at := b.global_position + Vector3(8.0, 0, 6.0)
+			at.y = w.island.height_at(at.x, at.z) + 0.4
+			w.player.teleport(at)
+			b._aggro_t = 12.0
+			b.hp = b.max_hp * 0.34
+			_next(7)
+		7:
+			var b: Beast = w.beasts.get(int(_mem["bid"]))
+			w.player.hp = 99999.0
+			if not b._retreat:
+				if _step_t > 4.0:
+					_fail("三成五血没逃回巢穴")
+				return
+			# 醒了（偷袭 / 回够了血）：第三回合
+			b._retreat = false
+			b._rested = true
+			b.napping = false
+			b.spawn_pos = b.global_position
+			b._aggro_t = 12.0
+			var at := b.global_position + Vector3(8.0, 0, 6.0)
+			at.y = w.island.height_at(at.x, at.z) + 0.4
+			w.player.teleport(at)
+			_next(8)
+		8:
+			var b: Beast = w.beasts.get(int(_mem["bid"]))
+			w.player.hp = 99999.0
+			b._aggro_t = 12.0
+			if b.arts.act < 3:
+				if _step_t > 4.0:
+					_fail("醒了还不是第三回合（%d）" % b.arts.act)
+				return
+			if _step_t < 3.0:
+				return
+			_note("逃回巢穴、醒了是第三回合（巢穴决战）；第三回合 3 秒里自己放了 %s" % str(b.arts.moves_done))
 			_next_phase()
 
 

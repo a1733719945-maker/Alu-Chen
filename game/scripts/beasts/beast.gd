@@ -86,6 +86,7 @@ var aggro_k := 1.0               # 仇恨范围倍数（秘境里的灵兽看得
 var dmg_mult := 1.0              # 伤害倍数（秘境小怪轻一点）
 var hunt_role := ""              # target 猎灵榜的猎物 / dgboss 秘境之主 / dg 秘境里的灵兽（HUD 不当普通的王显示）
 var feel: KingFeel               # 样板狩猎：部位破坏、打晕倒地、怒气疲劳（猎场的猎物才有）
+var arts: KingArts               # 样板狩猎第二步：猎物的整套招 + 七成血换地方（只在房主上，beasts/king_arts.gd）
 var speed_cap := 0.0             # 追人最快多少米/秒（0 = 不限）
 var home_speed := 5.0            # 精英走回"老家"的速度（猎物在岛上慢慢逛）
 # 猎场的猎物：重伤了逃回巢穴（nest_pos）睡觉回血，睡着的时候偷袭伤害 ×2.5；两成血以下"虚弱"，一瘸一拐，能用引魂索活捉
@@ -305,6 +306,8 @@ func bind(dur: float) -> void:
 	ropes.clear()
 	_king_wind = 0.0
 	_sk_wind = 0.0
+	if arts:
+		arts.cancel()
 
 
 ## 性格的样子：凶暴的眼睛发红光，灵骨兽全身金光、往上飘金色光点
@@ -1003,14 +1006,22 @@ func _elite(delta: float, m: String, touching: bool) -> void:
 			enrage_t = 9999.0
 		world.king_phase2(self)
 	# 四分之一血：逃回巢穴养伤（只逃一次）——追上去补刀；猎场的猎物三成血就跑，跑回很远的巢穴
-	var flee_at := 0.3 if nest_pos != Vector3.INF else 0.25
+	var flee_at := (0.35 if arts else 0.3) if nest_pos != Vector3.INF else 0.25
 	if not _rested and not _retreat and hp < max_hp * flee_at:
 		_retreat = true
 		_rest_t = 0.0
+		if arts:
+			arts.cancel()
 		world.king_retreat(self)
 	if _retreat:
 		_king_retreat_tick(delta, m, touching)
 		return
+	# 样板狩猎第二步：七成血负伤换地方（跑去另一片区域，追过去再打）
+	if arts:
+		if arts.want_relocate():
+			arts.start_relocate()
+		if arts.relocating() and arts.relocate_tick(delta, m, touching):
+			return
 	var home := spawn_pos
 	var tp: Dictionary = _nearest_ok()
 	var fight := false
@@ -1022,6 +1033,9 @@ func _elite(delta: float, m: String, touching: bool) -> void:
 		var leashed := Vector2(tpos.x - home.x, tpos.z - home.z).length() > leash
 		fight = (near or _aggro_t > 0.0) and not leashed
 	if fight:
+		if arts:
+			arts.host_tick(delta, tp, m, touching)
+			return
 		if _king_tick(delta, tp["pos"], touching):
 			return
 		_fierce(delta, m, touching)
@@ -1120,7 +1134,8 @@ func _king_retreat_tick(delta: float, m: String, touching: bool) -> void:
 			napping = true
 			world.king_sleep(self, true, 0)
 		hp = minf(hp + max_hp * 0.006 * delta, max_hp)
-		if hp >= max_hp * 0.6 and napping:
+		# 睡觉回血：以前回到六成（打了半天白打），有整套招以后回到五成
+		if hp >= max_hp * (0.5 if arts else 0.6) and napping:
 			napping = false
 			_retreat = false
 			_rested = true

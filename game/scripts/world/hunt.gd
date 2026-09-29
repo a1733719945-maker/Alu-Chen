@@ -249,8 +249,11 @@ func host_spawn_trip_target() -> void:
 	var affixes: Array = [] if Data.autotest else Data.roll_affixes(world.rng, age, world.chapter, "grass", true).slice(0, 1)
 	var b := world._spawn_beast(id, species, age, pos, Vector3.ZERO, 1, false, "elite", affixes)
 	Net.send(0, "bsp", [id, species, age, pos, Vector3.ZERO, 1, "elite", affixes])
-	# 猎场的猎物是这一趟的主菜：比岛上的灵兽王厚一点
+	# 猎场的猎物是这一趟的主菜：血量按"全队一直开火要打 2 分钟"算（Data.hunt_hp，样板狩猎第二步）；
+	# 自动测试是功能测试，还按以前的（灵兽王 × 0.6）
 	b.max_hp *= Data.HUNT_HP_SOLO + Data.HUNT_HP_PER * float(_team_n() - 1)
+	if not Data.autotest:
+		b.max_hp = maxf(b.max_hp, Data.hunt_hp(world.chapter, world.team_output(), _team_n()))
 	b.hp = b.max_hp
 	b.home_speed = 3.4
 	b.hunt_role = "target"
@@ -258,6 +261,8 @@ func host_spawn_trip_target() -> void:
 	b.nest_pos = world.island.nest + Vector3(0, 0.6, 0)
 	# 样板狩猎：部位破坏、打晕倒地、怒气疲劳（beasts/king_feel.gd）
 	KingFeel.attach(world, b)
+	# 样板狩猎第二步：整套招、露破绽、七成血负伤换地方（beasts/king_arts.gd）
+	KingArts.attach(world, b)
 	target_id = id
 	target_species = species
 	target_age = age
@@ -312,7 +317,7 @@ func _host_target(dt: float) -> void:
 		Net.send(0, "hfp", m)
 		_on_fp(m)
 	# 猎场：重伤了一路滴血（红色的血迹，老远就看得到），追着血迹找巢穴
-	if world.island.hunting and b.hp < b.max_hp * 0.35:
+	if world.island.hunting and (b.hp < b.max_hp * 0.35 or (b.arts and b.arts.relocating())):
 		if _blood_last == Vector3.INF or Vector2(fp.x - _blood_last.x, fp.z - _blood_last.z).length() > 6.0:
 			_blood_last = fp
 			var bm := [Vector3(fp.x, world.island.height_at(fp.x, fp.z), fp.z)]
@@ -1056,6 +1061,9 @@ func _update_ui(tb: Beast) -> void:
 			if f.down_t > 0.0:
 				_t_mood.text = "倒地！%d 秒" % ceili(f.down_t)
 				_t_mood.modulate = Color(1.0, 0.85, 0.35)
+			elif f.open_t > 0.0:
+				_t_mood.text = "破绽！%d 秒" % ceili(f.open_t)
+				_t_mood.modulate = Color(1.0, 0.85, 0.35)
 			elif f.mood == "rage":
 				_t_mood.text = "暴怒 %d 秒" % ceili(f.mood_t)
 				_t_mood.modulate = Color(1.0, 0.35, 0.2)
@@ -1065,6 +1073,9 @@ func _update_ui(tb: Beast) -> void:
 			else:
 				_t_mood.text = "怒 %d%%" % int(f.rage)
 				_t_mood.modulate = Color(1.0, 0.6, 0.45, 0.8)
+			# 第几回合：老窝 → 负伤换了地方 → 巢穴决战
+			if f.act >= 2:
+				_t_mood.text = ("困兽 · " if f.act >= 3 else "负伤 · ") + _t_mood.text
 		_t_arrow.visible = located()
 		if _t_arrow.visible:
 			_t_arrow.set_meta("a", world.hud._rel_angle(tb.global_position))
