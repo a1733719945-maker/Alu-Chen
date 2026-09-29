@@ -267,6 +267,15 @@ func allows(move: String) -> bool:
 	return true
 
 
+## 只在第一次出现时提示一句（越短越好；用户说游戏描述得太详细，能看出来的不写字）
+static func tip(p_world: Node, key: String, text: String) -> void:
+	var k := "tip_" + key
+	if int(Profile.stats.get(k, 0)) > 0:
+		return
+	Profile.stats[k] = 1
+	p_world.hud.toast(text, Color(1.0, 0.85, 0.45), 3.5)
+
+
 ## 房主（KingArts）：露破绽 t 秒
 func open(t: float) -> void:
 	open_t = t
@@ -334,7 +343,6 @@ func _apply_state(d: Array) -> void:
 
 func _on_event(kind: String, arg: String) -> void:
 	var hud: Hud = world.hud
-	var nm := b.display_name()
 	var near: bool = world.player.global_position.distance_to(b.global_position) < 120.0
 	match kind:
 		"break":
@@ -342,21 +350,17 @@ func _on_event(kind: String, arg: String) -> void:
 			parts[arg]["hp"] = 0.0
 			_break_visual(arg)
 			var what := "%s之%s" % [str(Data.BEASTS[b.species]["name"]), str(PART_NAME[arg])]
-			hud._show_banner("部位破坏", "%s断了！%s" % [str(PART_NAME[arg]), _break_effect(arg)], UiKit.GOLD, 2.6)
+			# 不弹横幅、不解释断了有什么用（用户：描述得太详细）——看得见那截飞出去就够了
 			if near:
 				Profile.add_part(b.species, arg)
-				hud.feed("获得部位材料：%s" % what, UiKit.GOLD)
+				hud.feed("+ %s" % what, UiKit.GOLD)
 			Sfx.play_at("snap", b.global_position, 8.0, 0.05, 0.7)
 			Sfx.play_at("slam", b.global_position, 4.0, 0.05, 0.8)
 			Sfx.play_at("boss_roar", b.global_position, 2.0, 0.1, 1.4)
 		"down":
-			hud._show_banner("倒地！", "打头 ×1.6 · 全力输出", Color(1.0, 0.85, 0.35), 2.2)
 			Sfx.play_at("thud", b.global_position, 8.0, 0.05, 0.6)
 			world.fx._shake(b.global_position, 0.5, 25.0)
 		"rage":
-			hud.feed("%s 暴怒了！更快、更狠——撑过去它就会累" % nm, Color(1.0, 0.35, 0.2))
-			if near:
-				hud.toast("%s 暴怒！" % nm, Color(1.0, 0.35, 0.2), 2.5)
 			world.fx.aura_burst(b.global_position, Color(1.0, 0.25, 0.1), 5.0)
 			Sfx.play_at("boss_roar", b.global_position, 6.0, 0.05, 0.9)
 		"pose":
@@ -368,9 +372,8 @@ func _on_event(kind: String, arg: String) -> void:
 			open_t = float(arg)
 			_show_open(open_t)
 		"tired":
-			hud.feed("%s 累了——变慢、不放大招，捆住它更久（三成五血以下能活捉）" % nm, Color(0.6, 0.85, 1.0))
 			if near:
-				hud.toast("%s 累了：捆住它的好时机" % nm, Color(0.6, 0.85, 1.0), 3.0)
+				tip(world, "tired", "它累了：捆住它")
 
 
 ## 露破绽：不写字（用户："头上写「破绽」两个字，不是很搞笑么"）——踉跄的动作（_process）+ 头上弱点一团金光 + 一声闷响、喘气；

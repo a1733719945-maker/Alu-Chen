@@ -289,7 +289,7 @@ func host_spawn_trip_target() -> void:
 	_clue_last = pos
 	_add_clue(pos, -back)
 	_sync()
-	var m := ["猎物 %s 在「%s」一带出没——去那边找地上的爪痕（走近按 F 看）" % [b.display_name(), region], 0]
+	var m := ["它在「%s」一带" % region, 0]
 	Net.send(0, "hev", m)
 	_on_ev(m)
 
@@ -331,7 +331,7 @@ func _host_target(dt: float) -> void:
 		_sync()
 		if w and not _weak_told:
 			_weak_told = true
-			var wm := ["%s 虚弱了！用引魂索（G）捆住它就能活捉——活捉报酬 ×1.5" % b.display_name(), 3]
+			var wm := ["weak|虚弱了：用引魂索捆住它", 4]
 			Net.send(0, "hev", wm)
 			_on_ev(wm)
 	# 活捉：捆住以后别打死它，捆满 2.5 秒就捉住了
@@ -343,7 +343,7 @@ func _host_target(dt: float) -> void:
 				return
 		else:
 			_cap_id = 0
-			var cm := ["%s 挣脱了！" % b.display_name(), 1]
+			var cm := ["它挣脱了", 1]
 			Net.send(0, "hev", cm)
 			_on_ev(cm)
 	_roar_t -= dt
@@ -365,9 +365,6 @@ func host_capture_start(b: Beast) -> void:
 		return
 	_cap_id = b.id
 	_cap_t = 2.5
-	var m := ["正在活捉 %s……别打死它！" % b.display_name(), 3]
-	Net.send(0, "hev", m)
-	_on_ev(m)
 
 
 func _host_captured(b: Beast) -> void:
@@ -393,8 +390,8 @@ func _on_captured(d: Array) -> void:
 	Sfx.play_at("absorb", pos, 0.0)
 	if world.player.global_position.distance_to(pos) < 120.0:
 		Profile.add_material(sp, 2)
-		world.hud.feed("活捉！获得 %s王魄 ×2（暗器铺 → 附魔）" % Data.BEASTS[sp]["name"], UiKit.GOLD)
-	world.hud._show_banner("活捉成功", "灵环掉在它身边 · 王魄 ×2", Color(0.45, 0.8, 1.0), 3.0)
+		world.hud.feed("+ %s王魄 ×2" % Data.BEASTS[sp]["name"], UiKit.GOLD)
+	world.hud._show_banner("活捉", "", Color(0.45, 0.8, 1.0), 3.0)
 
 
 ## 血迹：红色的光点，60 秒后淡掉，80 米内看得到
@@ -439,7 +436,7 @@ func host_on_kill(b: Beast) -> void:
 	if b.id == target_id:
 		target_id = 0
 		_cap_id = 0
-		var m := ["灵环掉在地上了——走过去按 F 吸收", 2]
+		var m := ["", 2]
 		Net.send(0, "hev", m)
 		_on_ev(m)
 		_sync()
@@ -649,6 +646,11 @@ func _on_ev(d: Array) -> void:
 		3:
 			world.hud.toast(t, Color(0.45, 0.8, 1.0), 4.5)
 			Sfx.play("rare", -4.0, 0.0, 1.1)
+		4:
+			# 只提示一次："键|话"
+			var kv := t.split("|")
+			KingFeel.tip(world, kv[0], kv[1] if kv.size() > 1 else kv[0])
+			Sfx.play("rare", -4.0, 0.0, 1.1)
 		_:
 			world.hud.feed(t, Color(0.85, 0.85, 0.9))
 
@@ -666,10 +668,9 @@ func _on_channel_start() -> void:
 		p.channeling = true
 		p.busy_t = 0.0
 		world.fx.absorb(p, col)
-		var sub := "站着不能走，能开枪 · " + ("灵兽会一波波冲你来，队友护法" if _team_n() > 1 else "会来一小波灵兽")
-		world.hud._show_banner("吸收%s灵环" % Data.age_name(age), sub, col, 3.0)
+		world.hud._show_banner("吸收%s灵环" % Data.age_name(age), "", col, 3.0)
 	else:
-		world.hud.toast("%s 开始吸收%s灵环——去护法，别让灵兽碰到他" % [world.peer_name(int(channel["peer"])), Data.age_name(age)], col, 4.0)
+		world.hud.toast("%s 在吸收灵环" % world.peer_name(int(channel["peer"])), col, 4.0)
 	Sfx.play_at("absorb", pos, 0.0)
 
 
@@ -687,12 +688,12 @@ func _on_channel_end(msg: Array) -> void:
 		if ok:
 			world._reveal_skill(age, sp)
 		elif not world.player.dead:
-			world.hud.toast("吸收被打断了——灵环掉回了原地，回去重新吸收", Color(1.0, 0.6, 0.45), 5.0)
+			world.hud.toast("吸收被打断", Color(1.0, 0.6, 0.45), 3.0)
 	elif ok:
 		world.fx._pillar(pos, col, 1.6, 40.0, 0.8)
 		world.hud.feed("%s 吸收了%s灵环！" % [world.peer_name(peer), Data.age_name(age)], col)
 	else:
-		world.hud.feed("%s 的吸收被打断了，灵环掉回了地上" % world.peer_name(peer), Color(1.0, 0.6, 0.45))
+		world.hud.feed("%s 的吸收被打断" % world.peer_name(peer), Color(1.0, 0.6, 0.45))
 
 
 ## 吸收的人脚下两圈转着的灵环、一盏灯；别人看还有一道光柱（自己看会糊一脸，不加）
@@ -855,14 +856,14 @@ func read_clue(cid: int) -> void:
 	_track += 1
 	if _lock_t > 0.0:
 		_lock_t += 20.0
-		world.hud.toast("痕迹：%s · 锁定 +20 秒" % _last_read, PREY_COL, 3.0)
+		world.hud.toast(_last_read, PREY_COL, 3.0)
 	elif _track >= 3:
 		_track = 0
 		_lock_t = 45.0
-		world.hud._show_banner("锁定猎物", "罗盘上标出了它的位置（45 秒）", PREY_COL, 2.5)
+		world.hud._show_banner("锁定猎物", "", PREY_COL, 2.5)
 		Sfx.play("rare", -2.0, 0.0, 0.9)
 	else:
-		world.hud.toast("痕迹：%s · 再看 %d 处就能锁定它" % [_last_read, 3 - _track], PREY_COL, 3.5)
+		world.hud.toast(_last_read, PREY_COL, 3.5)
 
 
 ## 寻魂蝶：看过的爪痕里飞出几只发光的蝴蝶，飞向它接下来去的地方（下一处更新的爪痕；最新的一处就飞向猎物），飞 40 米左右
@@ -1058,24 +1059,23 @@ func _update_ui(tb: Beast) -> void:
 					bits.append("%s %s" % [str(KingFeel.PART_NAME[p]), "■".repeat(n) + "□".repeat(4 - n)])
 			_t_parts.text = "   ".join(bits)
 			_t_stun.value = 1.0 if f.down_t > 0.0 else f.stun / maxf(f.stun_max, 1.0)
+			# 只写一个字眼，不写秒数、倍率、怒气百分比（用户：描述得太详细）；部位的血格、晕值条也不画了，看模型断没断
+			_t_parts.visible = false
+			_t_stun.visible = false
 			if f.down_t > 0.0:
-				_t_mood.text = "倒地！%d 秒" % ceili(f.down_t)
+				_t_mood.text = "倒地"
 				_t_mood.modulate = Color(1.0, 0.85, 0.35)
 			elif f.open_t > 0.0:
-				_t_mood.text = "踉跄 · 打头 ×2"
+				_t_mood.text = "踉跄"
 				_t_mood.modulate = Color(1.0, 0.85, 0.35)
 			elif f.mood == "rage":
-				_t_mood.text = "暴怒 %d 秒" % ceili(f.mood_t)
+				_t_mood.text = "暴怒"
 				_t_mood.modulate = Color(1.0, 0.35, 0.2)
 			elif f.mood == "tired":
-				_t_mood.text = "疲劳 %d 秒 · 捆它" % ceili(f.mood_t)
+				_t_mood.text = "疲劳"
 				_t_mood.modulate = Color(0.6, 0.85, 1.0)
 			else:
-				_t_mood.text = "怒 %d%%" % int(f.rage)
-				_t_mood.modulate = Color(1.0, 0.6, 0.45, 0.8)
-			# 第几回合：老窝 → 负伤换了地方 → 巢穴决战
-			if f.act >= 2:
-				_t_mood.text = ("困兽 · " if f.act >= 3 else "负伤 · ") + _t_mood.text
+				_t_mood.text = ""
 		_t_arrow.visible = located()
 		if _t_arrow.visible:
 			_t_arrow.set_meta("a", world.hud._rel_angle(tb.global_position))

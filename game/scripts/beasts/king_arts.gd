@@ -493,9 +493,6 @@ func start_relocate() -> void:
 	# 先吼一声把人震开，再跑
 	_start("roar", b.global_position, 0, false)
 	cur.clear()
-	var m := ["%s 负伤逃走了！跟着地上的血迹和爪痕追过去——它在别处等着你" % b.display_name(), 3]
-	Net.send(0, "hev", m)
-	world.hunt._on_ev(m)
 
 
 ## Beast._elite 调：返回 true 表示还在跑

@@ -32,10 +32,7 @@ func extend(t: float) -> void:
 
 
 static func tip_once(world: Node) -> void:
-	if int(Profile.stats.get("tip_open", 0)) > 0:
-		return
-	Profile.stats["tip_open"] = 1
-	world.hud.toast("它踉跄了！头上发金光的时候打头：伤害翻倍", Color(1.0, 0.85, 0.35), 4.0)
+	KingFeel.tip(world, "open", "打它发光的头")
 
 
 func _build() -> void:

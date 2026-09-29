@@ -69,8 +69,8 @@ func _ready() -> void:
 	_build_ui()
 	if Net.is_host():
 		_host_setup_packs()
-	var extra := "地图里有宝藏和成群的灵兽" if world.island.guard_spots.is_empty() else "地图里有宝藏、成群的灵兽，还有 %d 只灵兽王守着大宝箱（地图上的「守」）" % world.island.guard_spots.size()
-	world.hud._show_banner("猎场 · 猎杀%s" % species_name(), "找它的爪痕、脚印，听它的吼声 · 打到它逃回巢穴、虚弱了能用引魂索活捉\n限时 %d 分钟 · 全队倒下 %d 次就失败 · %s" % [int(LIMIT / 60.0), MAX_FAINTS, extra], Color(1.0, 0.62, 0.25), 7.0)
+	# 以前这里写了三行规则（爪痕、脚印、活捉、限时、倒下几次、宝藏、守宝王），用户说游戏描述得太详细：只留标题和限时
+	world.hud._show_banner("猎杀%s" % species_name(), "限时 %d 分钟" % int(LIMIT / 60.0), Color(1.0, 0.62, 0.25), 4.0)
 
 
 func species_name() -> String:
