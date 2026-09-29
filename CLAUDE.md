@@ -577,6 +577,7 @@ xvfb-run -a -s "-screen 0 1280x720x24" godot --path . --rendering-driver vulkan 
 - autotest 阶段：`phys`、`hunt:<栖息地,...>`、`shop`、`recoil`、`sniper`、`ring`、`boss`、`boat`、`tour`、`hudshot`、`uishots`（全部界面截图）、`kings`、`aggro`、`huntrun`、`huntfail`、`dungeon`、`dgshot`、`guns2`、`gunshots`、`pills`、`bossarts`、`mateshot`、`cineshot`、`bot`、`done`；模式 `solo / shots / host / client / zoo / measure / vm`（host / client 加 `--dg=1` 测猎灵和秘境联机）。
 - `huntrun` 会改等级和灵环，放在 `--plan` 最后面，别和 `ring` 这种要新存档的阶段连着跑。
 - **CI 全流程最后几个阶段是在第五章跑的**（猎物是铁钳蟹，有硬壳只吃七成五伤害）。新加的自动测试阶段本地也要 `--chapter=5` 跑一次。
+  **一次推送里最后一个提交带 `[skip ci]`，整次推送都不打包**（GitHub 只看最新那个提交）：代码提交和登记表提交一起推时，登记表的先提交、代码的放最后；漏了就用 workflow_dispatch 手动触发（`mcp__github__actions_run_trigger` run_workflow build.yml）。
   **推送后看 CI 绿没绿**：红了不会发新版本，用户下载到的还是旧包（2026-09-29 小号的 `feel` 测试在第五章挂了，连续 6 次推送都没打包，国风 CG 做完了用户却看不到）
 - 改了中文文字（新字）后要重跑 `tools/subset_fonts.py <原始 otf 目录>`，不然新字会显示成方框。原始字体在 notofonts/noto-cjk 的 raw.githubusercontent.com 上。
 
