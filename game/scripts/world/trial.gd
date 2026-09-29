@@ -1198,6 +1198,8 @@ func _burst_now() -> void:
 	for id in horde.in_sphere(p, BURST_R):
 		list.append([id, 1e6, Net.my_id])
 	_send_hits(list)
+	# 灵爆自己清掉的不算充能：以前一次清掉 60 只以上，马上又满了，能无限连放（CI 的割草测试也因此偶尔挂）
+	burst = 0
 	Net.send(0, "trburst", [p])
 	_on_burst([p])
 
