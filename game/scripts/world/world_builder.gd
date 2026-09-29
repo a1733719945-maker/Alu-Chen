@@ -24,9 +24,12 @@ const MODELS := "res://assets/models/env/"
 # 每张地图的天空和光。sky：天空 HDR；u / elev：HDR 里太阳（月亮）的位置（tools 里量出来的）；
 # heading：把太阳转到哪个方向（999 = 不转）；light_elev：灯光的高度角（太阳贴地平线时抬高一点）
 const ENV := {
-	"island": {"sky": "sky_day", "u": 0.595, "elev": 48.0, "heading": 999.0, "light_elev": 48.0, "sun": Color(1.0, 0.95, 0.86), "energy": 1.25,
-		"ambient": 0.7, "exposure": 0.95, "white": 6.0, "glow": 0.5, "bloom": 0.03, "fog": Color(0.68, 0.76, 0.86), "fog_d": 0.00095,
-		"scatter": 0.12, "aerial": 0.45, "fog_sky": 0.1, "sat": 1.08, "contrast": 1.04},
+	# 镜湖（2026-09-29 场景质感样板）：太阳压低成上午的斜阳（影子长、立体感强）、偏暖；海面和低处一层薄雾（fog_h 以下变浓），
+	# 远处的峰林和远山一层比一层淡；高画质开一点体积雾，阳光从树冠里透下来
+	"island": {"sky": "sky_day", "u": 0.595, "elev": 48.0, "heading": 999.0, "light_elev": 30.0, "sun": Color(1.0, 0.9, 0.76), "energy": 1.4,
+		"ambient": 0.62, "exposure": 0.95, "white": 6.0, "glow": 0.5, "bloom": 0.04, "fog": Color(0.74, 0.8, 0.86), "fog_d": 0.0016,
+		"scatter": 0.2, "aerial": 0.55, "fog_sky": 0.12, "sat": 1.06, "contrast": 1.08, "fog_h": 3.5, "fog_hd": 0.06,
+		"vol": 0.005, "vol_albedo": Color(0.92, 0.9, 0.86), "vol_e": 1.3},
 	# 落霞：用户反馈"整张图巨亮、秘境里太阳亮得什么都看不到"——太阳贴着地平线，体积雾吃了 2.2 倍的阳光、泛光和曝光又偏高，
 	# 朝西一看整屏发白。曝光、泛光、雾里的阳光、天空亮度都压下来
 	"forest": {"sky": "sky_dusk", "u": 0.613, "elev": 4.7, "heading": -70.0, "light_elev": 17.0, "sun": Color(1.0, 0.74, 0.5), "energy": 1.25,
@@ -49,6 +52,7 @@ var root: Node3D
 var chapter := 1
 var forest := false                    # 森林类地图（四周环山）
 var biome := "island"                  # 地图 id，决定天空、地面、树
+var _bamboo_noise: FastNoiseLite       # 镜湖的竹林长在哪（噪声高的地方成片）
 var quality := 2
 var rng := RandomNumberGenerator.new()
 var colliders: StaticBody3D
@@ -101,6 +105,8 @@ func build() -> void:
 	_terrain()
 	_water()
 	_mountains()
+	if biome == "island" and not island.hunting:
+		_karst_peaks()
 	if forest:
 		_grove()
 	_trees()
@@ -111,6 +117,7 @@ func build() -> void:
 			_burrows()
 			_moon_flowers("flowers")
 			_reeds()
+			_lotus()
 		"forest":
 			_dens_for("den", 1.0, false)
 			_mud()
@@ -292,6 +299,10 @@ func _environment() -> void:
 	env.fog_sky_affect = e["fog_sky"]
 	env.adjustment_saturation = e["sat"]
 	env.adjustment_contrast = e["contrast"]
+	if e.has("fog_h"):
+		# 高度雾：fog_h 以下越低越浓（海面、低洼处一层薄雾）
+		env.fog_height = float(e["fog_h"])
+		env.fog_height_density = float(e["fog_hd"])
 	if e.has("vol"):
 		sun.light_volumetric_fog_energy = float(e.get("vol_e", 2.2))
 		env.volumetric_fog_density = e["vol"]
@@ -522,7 +533,7 @@ func _ground_material() -> ShaderMaterial:
 			sm.set_shader_parameter("wet_level", 0.9)
 			return sm
 	return _terrain_material(["grass", "dirt", "rock", "sand"],
-		[Color(0.95, 1.0, 0.9), Color(0.95, 0.92, 0.85), Color(1.05, 1.03, 1.0), Color(1.0, 0.97, 0.92)],
+		[Color(0.82, 0.88, 0.76), Color(0.9, 0.86, 0.8), Color(1.0, 1.0, 0.98), Color(1.0, 0.97, 0.92)],
 		Vector4(0.3, 0.24, 0.16, 0.22), Vector4(0.95, 0.92, 0.8, 0.9))
 
 
@@ -656,6 +667,76 @@ func _water() -> void:
 
 
 ## 湖对岸一圈连绵的山（山脊噪声），远处被雾淡化
+## 镜湖的峰林：岛和远山之间的海面上立起十几座桂林那样的石峰（竖直的石柱、顶上一层绿），
+## 一座比一座远、被雾吃掉一层——国风山水的层次感靠这个
+func _karst_peaks() -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = island.map_seed + 88
+	var mat := _surface("rock", Color(0.78, 0.8, 0.78), 0.08, 0.95).duplicate() as StandardMaterial3D
+	mat.vertex_color_use_as_albedo = true
+	var shapes: Array = []
+	for i in 5:
+		shapes.append(_karst_mesh(r))
+	var dock_dir := Vector2(island.dock_end.x, island.dock_end.z).normalized()
+	var n := 16
+	for i in n:
+		var a := TAU * i / n + r.randf_range(-0.15, 0.15)
+		var d := r.randf_range(190.0, 320.0)
+		var p := Vector3(cos(a) * d, -10.0, sin(a) * d)
+		# 码头 / 船出海的那一边留出来，别挡住航线
+		if Vector2(p.x, p.z).normalized().dot(dock_dir) > 0.93:
+			continue
+		var s := r.randf_range(0.7, 1.35) * lerpf(0.8, 1.3, (d - 190.0) / 130.0)
+		var mi := MeshInstance3D.new()
+		mi.mesh = shapes[r.randi() % shapes.size()]
+		mi.material_override = mat
+		mi.transform = Transform3D(Basis(Vector3.UP, r.randf() * TAU).scaled(Vector3(s, s * r.randf_range(0.85, 1.25), s)), p)
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		root.add_child(mi)
+
+
+## 一座石峰：竖着的一圈圈截面，半径按高度收、按角度和高度加噪声（竖向的凹槽和鼓包），顶上收圆；
+## 顶点颜色：底下湿、发暗，中间灰白，顶上一层绿（树和苔）
+func _karst_mesh(r: RandomNumberGenerator) -> ArrayMesh:
+	var nz := FastNoiseLite.new()
+	nz.seed = r.randi()
+	nz.frequency = 0.9
+	var H := r.randf_range(70.0, 140.0)
+	var R := r.randf_range(16.0, 30.0)
+	var lean := Vector3(r.randf_range(-0.12, 0.12), 0, r.randf_range(-0.12, 0.12)) * H
+	var rings := 22
+	var segs := 24
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for i in rings + 1:
+		var t := i / float(rings)
+		var prof := (1.0 - pow(t, 2.2) * 0.55) * (1.0 + 0.25 * exp(-t * 6.0))
+		if t > 0.9:
+			prof *= sqrt(maxf(1.0 - (t - 0.9) / 0.1, 0.0)) * 0.9 + 0.1
+		var c := lean * t * t + Vector3(0, H * t, 0)
+		for k in segs + 1:
+			var a := TAU * k / segs
+			var bump := 1.0 + 0.22 * nz.get_noise_2d(cos(a) * 2.0 + t * 0.5, sin(a) * 2.0 + t * 3.0) + 0.1 * nz.get_noise_2d(a * 3.0, t * 9.0)
+			var rr := R * prof * bump
+			var green := smoothstep(0.78, 0.95, t)
+			var wet := 1.0 - smoothstep(0.0, 0.12, t)
+			st.set_color(Color(0.82, 0.83, 0.8).lerp(Color(0.32, 0.45, 0.25), green).darkened(wet * 0.35))
+			st.set_uv(Vector2(k / float(segs) * 4.0, t * H * 0.1))
+			st.add_vertex(c + Vector3(cos(a) * rr, 0, sin(a) * rr))
+	for i in rings:
+		for k in segs:
+			var a0 := i * (segs + 1) + k
+			var b0 := a0 + segs + 1
+			st.add_index(a0)
+			st.add_index(a0 + 1)
+			st.add_index(b0)
+			st.add_index(a0 + 1)
+			st.add_index(b0 + 1)
+			st.add_index(b0)
+	st.generate_normals()
+	return st.commit()
+
+
 func _mountains() -> void:
 	var nz := FastNoiseLite.new()
 	nz.seed = island.map_seed + 77
@@ -739,10 +820,10 @@ func _mountains() -> void:
 			[Color(0.75, 0.5, 0.32), Color(0.55, 0.45, 0.3), Color(0.8, 0.78, 0.75), Color(0.6, 0.55, 0.45)],
 			Vector4(0.05, 0.05, 0.03, 0.05), Vector4(0.95, 0.95, 0.85, 0.9))
 	else:
+		# 镜湖的远山：青灰、没有雪（以前是白岩壁 + 雪顶，像纸板雪山），被雾吃成一层层淡蓝
 		sm = _terrain_material(["grass", "moss", "rock", "sand"],
-			[Color(0.42, 0.55, 0.36), Color(0.5, 0.6, 0.4), Color(0.95, 0.95, 0.95), Color(0.9, 0.88, 0.8)],
+			[Color(0.26, 0.36, 0.28), Color(0.3, 0.4, 0.3), Color(0.46, 0.5, 0.5), Color(0.55, 0.55, 0.5)],
 			Vector4(0.05, 0.05, 0.03, 0.05), Vector4(0.95, 0.95, 0.85, 0.9))
-		sm.set_shader_parameter("snow_height", 150.0)
 	sm.set_shader_parameter("macro_amount", 0.35)
 	sm.set_shader_parameter("wet_level", -2.0)
 	var mi := MeshInstance3D.new()
@@ -1103,6 +1184,188 @@ func _palm_tree(r: RandomNumberGenerator, H: float, bark: Material, fronds: Mate
 	return {"mesh": mesh, "radius": 0.26}
 
 
+# ------------------------------------------------------------------ 中式树种（2026-09-29 用户："地面、树这些质感不行"）
+# 黄山松、竹丛、垂柳用代码长；红枫、桃花用阔叶树的骨架换叶子。叶片贴图 tools/make_cn_foliage.py（真实树叶照片拼的）
+
+## 黄山松：S 形斜着长的树干，几根几乎水平伸出去、末端上翘的枝，枝头是一层层平铺的松针团（像盆景）
+func _hs_pine(r: RandomNumberGenerator, H: float, bark: Material, pad: Material, needles: Material) -> Dictionary:
+	var sb := SurfaceTool.new()
+	sb.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var sp := SurfaceTool.new()
+	sp.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var sn := SurfaceTool.new()
+	sn.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var cb := [0]
+	var cp := [0]
+	var cn := [0]
+	var r0 := H * 0.035 + 0.15
+	var lean := Vector3(r.randf_range(-1, 1), 0, r.randf_range(-1, 1)).normalized()
+	var side := lean.cross(Vector3.UP).normalized()
+	var pts := []
+	var rad := []
+	for i in 9:
+		var t := i / 8.0
+		var off := lean * (sin(t * 2.2) * H * 0.12 + t * H * 0.1) + side * sin(t * 4.0 + 1.0) * H * 0.05
+		pts.append(Vector3(0, t * H * 0.9 - 0.3, 0) + off)
+		rad.append(r0 * (1.0 - t * 0.72) * (1.0 + 0.7 * pow(1.0 - t, 10.0)))
+	_tube(sb, cb, pts, rad, 10, 0.0, 0.15)
+	var pads := []
+	var nb := r.randi_range(5, 8)
+	for b in nb:
+		var t0 := r.randf_range(0.35, 0.95)
+		var s := _along(pts, t0)
+		var az := TAU * b / nb + r.randf_range(-0.5, 0.5)
+		var out := Vector3(cos(az), 0, sin(az))
+		var L := H * r.randf_range(0.2, 0.38) * (1.25 - t0 * 0.5)
+		var bp := [s, s + out * L * 0.4 + Vector3(0, -L * 0.06, 0), s + out * L * 0.8 + Vector3(0, L * 0.02, 0), s + out * L + Vector3(0, L * 0.14, 0)]
+		var br := r0 * 0.45 * (1.0 - t0 * 0.4)
+		_tube(sb, cb, bp, [br, br * 0.7, br * 0.45, br * 0.25], 6, 0.1, 0.5)
+		pads.append([bp[3] + Vector3(0, 0.1, 0), L * r.randf_range(0.42, 0.55)])
+		if r.randf() < 0.6:
+			pads.append([(bp[2] as Vector3) + Vector3(0, L * 0.08, 0), L * 0.32])
+	pads.append([(pts[8] as Vector3) + Vector3(0, 0.25, 0), H * 0.2])
+	for pd in pads:
+		_pine_pad(sp, cp, sn, cn, r, pd[0], pd[1])
+	var mesh := ArrayMesh.new()
+	sb.generate_tangents()
+	sb.commit(mesh)
+	sp.commit(mesh)
+	sn.commit(mesh)
+	mesh.surface_set_material(0, bark)
+	mesh.surface_set_material(1, pad)
+	mesh.surface_set_material(2, needles)
+	return {"mesh": mesh, "radius": r0}
+
+
+## 一团平铺的松针：两三层水平的圆盘（上小下大）+ 边上一圈往外斜的松针贴片（有厚度、轮廓毛茸茸）
+func _pine_pad(sp: SurfaceTool, cp: Array, sn: SurfaceTool, cn: Array, r: RandomNumberGenerator, c: Vector3, R: float) -> void:
+	for layer in 3:
+		var rr := R * (0.7 + layer * 0.22)
+		var y := c.y - layer * R * 0.16
+		var az := r.randf() * TAU
+		var dir := Vector3(cos(az), r.randf_range(-0.06, 0.06), sin(az)).normalized()
+		var right := dir.cross(Vector3.UP).normalized()
+		var shade := lerpf(1.05, 0.72, layer / 2.0) * r.randf_range(0.92, 1.05)
+		var ctr := Vector3(c.x, y, c.z)
+		_card(sp, cp, ctr - dir * rr, dir, right, rr * 2.0, rr * 2.0, ctr - Vector3(0, R * 3.0, 0), 0.5, Color(shade, shade, shade))
+	var n := r.randi_range(5, 7)
+	for k in n:
+		var a := TAU * k / n + r.randf_range(-0.3, 0.3)
+		var out := Vector3(cos(a), 0, sin(a))
+		var up := (out + Vector3(0, 0.35, 0)).normalized()
+		var base := c + out * R * 0.35 - Vector3(0, R * 0.25, 0)
+		var sh := r.randf_range(0.75, 0.95)
+		_card(sn, cn, base, up, out.cross(Vector3.UP).normalized(), R * 1.1, R * 0.85, c - Vector3(0, R, 0), 0.6, Color(sh, sh, sh))
+
+
+## 竹丛：十来根细长的竹竿从一小片地里冒出来、往外斜，上半截每隔一段挂一两簇竹叶
+func _bamboo(r: RandomNumberGenerator, H: float, culm: Material, leaves: Material) -> Dictionary:
+	var sb := SurfaceTool.new()
+	sb.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var sl := SurfaceTool.new()
+	sl.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var cb := [0]
+	var cl := [0]
+	var n := r.randi_range(9, 15)
+	var k := H / 12.0
+	for i in n:
+		var a := r.randf() * TAU
+		var d := sqrt(r.randf()) * 1.3
+		var out := Vector3(cos(a), 0, sin(a))
+		var base := out * d - Vector3(0, 0.2, 0)
+		var h := H * r.randf_range(0.7, 1.05)
+		var bend := (0.08 + d * 0.1) * h
+		var rad := r.randf_range(0.045, 0.075) * k
+		var pts := []
+		var radii := []
+		for j in 7:
+			var t := j / 6.0
+			pts.append(base + Vector3(0, h * t, 0) + out * bend * t * t)
+			radii.append(rad * (1.0 - 0.35 * t))
+		_tube(sb, cb, pts, radii, 6, 0.0, 0.4)
+		var t2 := 0.42 + r.randf() * 0.05
+		while t2 < 1.0:
+			var p := _along(pts, t2)
+			for m in (1 if t2 < 0.7 else 2):
+				var az := r.randf() * TAU
+				var od := (Vector3(cos(az), r.randf_range(-0.25, 0.35), sin(az)) + out * 0.5).normalized()
+				var right := od.cross(Vector3.UP).normalized().rotated(od, r.randf_range(-0.5, 0.5))
+				var sz := r.randf_range(1.0, 1.6) * k
+				var sh := lerpf(0.75, 1.05, t2) * r.randf_range(0.9, 1.05)
+				_card(sl, cl, p - od * 0.1, od, right, sz, sz, p - Vector3(0, 1.5, 0), 0.4 + t2 * 0.6, Color(sh, sh, sh))
+			t2 += r.randf_range(0.05, 0.09)
+	var mesh := ArrayMesh.new()
+	sb.generate_tangents()
+	sb.commit(mesh)
+	sl.commit(mesh)
+	mesh.surface_set_material(0, culm)
+	mesh.surface_set_material(1, leaves)
+	return {"mesh": mesh, "radius": 0.8}
+
+
+## 垂柳：粗短的树干，几根拱起来的主枝，枝上垂下一条条长到快碰地的柳条
+func _willow(r: RandomNumberGenerator, H: float, bark: Material, strands: Material, crown: Material) -> Dictionary:
+	var sb := SurfaceTool.new()
+	sb.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var ss := SurfaceTool.new()
+	ss.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var sc := SurfaceTool.new()
+	sc.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var cb := [0]
+	var cs := [0]
+	var cc := [0]
+	var r0 := H * 0.05 + 0.2
+	var lean := Vector3(r.randf_range(-0.6, 0.6), 0, r.randf_range(-0.6, 0.6))
+	var pts := []
+	var rad := []
+	for i in 6:
+		var t := i / 5.0
+		pts.append(Vector3(0, t * H * 0.45 - 0.3, 0) + lean * t)
+		rad.append(r0 * (1.0 - t * 0.4) * (1.0 + 0.6 * pow(1.0 - t, 8.0)))
+	_tube(sb, cb, pts, rad, 10, 0.0, 0.2)
+	var top: Vector3 = pts[5]
+	var ctr := top + Vector3(0, H * 0.2, 0)
+	var nb := r.randi_range(6, 8)
+	for b in nb:
+		var az := TAU * b / nb + r.randf_range(-0.35, 0.35)
+		var dir := Vector3(cos(az), 0, sin(az))
+		var L := H * r.randf_range(0.35, 0.5)
+		var s := _along(pts, r.randf_range(0.75, 1.0))
+		var bp := [s, s + dir * L * 0.35 + Vector3(0, L * 0.45, 0), s + dir * L * 0.75 + Vector3(0, L * 0.5, 0), s + dir * L + Vector3(0, L * 0.3, 0)]
+		var br := r0 * 0.4
+		_tube(sb, cb, bp, [br, br * 0.7, br * 0.45, br * 0.2], 6, 0.2, 0.7)
+		_cluster(sc, cc, r, bp[2], ctr, H * 0.4, H * 0.14)
+		for j in 9:
+			var q := _along(bp, 0.3 + 0.7 * j / 8.0) + Vector3(r.randf_range(-0.3, 0.3), 0, r.randf_range(-0.3, 0.3))
+			var hang := minf(q.y - 0.4, r.randf_range(3.0, 6.0) * H / 10.0)
+			if hang < 1.0:
+				continue
+			var down := (Vector3.DOWN + dir * 0.08).normalized()
+			var right := Vector3(cos(r.randf() * TAU), 0, sin(r.randf() * TAU)).normalized()
+			var sh := r.randf_range(0.8, 1.05)
+			_card(ss, cs, q, down, right, hang * 0.25, hang, ctr, 0.9, Color(sh, sh, sh), 0.0, 1.0)
+	var mesh := ArrayMesh.new()
+	sb.generate_tangents()
+	sb.commit(mesh)
+	ss.commit(mesh)
+	sc.commit(mesh)
+	mesh.surface_set_material(0, bark)
+	mesh.surface_set_material(1, strands)
+	mesh.surface_set_material(2, crown)
+	return {"mesh": mesh, "radius": r0}
+
+
+## 竹竿材质：青绿、竖纹、一节一节（贴图一张两节，竖向重复 2.5 次 → 一节约 40 厘米）
+func _culm() -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.albedo_texture = _tex("bamboo_culm_albedo")
+	m.uv1_scale = Vector3(1.0, 2.5, 1.0)
+	m.roughness = 0.45
+	m.metallic_specular = 0.6
+	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+	return m
+
+
 func _bark(tint: Color) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
 	m.albedo_texture = _tex("bark_albedo")
@@ -1168,20 +1431,35 @@ func _tree_kinds(r: RandomNumberGenerator) -> Array:
 			for i in 2:
 				kinds.append(_broad_tree(r, r.randf_range(8, 11), 1.1, _bark(Color(0.85, 0.78, 0.72)), green).merged({"kind": "broad"}))
 		_:
+			# 镜湖：中式树种——水边垂柳、成片的竹林、山上和坡上的黄山松，阔叶树里夹着红枫和桃花
 			var bark := _bark(Color(0.85, 0.78, 0.72))
+			var dark_bark := _bark(Color(0.5, 0.42, 0.4))
 			var green := _leaves("leaf_green", Color(1.0, 1.0, 1.0), Color(0.45, 0.55, 0.15))
 			var dark := _leaves("leaf_dark", Color(1.05, 1.08, 1.0), Color(0.3, 0.4, 0.12))
 			var pine := _leaves("leaf_pine", Color(1.0, 1.0, 1.0), Color(0.25, 0.35, 0.12))
-			for i in 2:
-				kinds.append(_broad_tree(r, r.randf_range(8, 11), 1.0, bark, green).merged({"kind": "broad"}))
+			var pad := _leaves("pine_pad", Color(0.95, 1.02, 0.92), Color(0.2, 0.32, 0.12))
+			var maple := _leaves("maple_red", Color(1.05, 0.97, 0.95), Color(0.65, 0.15, 0.05))
+			var bloss := _leaves("blossom", Color(1.05, 1.0, 1.02), Color(0.6, 0.42, 0.46))
+			var bleaf := _leaves("bamboo_leaf", Color(1.0, 1.06, 0.95), Color(0.35, 0.5, 0.12))
+			var strand := _leaves("willow_strand", Color(1.0, 1.06, 0.92), Color(0.4, 0.52, 0.15))
+			var culm := _culm()
+			kinds.append(_broad_tree(r, r.randf_range(8, 11), 1.0, bark, green).merged({"kind": "broad"}))
 			kinds.append(_broad_tree(r, r.randf_range(9, 12), 1.1, bark, dark).merged({"kind": "broad"}))
+			for i in 2:
+				kinds.append(_broad_tree(r, r.randf_range(8, 11), 1.2, bark, maple).merged({"kind": "maple"}))
+			for i in 2:
+				kinds.append(_broad_tree(r, r.randf_range(6, 8.5), 1.15, dark_bark, bloss).merged({"kind": "blossom"}))
 			for i in 3:
-				kinds.append(_pine_tree(r, r.randf_range(11, 16), _bark(Color(0.9, 0.8, 0.72)), pine).merged({"kind": "pine"}))
+				kinds.append(_hs_pine(r, r.randf_range(9, 14), _bark(Color(0.62, 0.52, 0.46)), pad, pine).merged({"kind": "hspine"}))
+			for i in 3:
+				kinds.append(_bamboo(r, r.randf_range(10, 14), culm, bleaf).merged({"kind": "bamboo"}))
+			for i in 2:
+				kinds.append(_willow(r, r.randf_range(9, 12), bark, strand, green).merged({"kind": "willow"}))
 	return kinds
 
 
 ## 这个位置长哪种树
-func _tree_kind_at(r: RandomNumberGenerator, h: float) -> String:
+func _tree_kind_at(r: RandomNumberGenerator, h: float, x := 0.0, z := 0.0) -> String:
 	match biome:
 		"forest":
 			return "pine" if r.randf() < 0.25 else "broad"
@@ -1191,7 +1469,15 @@ func _tree_kind_at(r: RandomNumberGenerator, h: float) -> String:
 			return "dead" if r.randf() < 0.15 else "pine"
 		"sea":
 			return "palm" if h < 5.5 or r.randf() < 0.5 else "broad"
-	return "pine" if r.randf() < clampf(0.35 + (h - 5.0) * 0.08, 0.2, 0.85) else "broad"
+	# 镜湖：水边垂柳，竹林成片（噪声高的地方），高处和陡坡黄山松，其余阔叶树夹红枫、桃花
+	if h < 2.3 and r.randf() < 0.65:
+		return "willow"
+	if _bamboo_noise and _bamboo_noise.get_noise_2d(x, z) > 0.28:
+		return "bamboo"
+	if (h > 7.0 or island.slope_at(x, z) > 0.45) and r.randf() < 0.75:
+		return "hspine"
+	var q := r.randf()
+	return "maple" if q < 0.22 else ("blossom" if q < 0.36 else "broad")
 
 
 func _trees() -> void:
@@ -1201,7 +1487,10 @@ func _trees() -> void:
 	var xforms := []
 	for k in kinds:
 		xforms.append([])
-	var target: int = int({"island": 240, "forest": 700, "deepforest": 850, "snow": 380, "sea": 230}[biome] * _area_k())
+	var target: int = int({"island": 300, "forest": 700, "deepforest": 850, "snow": 380, "sea": 230}[biome] * _area_k())
+	_bamboo_noise = FastNoiseLite.new()
+	_bamboo_noise.seed = island.map_seed + 302
+	_bamboo_noise.frequency = 0.035
 	var min_h := 0.9 if biome == "sea" else 1.2
 	var tree_noise := FastNoiseLite.new()
 	tree_noise.seed = island.map_seed + 301
@@ -1221,7 +1510,7 @@ func _trees() -> void:
 			continue
 		if _near_trunk(x, z, 2.2 if forest else 3.0):
 			continue
-		var want := _tree_kind_at(r, h)
+		var want := _tree_kind_at(r, h, x, z)
 		var choices := []
 		for i in kinds.size():
 			if str(kinds[i]["kind"]) == want:
@@ -1323,6 +1612,17 @@ func _spot_land(min_h := 1.0, max_slope := 0.8, margin := 1.0, avoid_trunk := 1.
 
 
 ## 靠近树的地方（蕨类、灌木喜欢树荫）
+## 陡坡（露岩石的地方）
+func _spot_slope(min_slope: float) -> Callable:
+	return func(r: RandomNumberGenerator) -> Vector3:
+		var x := r.randf_range(-_ext(), _ext())
+		var z := r.randf_range(-_ext(), _ext())
+		var h := island.height_at(x, z)
+		if h < 1.5 or island.slope_at(x, z) < min_slope or not _free(x, z, 2.0) or _near_trunk(x, z, 2.0):
+			return Vector3.INF
+		return Vector3(x, h, z)
+
+
 func _spot_under_trees(spread: float) -> Callable:
 	return func(r: RandomNumberGenerator) -> Vector3:
 		if _trunks.is_empty():
@@ -1410,6 +1710,13 @@ func _props() -> void:
 			_scatter_prop("flower_ursinia", int(350 * dn), _spot_in(m["center"], m["radius"] + 6.0, 1.0), 2.0, 3.2, 45.0, false)
 			var b := island.habitat("burrow")
 			_scatter_prop("nettle_plant", int(160 * dn), _spot_in(b["center"], b["radius"] + 4.0, 1.0), 2.5, 4.0, 45.0, false)
+			# 场景样板（镜湖）：陡坡上露出大块岩石，像山体露出来的石壁；树下铺蔓长春花，空地上零星野花
+			if not island.hunting:
+				_scatter_prop("boulder_01", 26, _spot_slope(0.5), 3.5, 6.5, 0.0, true, 0.9, 0.3)
+				_scatter_prop("rock_moss_set_01", 30, _spot_slope(0.4), 2.2, 4.0, 0.0, true, 0.8, 0.25)
+				_scatter_prop("rock_moss_set_02", 30, _spot_slope(0.4), 2.2, 4.0, 0.0, true, 0.8, 0.25)
+				_scatter_prop("periwinkle_plant", int(300 * dn), _spot_under_trees(5.0), 1.5, 2.5, 40.0, false)
+				_scatter_prop("flower_ursinia", int(220 * dn), _spot_land(1.0, 0.6, 0.0, 0.5), 2.0, 3.0, 40.0, false)
 			_scatter_prop("tree_stump_01", 10, _spot_land(1.2, 0.6, 1.0), 1.0, 1.4, 0.0, true, 0.8)
 			_scatter_prop("dead_tree_trunk", 6, _spot_land(1.2, 0.5, 2.0, 2.5), 1.2, 1.8, 0.0, true)
 
@@ -1487,11 +1794,21 @@ func _grass() -> void:
 			if biome == "deepforest":
 				c = Color(0.5, 0.75, 0.75).lerp(Color(0.4, 0.62, 0.7), r.randf())
 		else:
+			# 镜湖（场景样板）：以前五万丛一个颜色的亮绿草、疏密均匀、边缘整齐。现在颜色按大片噪声变
+			# （黄绿 / 深绿 / 带点青，整体压暗压饱和），疏密也按噪声，草地和土地之间是渐变的
+			var pn := _patch.get_noise_2d(x * 0.6, z * 0.6)
+			if r.randf() > 0.5 + 0.5 * smoothstep(-0.45, 0.25, pn):
+				continue
+			var k2 := clampf(pn * 0.5 + 0.5, 0.0, 1.0)
+			c = Color(0.8, 0.84, 0.58).lerp(Color(0.58, 0.72, 0.52), k2).lerp(Color(0.66, 0.78, 0.7), r.randf() * 0.35) * r.randf_range(0.88, 1.06)
+			s *= r.randf_range(0.7, 1.0)
 			if meadow.size() > 0 and p2.distance_to(meadow["center"]) < float(meadow["radius"]):
-				s *= 1.5
-				c = Color(1.08, 1.05, 0.82)
+				s *= 1.45
+				c = c * Color(1.12, 1.06, 0.85)
 			if h < 1.6:
 				c = c * Color(1.05, 1.0, 0.85)
+			if _near_trunk(x, z, 3.5):
+				c = c * 0.8
 		var b := Basis(Vector3.UP, r.randf() * TAU).scaled(Vector3(s, s * r.randf_range(0.8, 1.2), s))
 		xs.append(Transform3D(b, Vector3(x, h - 0.04, z)))
 		cols.append(c)
@@ -1544,6 +1861,87 @@ func _moon_flowers(type: String) -> void:
 	fm.emission_energy_multiplier = 1.6
 	_multimesh(U.sphere(0.07, 8, 4), xs, cols, false, fm)
 	_motes(island.ground_point(c.x, c.y) + Vector3(0, 1.5, 0), Vector3(rad, 1.5, rad), 70, Color(0.7, 0.8, 1.6), 0.07)
+
+
+## 镜湖的荷塘：水塘里铺荷叶（平的圆叶子贴图），零星几朵粉白的荷花（程序拼的花瓣）
+func _lotus() -> void:
+	var r := RandomNumberGenerator.new()
+	r.seed = island.map_seed + 404
+	var pad := _leaves("lotus_pad", Color(0.95, 1.0, 0.92), Color(0.2, 0.35, 0.1))
+	pad.set_shader_parameter("wind", 0.0)
+	var pm := QuadMesh.new()
+	pm.size = Vector2(1.0, 1.0)
+	pm.orientation = PlaneMesh.FACE_Y
+	pm.material = pad
+	var pads := []
+	var flowers := []
+	for pd in island.ponds:
+		var c: Vector2 = pd["center"]
+		var rad: float = pd["radius"]
+		var n := int(rad * rad * 0.35)
+		for i in n:
+			var a := r.randf() * TAU
+			var d := sqrt(r.randf()) * rad * 0.9
+			var x := c.x + cos(a) * d
+			var z := c.y + sin(a) * d
+			if island.height_at(x, z) > Island.WATER_Y - 0.25:
+				continue
+			var s := r.randf_range(0.6, 1.4)
+			pads.append(Transform3D(Basis(Vector3.UP, r.randf() * TAU).scaled(Vector3(s, 1, s)), Vector3(x, Island.WATER_Y + 0.03 + r.randf() * 0.02, z)))
+			if r.randf() < 0.07:
+				flowers.append(Vector3(x + r.randf_range(-0.3, 0.3), Island.WATER_Y + 0.05, z + r.randf_range(-0.3, 0.3)))
+	_scatter(pm, pads, [], 90.0, false, 40.0)
+	if not flowers.is_empty():
+		var fm := _lotus_flower_mesh()
+		var xs := []
+		for f in flowers:
+			var s2 := r.randf_range(0.8, 1.2)
+			xs.append(Transform3D(Basis(Vector3.UP, r.randf() * TAU).scaled(Vector3(s2, s2, s2)), f))
+		_scatter(fm, xs, [], 90.0, false, 40.0)
+
+
+## 一朵荷花：两圈花瓣（尖、微微向里收，底白尖粉）+ 中间一个黄色莲蓬
+func _lotus_flower_mesh() -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var white := Color(0.98, 0.94, 0.95)
+	var pink := Color(0.95, 0.45, 0.6)
+	for ring in 2:
+		var n := 8 if ring == 0 else 6
+		var L := 0.34 if ring == 0 else 0.3
+		var tilt := deg_to_rad(55.0 if ring == 0 else 30.0)
+		for k in n:
+			var a := TAU * (k + ring * 0.5) / n
+			var out := Vector3(cos(a), 0, sin(a))
+			var dir := (out * sin(tilt) + Vector3.UP * cos(tilt)).normalized()
+			var side := out.cross(Vector3.UP).normalized()
+			var b0 := out * 0.04
+			var mid := b0 + dir * L * 0.55
+			var tip := b0 + dir * L - out * 0.03
+			var w := 0.09
+			var nrm := out.lerp(Vector3.UP, 0.4).normalized()
+			for v in [[b0 - side * w * 0.4, white], [mid - side * w, white.lerp(pink, 0.4)], [tip, pink], [b0 - side * w * 0.4, white], [tip, pink], [b0 + side * w * 0.4, white], [b0 + side * w * 0.4, white], [tip, pink], [mid + side * w, white.lerp(pink, 0.4)]]:
+				st.set_normal(nrm)
+				st.set_color(v[1])
+				st.add_vertex(v[0])
+	# 莲蓬
+	for k in 8:
+		var a0 := TAU * k / 8.0
+		var a1 := TAU * (k + 1) / 8.0
+		for v in [Vector3(0, 0.1, 0), Vector3(cos(a1) * 0.06, 0.08, sin(a1) * 0.06), Vector3(cos(a0) * 0.06, 0.08, sin(a0) * 0.06)]:
+			st.set_normal(Vector3.UP)
+			st.set_color(Color(0.95, 0.8, 0.25))
+			st.add_vertex(v)
+	var m := StandardMaterial3D.new()
+	m.vertex_color_use_as_albedo = true
+	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	m.roughness = 0.6
+	m.subsurf_scatter_enabled = false
+	m.backlight_enabled = true
+	m.backlight = Color(0.5, 0.25, 0.3)
+	var mesh := st.commit()
+	mesh.surface_set_material(0, m)
+	return mesh
 
 
 func _reeds() -> void:

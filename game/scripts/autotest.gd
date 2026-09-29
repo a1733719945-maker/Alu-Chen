@@ -309,6 +309,8 @@ func _process(dt: float) -> void:
 			_run_comboshot()
 		"tour", "tour1", "tour2":
 			_run_tour()
+		"sceneshot":
+			_run_sceneshot()
 		"host":
 			_run_host()
 		"dghost":
@@ -2858,6 +2860,45 @@ func _tour_list(w: World) -> Array:
 	out.append([tag + "_dock", gp.call(isl.dock_start.x + 8, isl.dock_start.z - 4, 1.7), w.builder.boat_pos + Vector3(0, 1, 0)])
 	out.append([tag + "_shop", gp.call(isl.shop_pos.x + 3, isl.shop_pos.z + 9, 1.7), isl.shop_pos + Vector3(0, 1.5, 0)])
 	return out
+
+
+## 场景质感对比：同样 4 个机位（出生点、山顶远眺、第一片栖息地、水塘），关掉 HUD
+func _run_sceneshot() -> void:
+	var w := _ready_world()
+	if not w:
+		return
+	var p := w.player
+	match _step:
+		0:
+			if _step_t < 3.0:
+				return
+			w.hud.visible = false
+			var keep := []
+			for e in _tour_list(w):
+				var nm := str(e[0])
+				if nm.ends_with("_spawn") or nm.ends_with("_hill_view") or nm.ends_with("_pond") or (keep.size() == 1 and e[1] != null):
+					keep.append(e)
+			_tour = keep
+			_next(1)
+		1:
+			if _tour.is_empty():
+				w.hud.visible = true
+				_next_phase()
+				return
+			var e: Array = _tour[0]
+			if e[1] != null:
+				p.teleport((e[1] as Vector3) - Vector3(0, 1.6, 0))
+				_aim(p, e[2])
+			p.viewmodel.visible = false
+			_next(2)
+		2:
+			p.hp = 99999.0
+			p.viewmodel.visible = false
+			if _step_t < 2.5:
+				return
+			var e: Array = _tour.pop_front()
+			await _shot("scene_" + str(e[0]))
+			_next(1)
 
 
 func _run_tour() -> void:
