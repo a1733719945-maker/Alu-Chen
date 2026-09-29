@@ -79,7 +79,16 @@ var _rack := false               # 这次掏枪要拉栓
 var _drawn := {}                 # 这局掏过的暗器（第一次掏才拉栓）
 
 
+var fp: FPArms                   # 人物模型的胳膊（有 player.glb 就用；没有就是代码拼的拳头 + 袖子）
+var _item_grip: Node3D
+
+
 func _ready() -> void:
+	WeaponModels.rig_arms = FPArms.available()
+	if WeaponModels.rig_arms:
+		fp = FPArms.new()
+		add_child(fp)
+		_item_grip = WeaponModels.grip_marker(self, "ItemGrip", Vector3.ZERO, Vector3(-0.2, 0.25, -0.95), Vector3(0.1, 1, 0))
 	_build_models()
 	_build_left_arm()
 	set_weapon("xiujian", true)
@@ -145,8 +154,11 @@ func _build_left_arm() -> void:
 	left_arm = Node3D.new()
 	left_arm.name = "LeftArm"
 	add_child(left_arm)
-	WeaponModels.fist(left_arm, mats, Vector3(0.0, -0.02, -0.06), Vector3(0.2, 0, -0.25), -1.0)
-	WeaponModels.sleeve(left_arm, mats, Vector3(0.0, -0.022, -0.02), Vector3(-0.2, -0.4, 0.9))
+	if WeaponModels.rig_arms:
+		WeaponModels.grip_marker(left_arm, "GripL", Vector3(0.0, -0.02, -0.06), Vector3(0.25, 0.1, -1), Vector3(0.6, -0.8, 0))
+	else:
+		WeaponModels.fist(left_arm, mats, Vector3(0.0, -0.02, -0.06), Vector3(0.2, 0, -0.25), -1.0)
+		WeaponModels.sleeve(left_arm, mats, Vector3(0.0, -0.022, -0.02), Vector3(-0.2, -0.4, 0.9))
 	for n in left_arm.find_children("*", "GeometryInstance3D", true, false):
 		(n as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	coil = U.part(left_arm, U.torus(0.043, 0.06, 24, 6), U.glow(Color(0.45, 0.8, 1.0), 2.5), Vector3(0.0, -0.022, 0.0), Vector3(PI / 2, 0, 0), Vector3.ONE, false)
@@ -447,6 +459,25 @@ func update(dt: float, ads: float, speed_k: float, grounded: bool, reload_k: flo
 	left_arm.rotation = Vector3(0.15 + 0.2 * sin(_left_throw * PI) - _left_pull * 0.3, -0.2, 0.25)
 	left_arm.visible = _left_show > 0.02
 	coil.rotation.y += dt * 2.0
+	if fp:
+		_update_fp(m)
+
+
+## 人物模型的胳膊：右手找暗器上的 GripR（拿道具时托着道具），左手找引魂索的手 / 暗器上托着的地方，都没有就垂下去
+func _update_fp(m: Node3D) -> void:
+	if _item:
+		_item_grip.position = _item.position + Vector3(0.0, -0.075, 0.03)
+		fp.right = _item_grip
+	else:
+		fp.right = m.find_child("GripR", true, false) as Node3D
+	var l: Node3D = null
+	if left_arm.visible:
+		l = left_arm.get_node_or_null("GripL") as Node3D
+	if l == null and _item == null:
+		var lh := m.get_node_or_null("LeftHand") as Node3D
+		if lh and lh.visible:
+			l = lh.get_node_or_null("GripL") as Node3D
+	fp.left = l
 
 
 ## 流沙机弩的枪管转、天心泪的泪滴随蓄力变亮、挂件像摆一样晃

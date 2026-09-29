@@ -305,6 +305,10 @@ func _process(dt: float) -> void:
 			_run_kbshot()
 		"feel":
 			_run_feel()
+		"fpshot":
+			_run_fpshot()
+		"gripshot":
+			_run_gripshot()
 		"musou":
 			_run_musou()
 		"dgshot":
@@ -4143,6 +4147,159 @@ func _trial_enter(w: World, T: Trial, m: String) -> bool:
 			_note("进了试炼 · %s" % Trial.MODES[m]["name"])
 			return true
 	return false
+
+
+## 握把标定：每把暗器从右侧正交看（z 横着、y 竖着），画 5 厘米的格子和坐标，红点 = 右手 GripR，蓝点 = 左手 GripL
+func _run_gripshot() -> void:
+	var w := _ready_world()
+	if not w:
+		return
+	match _step:
+		0:
+			if _step_t < 1.0:
+				return
+			var cam := Camera3D.new()
+			cam.projection = Camera3D.PROJECTION_ORTHOGONAL
+			cam.size = 0.95
+			cam.near = 0.01
+			cam.far = 20.0
+			w.add_child(cam)
+			var base := w.player.global_position + Vector3(0, 60.0, 0)
+			cam.global_position = base + Vector3(3.0, 0, 0)
+			cam.look_at(base, Vector3.UP)
+			cam.current = true
+			var holder := Node3D.new()
+			w.add_child(holder)
+			holder.global_position = base
+			# 背景板 + 格子
+			var bg := U.part(holder, U.box(Vector3(0.01, 3, 3)), U.mat(Color(0.3, 0.32, 0.36), 1.0), Vector3(-0.8, 0, 0))
+			bg.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			for k in range(-10, 11):
+				var v := k * 0.05
+				var col := Color(0.55, 0.58, 0.62) if k % 2 != 0 else Color(0.8, 0.82, 0.85)
+				U.part(holder, U.box(Vector3(0.002, 0.002 if k != 0 else 0.004, 1.0)), U.glow(col, 0.6), Vector3(-0.7, v, 0))
+				U.part(holder, U.box(Vector3(0.002, 1.0, 0.002 if k != 0 else 0.004)), U.glow(col, 0.6), Vector3(-0.7, 0, v))
+				if k % 2 == 0:
+					var lz := U.label3d("%.1f" % v, 22, Color.WHITE, 0)
+					lz.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+					lz.pixel_size = 0.0012
+					lz.position = Vector3(-0.6, -0.44, v)
+					holder.add_child(lz)
+					var ly := U.label3d("%.1f" % v, 22, Color.WHITE, 0)
+					ly.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+					ly.pixel_size = 0.0012
+					ly.position = Vector3(-0.6, v, 0.44)
+					holder.add_child(ly)
+			_mem["gs_cam"] = cam
+			_mem["gs_holder"] = holder
+			_mem["gs_list"] = Array(Data.WEAPON_ORDER).duplicate()
+			_next(1)
+		1:
+			var lst: Array = _mem["gs_list"]
+			var holder: Node3D = _mem["gs_holder"]
+			if _mem.has("gs_gun"):
+				(_mem["gs_gun"] as Node).queue_free()
+				_mem.erase("gs_gun")
+			if lst.is_empty():
+				(_mem["gs_cam"] as Node).queue_free()
+				holder.queue_free()
+				w.player.cam.current = true
+				_next_phase()
+				return
+			var id := str(lst[0])
+			var g := WeaponModels.build(id, "default", "default", {}, true, "")
+			holder.add_child(g)
+			for mk in g.find_children("Grip*", "", true, false):
+				var col := Color(1, 0.2, 0.2) if mk.name == "GripR" else Color(0.2, 0.5, 1)
+				U.part(mk as Node3D, U.sphere(0.012, 10, 8), U.glow(col, 3.0), Vector3.ZERO)
+				# 手指方向 a（短棍）
+				var a: Vector3 = (mk as Node3D).get_meta("a", Vector3.FORWARD)
+				var st := U.part(mk as Node3D, U.cyl(0.003, 0.003, 0.06, 6), U.glow(col, 2.0), a.normalized() * 0.03)
+				st.basis = Basis(Quaternion(Vector3.UP, a.normalized()))
+				st.position = a.normalized() * 0.03
+			_mem["gs_gun"] = g
+			_next(2)
+		2:
+			if _step_t < 0.4:
+				return
+			var id := str((_mem["gs_list"] as Array).pop_front())
+			_next(1)
+			await _shot("grip_%s" % id)
+
+
+## 第一人称的手（FPArms）：几把暗器各截三张——正常第一人称、从右边看手、从前面看手（另放一个镜头，看手指有没有握住）
+func _run_fpshot() -> void:
+	var w := _ready_world()
+	if not w:
+		return
+	var p := w.player
+	match _step:
+		0:
+			if _step_t < 1.5:
+				return
+			Profile.add_money(900000)
+			for id in ["zhuge", "kongque", "hansha"]:
+				if not Profile.has_weapon(id):
+					Profile.buy_weapon(id)
+			p.rebuild_guns()
+			var m := w.island.habitat("meadow")
+			var c: Vector2 = m["center"]
+			p.teleport(Vector3(c.x, w.island.height_at(c.x, c.y) + 0.5, c.y))
+			p.look_to(0.6, deg_to_rad(4))
+			_mem["fp_list"] = ["xiujian", "zhuge", "kongque", "fist"]
+			_next(1)
+		1:
+			var lst: Array = _mem["fp_list"]
+			if lst.is_empty():
+				if _mem.has("fp_cam"):
+					(_mem["fp_cam"] as Node).queue_free()
+				p.cam.current = true
+				_next_phase()
+				return
+			_switch_to(p, str(lst[0]))
+			_next(2)
+		2:
+			if _step_t < 1.3:
+				return
+			var id := str((_mem["fp_list"] as Array)[0])
+			p.cam.current = true
+			_next(3)
+			await _shot("fp_%s_view" % id)
+		3:
+			var cam: Camera3D = _mem.get("fp_cam")
+			if cam == null:
+				cam = Camera3D.new()
+				cam.fov = 40.0
+				cam.near = 0.01
+				w.add_child(cam)
+				_mem["fp_cam"] = cam
+			var ct := p.cam.global_transform
+			var look := ct * Vector3(0.1, -0.2, -0.32)
+			cam.global_position = ct * Vector3(0.75, -0.05, -0.3)
+			cam.look_at(look, ct.basis.y)
+			cam.current = true
+			_next(4)
+		4:
+			if _step_t < 0.1:
+				return
+			var id := str((_mem["fp_list"] as Array)[0])
+			_next(5)
+			await _shot("fp_%s_side" % id)
+		5:
+			var cam: Camera3D = _mem["fp_cam"]
+			var ct := p.cam.global_transform
+			cam.global_position = ct * Vector3(0.05, -0.12, -1.05)
+			cam.look_at(ct * Vector3(0.08, -0.22, -0.3), ct.basis.y)
+			_next(6)
+		6:
+			if _step_t < 0.1:
+				return
+			var id := str((_mem["fp_list"] as Array)[0])
+			_next(7)
+			await _shot("fp_%s_front" % id)
+			(_mem["fp_list"] as Array).pop_front()
+			p.cam.current = true
+			_next(1)
 
 
 ## 样板狩猎（KingFeel）：去猎场 → 按住猎物 → 打尾巴直到断（模型上那截没了、地上掉一截、摔一跤、拿到部位材料）

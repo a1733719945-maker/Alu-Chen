@@ -160,8 +160,29 @@ static func sleeve(parent: Node3D, m: Dictionary, wrist: Vector3, elbow: Vector3
 	return s
 
 
+## 第一人称用人物模型的胳膊（FPArms）时：暗器上只放握把标记，手由 FPArms 的 IK 摆过来。
+## 标记的 meta：a = 手腕 → 指根的方向，n = 手心朝哪（都是标记父节点的坐标）
+static var rig_arms := false
+const GRIP_R_A := Vector3(-0.12, -0.32, -0.94)
+const GRIP_R_N := Vector3(-1, 0, 0)
+## 左手从左下握住护木：手心朝着暗器（右、微微朝下），手指朝上伸再往右卷过护木顶上，手腕在左下方；
+## 模型的大拇指朝手心那边伸，这样正好藏进暗器里（手心朝上的话拇指会竖在枪上面）
+const GRIP_L_A := Vector3(0.25, 0.97, -0.12)
+const GRIP_L_N := Vector3(0.97, -0.25, 0)
+
+
+static func grip_marker(parent: Node3D, nm: String, pos: Vector3, a: Vector3, n: Vector3) -> Node3D:
+	var g := _marker(parent, nm, pos)
+	g.set_meta("a", a)
+	g.set_meta("n", n)
+	return g
+
+
 static func _arm_right(root: Node3D, m: Dictionary, grip: Vector3) -> void:
 	if _no_arms:
+		return
+	if rig_arms:
+		grip_marker(root, "GripR", grip + Vector3(0, 0.005, 0.0), GRIP_R_A, GRIP_R_N)
 		return
 	# 右手握把 + 袖子往右后方延伸出画面
 	fist(root, m, grip, Vector3(0.15, 0, 0), 1.0)
@@ -175,6 +196,9 @@ static func _arm_left(root: Node3D, m: Dictionary, pos: Vector3) -> void:
 	lh.name = "LeftHand"
 	lh.position = pos
 	root.add_child(lh)
+	if rig_arms:
+		grip_marker(lh, "GripL", Vector3(0, -0.02, 0.0), GRIP_L_A, GRIP_L_N)
+		return
 	# 左手从下面托着：手指从左边包上来
 	fist(lh, m, Vector3(0, -0.012, 0), Vector3(0, 0, -0.9), -1.0)
 	sleeve(lh, m, Vector3(-0.03, -0.038, 0.03), Vector3(-0.45, -0.6, 0.62))
@@ -242,6 +266,25 @@ const MODEL_FIT := {
 }
 
 
+## 换成模型以后握把在哪（按 gripshot 截图量的，暗器坐标）：r / l 右手 / 左手握把中心，ra / la 手腕 → 指根，rn / ln 手心朝哪。
+## 手枪式握把：手指要绕着（接近竖直的）握把卷，所以 a 朝前略朝上、手心朝左；左手从下面托着：手心朝上
+const GRIP_FIT := {
+	"zhuge": {"r": Vector3(0, -0.016, 0.088), "l": Vector3(0, 0.012, -0.09)},
+	"kongque": {"r": Vector3(0, -0.058, 0.136), "l": Vector3(0, -0.026, -0.167)},
+	"longxu": {"r": Vector3(0, -0.052, 0.026), "l": Vector3(0, -0.018, -0.26)},
+	"baoyu": {"r": Vector3(0, -0.024, 0.057), "l": Vector3(0, 0.004, -0.096)},
+	"zimu": {"r": Vector3(0, -0.036, 0.048), "l": Vector3(0, 0.004, -0.219)},
+	"hansha": {"r": Vector3(0, -0.086, -0.004), "ra": Vector3(-0.06, 0.08, -1), "l": Vector3(0, -0.04, -0.17)},
+	"zhuihun": {"r": Vector3(0, -0.054, 0.149), "l": Vector3(0, -0.03, -0.158)},
+	"guanyin": {"r": Vector3(0, -0.058, 0.092), "l": Vector3(0, -0.03, -0.13)},
+	# 袖箭：横着的短筒，手从右下握住（手指从上面卷过去）
+	"xiujian": {"r": Vector3(0.0, 0.019, 0.02), "ra": Vector3(-0.1, 0.9, -0.42), "rn": Vector3(-1, 0, 0)},
+	# 寒梅袖箭：戴在小臂上的护腕筒——拳头伸在筒前面，小臂从筒里穿过去
+	"meihua": {"r": Vector3(0.0, 0.035, -0.19), "ra": Vector3(-0.05, 0.05, -1), "rn": Vector3(-0.3, -0.95, 0)},
+}
+const GRIP_RA := Vector3(-0.08, 0.25, -0.96)
+
+
 static func has_model(id: String) -> bool:
 	return MODEL_FIT.has(id) and ResourceLoader.exists(MODEL_DIR + id + ".glb")
 
@@ -271,6 +314,20 @@ static func _swap_model(root: Node3D, id: String, skin: String, pb: Vector4) -> 
 	holder.name = "Model"
 	root.add_child(holder)
 	_place_model(holder, id, box.size.z * float(MODEL_FIT[id]["k"]), box.get_center() + (MODEL_FIT[id]["off"] as Vector3), skin, pb)
+	# 人物模型的手：握把标记挪到模型的握把上
+	var gf: Dictionary = GRIP_FIT.get(id, {})
+	if not gf.is_empty():
+		var gr := root.find_child("GripR", true, false) as Node3D
+		if gr and gf.has("r"):
+			gr.position = gf["r"]
+			gr.set_meta("a", gf.get("ra", GRIP_RA))
+			gr.set_meta("n", gf.get("rn", GRIP_R_N))
+		var gl := root.find_child("GripL", true, false) as Node3D
+		if gl and gf.has("l"):
+			var lh := gl.get_parent() as Node3D
+			gl.position = (gf["l"] as Vector3) - (lh.position if lh != root else Vector3.ZERO)
+			gl.set_meta("a", gf.get("la", GRIP_L_A))
+			gl.set_meta("n", gf.get("ln", GRIP_L_N))
 
 
 ## 把模型放进 parent：长度 length、中心在 center；皮肤不是默认的就换成皮肤材质（保留模型的雕花、金属包边）
@@ -383,14 +440,19 @@ static func _build(id: String, skin: String, outfit: String, on: Variant, charm:
 			r.name = "FistR"
 			r.position = Vector3(0.16, -0.17, -0.33)
 			root.add_child(r)
-			fist(r, m, Vector3.ZERO, Vector3(0.9, 0.15, -0.2), 1.0)
-			sleeve(r, m, Vector3(0.014, -0.03, 0.045), Vector3(0.3, -0.55, 0.78))
 			var l := Node3D.new()
 			l.name = "LeftHand"
 			l.position = Vector3(-0.16, -0.17, -0.33)
 			root.add_child(l)
-			fist(l, m, Vector3.ZERO, Vector3(0.9, -0.15, 0.2), -1.0)
-			sleeve(l, m, Vector3(-0.014, -0.03, 0.045), Vector3(-0.3, -0.55, 0.78))
+			if rig_arms:
+				# 拳头：指根朝前、手心朝下（手指卷向手心 = 握拳）
+				grip_marker(r, "GripR", Vector3.ZERO, Vector3(-0.15, 0.05, -1), Vector3(0.2, -1, 0))
+				grip_marker(l, "GripL", Vector3.ZERO, Vector3(0.15, 0.05, -1), Vector3(-0.2, -1, 0))
+			else:
+				fist(r, m, Vector3.ZERO, Vector3(0.9, 0.15, -0.2), 1.0)
+				sleeve(r, m, Vector3(0.014, -0.03, 0.045), Vector3(0.3, -0.55, 0.78))
+				fist(l, m, Vector3.ZERO, Vector3(0.9, -0.15, 0.2), -1.0)
+				sleeve(l, m, Vector3(-0.014, -0.03, 0.045), Vector3(-0.3, -0.55, 0.78))
 			_marker(root, "Muzzle", Vector3(0.16, -0.14, -0.4))
 			_marker(root, "Sight", Vector3(0, 0, -0.3))
 			return root
