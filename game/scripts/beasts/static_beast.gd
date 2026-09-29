@@ -40,9 +40,19 @@ instance uniform float air = 0.0;
 instance uniform float lunge = 0.0;
 instance uniform float hurt = 0.0;
 instance uniform float t = 0.0;
+instance uniform float scar = 0.0;   // 历战王：一道道发暗红光的伤疤（Beast.mark_tempered）
+varying vec3 rp;
+
+float h3(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
+float n3(vec3 p) {
+	vec3 i = floor(p); vec3 f = fract(p); f = f * f * (3.0 - 2.0 * f);
+	return mix(mix(mix(h3(i), h3(i + vec3(1, 0, 0)), f.x), mix(h3(i + vec3(0, 1, 0)), h3(i + vec3(1, 1, 0)), f.x), f.y),
+		mix(mix(h3(i + vec3(0, 0, 1)), h3(i + vec3(1, 0, 1)), f.x), mix(h3(i + vec3(0, 1, 1)), h3(i + vec3(1, 1, 1)), f.x), f.y), f.z);
+}
 
 void vertex() {
 	vec3 p = VERTEX;
+	rp = (VERTEX - c0) / half_len;
 	vec3 side = normalize(cross(up, fwd));
 	vec3 r = p - c0;
 	float along = dot(r, fwd) / half_len;
@@ -119,6 +129,12 @@ void fragment() {
 		NORMAL_MAP = texture(normal_tex, UV).rgb;
 	}
 	EMISSION = vec3(1.0, 0.25, 0.15) * hurt * 0.35;
+	if (scar > 0.5) {
+		float n = n3(rp * 2.2) * 0.65 + n3(rp * 5.0 + 7.0) * 0.35;
+		float line = 1.0 - smoothstep(0.0, 0.03, abs(n - 0.5));
+		ALBEDO *= 1.0 - line * 0.6;
+		EMISSION += vec3(1.0, 0.22, 0.06) * line * (0.9 + 0.5 * sin(TIME * 1.8 + rp.y * 3.0));
+	}
 }
 """
 

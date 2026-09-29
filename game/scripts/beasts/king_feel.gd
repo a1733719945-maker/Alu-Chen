@@ -60,6 +60,8 @@ var _glint: WeakGlint
 var stars := {}
 var pin_t := 0.0
 const STAR_PART_K := 1.5
+## 历战王：怒气涨得快、更难打晕（Hunt.host_spawn_trip_target 设）
+var rage_k := 1.0
 
 
 ## 房主：给猎物挂上
@@ -173,7 +175,7 @@ func host_hit(real: float, lp: Vector3, headshot: bool) -> float:
 	if part == "head":
 		add_stun(real)
 	if mood == "calm":
-		rage = minf(rage + real / maxf(b.max_hp, 1.0) * 220.0, 100.0)
+		rage = minf(rage + real / maxf(b.max_hp, 1.0) * 220.0 * rage_k, 100.0)
 	return real
 
 
@@ -252,7 +254,7 @@ func host_tick(dt: float) -> void:
 	match mood:
 		"calm":
 			if b._aggro_t > 0.0:
-				rage = minf(rage + dt * 1.5, 100.0)
+				rage = minf(rage + dt * 1.5 * rage_k, 100.0)
 			if rage >= 100.0:
 				mood = "rage"
 				mood_t = RAGE_TIME
@@ -409,7 +411,8 @@ func _on_event(kind: String, arg: String) -> void:
 			var what := "%s之%s" % [str(Data.BEASTS[b.species]["name"]), str(PART_NAME[arg])]
 			# 不弹横幅、不解释断了有什么用（用户：描述得太详细）——看得见那截飞出去就够了
 			if near:
-				Profile.add_part(b.species, arg)
+				# 历战王的部位材料翻倍
+				Profile.add_part(b.species, arg, 2 if bool(world.hunting.get("tempered", false)) else 1)
 				hud.feed("+ %s" % what, UiKit.GOLD)
 			Sfx.play_at("snap", b.global_position, 8.0, 0.05, 0.7)
 			Sfx.play_at("slam", b.global_position, 4.0, 0.05, 0.8)

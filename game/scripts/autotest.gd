@@ -57,7 +57,7 @@ func _ready() -> void:
 			_plan = ["phys", "hunt:burrow,meadow,flowers,water,reel", "shop", "recoil", "sniper", "ring", "boss", "boat", "hunt:den,swamp,mud", "boss", "boat",
 				"hunt:glade,roost,thicket,nest,bog", "boss", "boat",
 				"hunt:snowden,frostgrove,icefield,icecave,icelake", "boss", "boat",
-				"hunt:beach,cliff,reef,deep,abyss", "boss", "dungeon", "chase", "musou", "huntrun", "huntfail", "touch", "feel", "hunt2", "garts", "gear", "done"]
+				"hunt:beach,cliff,reef,deep,abyss", "boss", "dungeon", "chase", "musou", "huntrun", "huntfail", "touch", "feel", "hunt2", "garts", "gear", "tempered", "done"]
 			# 新暗器测试放在第一章买完暗器后面（要第一章的草地摆靶子；第五章归墟没有草地）
 			_plan.insert(_plan.find("shop") + 1, "guns2")
 			_plan.insert(_plan.find("guns2") + 1, "pills")
@@ -313,6 +313,8 @@ func _process(dt: float) -> void:
 			_run_gear()
 		"gearshot":
 			_run_gearshot()
+		"tempered":
+			_run_tempered()
 		"hunt2shot":
 			_run_hunt2shot()
 		"fpshot":
@@ -4816,6 +4818,110 @@ func _run_gear() -> void:
 	_note("疾风套四件护体 %.2f → %.2f；见机套混穿四件；铁甲套血少挨打 %.0f → %.0f；%s（伤害 %.1f → %.1f）；灵核保底" % [d0, d0 + Gear.armor(), full, low, Gear.forged_name(gid), dmg0, dmg1])
 	Profile.gear_on = keep_on
 	_next_phase()
+
+
+## 历战王：猎灵榜上有（猎过一次）→ 刷出来的猎物是历战的（名字、伤疤、第二回合的招、血厚）
+func _run_tempered() -> void:
+	var w := _world()
+	match _step:
+		0:
+			w = _ready_world()
+			if not w or _step_t < 0.5:
+				return
+			w.player.invuln_t = 9999.0
+			w.player.hp = 99999.0
+			if w.island.hunting and w.hunt.target_id != 0:
+				_next(2)
+				return
+			var list := w.hunt.species_list()
+			if not _check(not list.is_empty(), "猎灵榜上没有灵兽"):
+				return
+			_mem["old_wid"] = w.get_instance_id()
+			w.hunt.request(str(list[0]), w.hunt.base_age(), true)
+			_next(1)
+		1:
+			w = _ready_world()
+			if not w or w.get_instance_id() == int(_mem["old_wid"]) or not w.island.hunting:
+				if _step_t > 15.0:
+					_fail("挑了历战王没去猎场")
+				return
+			if w.hunt.target_id == 0 or not w.beasts.has(w.hunt.target_id):
+				if _step_t > 20.0:
+					_fail("历战王没出现")
+				return
+			_next(3)
+		2:
+			# 已经在猎场里（前面的阶段）：按历战再刷一只
+			var old: Beast = w.beasts.get(w.hunt.target_id)
+			var hp0: float = old.max_hp if old else 0.0
+			w.hunting["tempered"] = true
+			w.hunt.host_spawn_trip_target()
+			_mem["hp0"] = hp0
+			_next(3)
+		3:
+			var b: Beast = w.beasts.get(w.hunt.target_id)
+			if not _check(b != null and b.tempered and b.arts.tempered and b.arts.act >= 2 and "历战" in b.display_name(), "历战王的样子 / 招不对（%s）" % (b.display_name() if b else "没有")):
+				return
+			var scar := false
+			for n in b.model.find_children("*", "MeshInstance3D", true, false):
+				var mi := n as MeshInstance3D
+				if mi.material_overlay != null or float(mi.get_instance_shader_parameter("scar")) > 0.5:
+					scar = true
+			if not _check(scar, "历战王身上没有伤疤"):
+				return
+			# 猎灵榜：猎过的灵兽有历战那一栏
+			var sp := b.species
+			Profile.stats["hunted_" + sp] = 1
+			w.hunt.target_id = 0
+			var was_hunting := w.hunting.duplicate()
+			w.hunting = {}
+			w.hud.open_board()
+			w.hunting = was_hunting
+			w.hunt.target_id = b.id
+			var found := false
+			for n in w.hud._board.find_children("*", "Button", true, false):
+				if str((n as Button).text).begins_with("去猎历战"):
+					found = true
+			w.hud._close_board()
+			if not _check(found, "猎过的灵兽，猎灵榜上没有历战那一栏"):
+				return
+			_note("历战王：%s，第 %d 回合的招、怒气 ×%.1f、晕值上限 %.0f；猎灵榜上有历战" % [b.display_name(), b.arts.act, b.feel.rage_k, b.feel.stun_max])
+			if not _shots:
+				_next_phase()
+				return
+			# 截图：按住它，从侧面近看伤疤
+			b.root_t = 9999.0
+			b.root_pos = b.global_position
+			b.arts.cur.clear()
+			# 绕一圈找个看得见它的位置（别站进石头里）
+			var side := (b.global_basis * b.feel._front.cross(Vector3.UP)).normalized()
+			var dist := 4.0 + b.feel._half * 2.0
+			var at := b.global_position + side * dist
+			for k in 12:
+				var dir := side.rotated(Vector3.UP, TAU * k / 12.0)
+				var q := b.global_position + dir * dist
+				q.y = w.island.height_at(q.x, q.z) + 0.4
+				var eye := q + Vector3.UP * 1.6
+				var hit := w.raycast(eye, b.global_position + Vector3.UP * b.feel._height * 0.5, U.LAYER_WORLD, [])
+				if hit.is_empty() and w.island.is_land(q.x, q.z):
+					at = q
+					break
+			at.y = w.island.height_at(at.x, at.z) + 0.4
+			w.player.teleport(at)
+			_next(4)
+		4:
+			var b: Beast = w.beasts.get(w.hunt.target_id)
+			_aim(w.player, b.global_position + Vector3.UP * b.feel._height * 0.5)
+			w.player.cam.cull_mask = w.player.cam.cull_mask | 2
+			if _step_t < 1.5:
+				return
+			_next(5)
+			await _shot("tempered_king")
+		5:
+			var b: Beast = w.beasts.get(w.hunt.target_id)
+			if b:
+				b.root_t = 0.0
+			_next_phase()
 
 
 ## 锻造页截图（接在 gear 后面：材料和护具是 gear 给的）

@@ -134,14 +134,15 @@ func host_finish(captured: bool) -> void:
 		rating = "A"
 	elif faints <= 1:
 		rating = "B"
-	var k: float = float(RATING_K[rating]) * (1.5 if captured else 1.0)
+	var tempered := bool(info.get("tempered", false))
+	var k: float = float(RATING_K[rating]) * (1.5 if captured else 1.0) * (1.5 if tempered else 1.0)
 	var money := roundi(Data.kill_money(sp, age) * 10.0 * k)
 	var xp := roundi(Data.kill_xp(sp, age) * 8.0 * k)
 	# 活捉没有"打死"那一下的奖励，补上
 	if captured:
 		money += roundi(Data.kill_money(sp, age) * Data.ELITE_REWARD)
 		xp += roundi(Data.xp_to_next(int(Data.CH_REF_LEVEL.get(world.chapter, 10))) * Data.KING_XP_LEVELS)
-	var r := {"captured": captured, "time": t, "faints": faints, "rating": rating, "money": money, "xp": xp, "species": sp, "age": age}
+	var r := {"captured": captured, "time": t, "faints": faints, "rating": rating, "money": money, "xp": xp, "species": sp, "age": age, "tempered": tempered}
 	Net.send(0, "htdone", [r])
 	_on_done(r)
 
@@ -228,10 +229,13 @@ func _on_done(r: Dictionary) -> void:
 		Profile.count("captures")
 	# 灵核（装备树第五品要）：每人自己掷，连着没掉有保底
 	var sp := str(r["species"])
-	if Data.BEASTS.has(sp) and Gear.roll_core(sp, bool(r["captured"])):
+	var tempered := bool(r.get("tempered", false))
+	# 猎过一次这种灵兽，猎灵榜上就有它的历战王
+	Profile.stats["hunted_" + sp] = int(Profile.stats.get("hunted_" + sp, 0)) + 1
+	if Data.BEASTS.has(sp) and Gear.roll_core(sp, bool(r["captured"]), 3.0 if tempered else 1.0):
 		world.hud.feed("+ %s灵核" % str(Data.BEASTS[sp]["name"]), UiKit.GOLD)
 		Sfx.play("rare", -2.0)
-	var key := "hunt_best_%s_%d" % [str(r["species"]), int(r["age"])]
+	var key := "hunt_best_%s_%d%s" % [str(r["species"]), int(r["age"]), "_t" if tempered else ""]
 	var best := int(Profile.stats.get(key, 0))
 	var new_best := best == 0 or int(r["time"]) < best
 	if new_best:

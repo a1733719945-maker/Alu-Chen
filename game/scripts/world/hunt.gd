@@ -16,6 +16,8 @@ extends Node
 const FP_COLOR := Color(0.35, 0.95, 1.0)
 const PREY_COL := Color(1.0, 0.62, 0.25)
 const DIRS := ["北", "东北", "东", "东南", "南", "西南", "西", "西北"]
+## 历战王（第 7.5 节第二根柱子）：猎过一次的灵兽，猎灵榜上多一个"历战"——血厚、招狠（KingArts.TEMPERED_*），部位材料翻倍、灵核三倍、报酬 ×1.5
+const TEMPERED_HP := 1.35
 
 var world: World
 # 大家都有（房主算好发过来）
@@ -117,8 +119,9 @@ func skill_preview(species: String, age: int) -> String:
 	return Data.skill_for(Data.wuhun_id(Settings.wuhun), species, age, owned)
 
 
-func request(species: String, age: int) -> void:
-	Net.send_host("hreq", [species, age])
+## tempered：历战王（猎过一次的灵兽才有，Hud.open_board）
+func request(species: String, age: int, tempered := false) -> void:
+	Net.send_host("hreq", [species, age, tempered])
 
 
 # ------------------------------------------------------------------ 房主
@@ -208,7 +211,7 @@ func _wander_point(from: Vector3) -> Vector3:
 
 
 ## 有人在猎灵榜上挑了一只：全队去这一章的猎场（第十二版补丁：以前是在岛上刷一只，岛太小、没有探索感）
-func host_request(from: int, species: String, age: int) -> void:
+func host_request(from: int, species: String, age: int, tempered := false) -> void:
 	if not Data.BEASTS.has(species):
 		return
 	var why := ""
@@ -225,8 +228,8 @@ func host_request(from: int, species: String, age: int) -> void:
 			Net.send(from, "hint", [why])
 		return
 	age = clampi(age, 0, 4)
-	var info := {"species": species, "age": age, "seed": randi() % 2000000000 + 1, "by": from}
-	var m := ["%s 挑了猎物：%s%s王——全队出发去猎场" % [world.peer_name(from), Data.age_name(age), Data.BEASTS[species]["name"]], 0]
+	var info := {"species": species, "age": age, "seed": randi() % 2000000000 + 1, "by": from, "tempered": tempered}
+	var m := ["%s 挑了猎物：%s%s%s王——全队出发去猎场" % [world.peer_name(from), "历战" if tempered else "", Data.age_name(age), Data.BEASTS[species]["name"]], 0]
 	Net.send(0, "hev", m)
 	_on_ev(m)
 	await get_tree().create_timer(1.2).timeout
@@ -263,6 +266,15 @@ func host_spawn_trip_target() -> void:
 	KingFeel.attach(world, b)
 	# 样板狩猎第二步：整套招、露破绽、七成血负伤换地方（beasts/king_arts.gd）
 	KingArts.attach(world, b)
+	# 历战王：血厚、一开始就是第二回合的招、起手快、下手重、怒得快、难打晕；身上一道道伤疤
+	if bool(info.get("tempered", false)):
+		b.max_hp *= TEMPERED_HP
+		b.hp = b.max_hp
+		b.arts.tempered = true
+		b.arts.act = 2
+		b.feel.rage_k = 1.4
+		b.feel.stun_max *= 1.3
+		b.mark_tempered()
 	target_id = id
 	target_species = species
 	target_age = age
@@ -563,7 +575,7 @@ func on_message(from: int, type: String, data: Variant) -> void:
 		"hreq":
 			if Net.is_host():
 				var d: Array = data
-				host_request(from, str(d[0]), int(d[1]))
+				host_request(from, str(d[0]), int(d[1]), bool(d[2]) if d.size() > 2 else false)
 		"hev":
 			_on_ev(data)
 		"hblood":
@@ -574,6 +586,8 @@ func on_message(from: int, type: String, data: Variant) -> void:
 
 func _apply_state(d: Array) -> void:
 	target_id = int(d[0])
+	if bool(world.hunting.get("tempered", false)) and world.beasts.has(target_id):
+		(world.beasts[target_id] as Beast).mark_tempered()
 	target_species = str(d[1])
 	target_age = int(d[2])
 	if d.size() > 5:

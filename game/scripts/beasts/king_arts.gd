@@ -27,6 +27,11 @@ const DMG := {"bite": 0.1, "sweep": 0.16, "charge": 0.24, "leap": 0.28, "quake":
 var world: Node
 var b: Beast
 var act := 1                     # 第几回合：1 老窝 / 2 负伤换了地方 / 3 巢穴
+## 历战王（第 7.5 节第二根柱子）：一开始就是第二回合的招、起手快、冷却短、下手重
+var tempered := false
+const TEMPERED_DMG := 1.2
+const TEMPERED_WIND := 0.85
+const TEMPERED_CD := 0.75
 var cur := {}                    # 正在放的招
 var cd := 2.5
 var relocated := false
@@ -63,7 +68,7 @@ func _style() -> String:
 
 ## 这一招的伤害（BossArts 会再乘 Boss 的章节倍数，这里先除掉）
 func _d(move: String) -> float:
-	var k := 1.2 if b.enrage_t > 0.0 else 1.0
+	var k := (1.2 if b.enrage_t > 0.0 else 1.0) * (TEMPERED_DMG if tempered else 1.0)
 	return _u * float(DMG.get(move, 0.1)) * k / maxf(world.arts._k(), 0.01)
 
 
@@ -76,6 +81,8 @@ func _tk() -> float:
 		k *= 1.35
 	if act >= 3:
 		k *= 0.9
+	if tempered:
+		k *= TEMPERED_WIND
 	return k
 
 
@@ -493,7 +500,7 @@ func _rest(t: float) -> void:
 func _finish() -> void:
 	cur.clear()
 	var r: Array = CD[b.feel.mood] if CD.has(b.feel.mood) else CD["calm"]
-	cd = randf_range(float(r[0]), float(r[1])) * (0.8 if act >= 3 else 1.0)
+	cd = randf_range(float(r[0]), float(r[1])) * (0.8 if act >= 3 else 1.0) * (TEMPERED_CD if tempered else 1.0)
 
 
 func _peer_pos(peer: int) -> Vector3:

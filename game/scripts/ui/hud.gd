@@ -2507,8 +2507,38 @@ func open_board() -> void:
 				hunt.request(sp2, a2)
 				_close_board())
 			bv.add_child(go)
+		# 历战王（第 7.5 节第二根柱子）：猎过一次这种灵兽才有
+		if _hunted_before(str(sp)):
+			var red := Color(1.0, 0.32, 0.22)
+			var tbox := PanelContainer.new()
+			tbox.add_theme_stylebox_override("panel", UiKit.glass_style(0.35, 10, 8))
+			cv.add_child(tbox)
+			var tv := VBoxContainer.new()
+			tv.add_theme_constant_override("separation", 4)
+			tbox.add_child(tv)
+			var tr := HBoxContainer.new()
+			tr.add_theme_constant_override("separation", 8)
+			tv.add_child(tr)
+			tr.add_child(UiKit.chip("历战", red, 13, true))
+			tr.add_child(UiKit.label("一身伤疤，招更狠；部位材料翻倍，灵核好出", 14, Color(0.9, 0.8, 0.78)))
+			var tgo := UiKit.button("去猎历战%s%s王" % [Data.age_name(base), bd["name"]], 16, false)
+			var sp3 := str(sp)
+			tgo.pressed.connect(func():
+				hunt.request(sp3, base, true)
+				_close_board())
+			tv.add_child(tgo)
 	world.set_ui_open(true)
 	Sfx.play("ui_click", -4.0)
+
+
+## 猎过这种灵兽（HuntTrip._on_done 记 hunted_<物种>；以前的存档看有没有这种灵兽的猎场纪录）
+func _hunted_before(sp: String) -> bool:
+	if int(Profile.stats.get("hunted_" + sp, 0)) > 0:
+		return true
+	for k in Profile.stats:
+		if str(k).begins_with("hunt_best_%s_" % sp):
+			return true
+	return false
 
 
 func _close_board() -> void:

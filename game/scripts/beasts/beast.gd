@@ -279,8 +279,51 @@ func display_name() -> String:
 	if hunt_role == "dgboss":
 		return "秘境之主 · %s%s" % [Data.age_name(age), Data.BEASTS[species]["name"]]
 	if temper == "elite":
-		return "%s%s王" % [Data.age_name(age), Data.BEASTS[species]["name"]]
+		return "%s%s%s王" % ["历战" if tempered else "", Data.age_name(age), Data.BEASTS[species]["name"]]
 	return str(Data.BEASTS[species]["name"])
+
+
+## 历战王（第 7.5 节第二根柱子）：身上一道道发暗红光的伤疤（叠一层加色的材质，按模型坐标的噪声画线）
+var tempered := false
+const SCAR_SHADER := """shader_type spatial;
+render_mode blend_add, unshaded, cull_back, depth_draw_never;
+uniform vec3 glow : source_color = vec3(1.0, 0.22, 0.06);
+uniform float freq = 2.6;
+varying vec3 lp;
+float h(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
+float n3(vec3 p) {
+	vec3 i = floor(p); vec3 f = fract(p); f = f * f * (3.0 - 2.0 * f);
+	return mix(mix(mix(h(i), h(i + vec3(1, 0, 0)), f.x), mix(h(i + vec3(0, 1, 0)), h(i + vec3(1, 1, 0)), f.x), f.y),
+		mix(mix(h(i + vec3(0, 0, 1)), h(i + vec3(1, 0, 1)), f.x), mix(h(i + vec3(0, 1, 1)), h(i + vec3(1, 1, 1)), f.x), f.y), f.z);
+}
+void vertex() { lp = VERTEX; }
+void fragment() {
+	float n = n3(lp * freq) * 0.65 + n3(lp * freq * 2.3 + 7.0) * 0.35;
+	float line = 1.0 - smoothstep(0.0, 0.035, abs(n - 0.5));
+	float pulse = 0.65 + 0.35 * sin(TIME * 1.8 + lp.y * 3.0);
+	ALBEDO = glow * line * pulse * 1.8;
+}"""
+static var _scar_mat: ShaderMaterial
+
+
+func mark_tempered() -> void:
+	if tempered and model and model.has_meta("scarred"):
+		return
+	tempered = true
+	if model == null:
+		return
+	model.set_meta("scarred", true)
+	# 混元的静态模型（没骨骼，顶点着色器动）：伤疤画在它自己的着色器里，叠一层材质跟不上它的动作
+	if model.has_meta("static"):
+		for n in model.find_children("*", "MeshInstance3D", true, false):
+			(n as MeshInstance3D).set_instance_shader_parameter("scar", 1.0)
+		return
+	if _scar_mat == null:
+		_scar_mat = ShaderMaterial.new()
+		_scar_mat.shader = Shader.new()
+		_scar_mat.shader.code = SCAR_SHADER
+	for n in model.find_children("*", "MeshInstance3D", true, false):
+		(n as MeshInstance3D).material_overlay = _scar_mat
 
 
 ## 捆魂：引魂索拽住它。返回 3.5 秒内一共几根索拽着

@@ -268,10 +268,10 @@ static func _take_parts(ok: Callable, need: int) -> void:
 # ------------------------------------------------------------------ 灵核
 
 ## 猎场猎物打死 / 活捉：每个人自己掷一次（连着 CORE_PITY 次没掉，下次必掉）。返回掉没掉
-static func roll_core(sp: String, captured: bool) -> bool:
+static func roll_core(sp: String, captured: bool, k := 1.0) -> bool:
 	var key := "core_pity"
 	var miss := int(Profile.stats.get(key, 0))
-	var rate := CORE_RATE * (1.5 if captured else 1.0)
+	var rate := CORE_RATE * (1.5 if captured else 1.0) * k
 	if miss + 1 >= CORE_PITY or randf() < rate:
 		Profile.stats[key] = 0
 		Profile.add_part(sp, "core")
