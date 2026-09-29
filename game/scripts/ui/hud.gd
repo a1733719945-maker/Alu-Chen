@@ -2453,6 +2453,7 @@ func open_board() -> void:
 	grid.add_theme_constant_override("v_separation", 14)
 	v.add_child(grid)
 	var base := hunt.base_age()
+	var week_omen := hunt.omen()
 	for sp in hunt.species_list():
 		var bd: Dictionary = Data.BEASTS[sp]
 		var card := PanelContainer.new()
@@ -2507,6 +2508,30 @@ func open_board() -> void:
 				hunt.request(sp2, a2)
 				_close_board())
 			bv.add_child(go)
+		# 每周天象（第 7.5 节第三根柱子）：这一周这一章的一只王，报酬翻倍，记本周最快
+		if str(week_omen.get("species", "")) == str(sp):
+			var od: Dictionary = Hunt.OMENS[str(week_omen["omen"])]
+			var obox := PanelContainer.new()
+			obox.add_theme_stylebox_override("panel", UiKit.glass_style(0.35, 10, 8))
+			cv.add_child(obox)
+			var ov := VBoxContainer.new()
+			ov.add_theme_constant_override("separation", 4)
+			obox.add_child(ov)
+			var orow := HBoxContainer.new()
+			orow.add_theme_constant_override("separation", 8)
+			ov.add_child(orow)
+			orow.add_child(UiKit.chip("本周天象 · %s" % str(od["name"]), od["color"], 13, true))
+			orow.add_child(UiKit.label("%s；报酬翻倍" % str(od["desc"]), 14, Color(0.9, 0.88, 0.8)))
+			var wbest := int(Profile.stats.get("omen_best_%d_%d" % [int(week_omen["week"]), world.chapter], 0))
+			if wbest > 0:
+				ov.add_child(UiKit.label("本周最快 %d:%02d" % [wbest / 60, wbest % 60], 14, UiKit.GOLD))
+			var ogo := UiKit.button("去猎%s·%s%s王" % [str(od["name"]), Data.age_name(base), bd["name"]], 16, false)
+			var sp4 := str(sp)
+			var oid := str(week_omen["omen"])
+			ogo.pressed.connect(func():
+				hunt.request(sp4, base, false, oid)
+				_close_board())
+			ov.add_child(ogo)
 		# 历战王（第 7.5 节第二根柱子）：猎过一次这种灵兽才有
 		if _hunted_before(str(sp)):
 			var red := Color(1.0, 0.32, 0.22)

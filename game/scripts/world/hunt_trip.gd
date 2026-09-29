@@ -70,7 +70,14 @@ func _ready() -> void:
 	if Net.is_host():
 		_host_setup_packs()
 	# 以前这里写了三行规则（爪痕、脚印、活捉、限时、倒下几次、宝藏、守宝王），用户说游戏描述得太详细：只留标题和限时
-	world.hud._show_banner("猎杀%s" % species_name(), "限时 %d 分钟" % int(LIMIT / 60.0), Color(1.0, 0.62, 0.25), 4.0)
+	var om: Dictionary = Hunt.OMENS.get(str(info.get("omen", "")), {})
+	var sub := "限时 %d 分钟" % int(LIMIT / 60.0)
+	if not om.is_empty():
+		sub = "本周天象 · %s · %s" % [str(om["name"]), sub]
+		# 天色：血月是夜里、风雨是暴雨大雾、金鳞是金色的黄昏
+		if str(om["env"]) != "":
+			world._event_env(str(om["env"]), 99999.0)
+	world.hud._show_banner("猎杀%s%s" % ["历战" if bool(info.get("tempered", false)) else "", species_name()], sub, Color(1.0, 0.62, 0.25), 4.0)
 
 
 func species_name() -> String:
@@ -135,14 +142,15 @@ func host_finish(captured: bool) -> void:
 	elif faints <= 1:
 		rating = "B"
 	var tempered := bool(info.get("tempered", false))
-	var k: float = float(RATING_K[rating]) * (1.5 if captured else 1.0) * (1.5 if tempered else 1.0)
+	var omen := str(info.get("omen", ""))
+	var k: float = float(RATING_K[rating]) * (1.5 if captured else 1.0) * (1.5 if tempered else 1.0) * (Hunt.OMEN_REWARD if omen != "" else 1.0)
 	var money := roundi(Data.kill_money(sp, age) * 10.0 * k)
 	var xp := roundi(Data.kill_xp(sp, age) * 8.0 * k)
 	# 活捉没有"打死"那一下的奖励，补上
 	if captured:
 		money += roundi(Data.kill_money(sp, age) * Data.ELITE_REWARD)
 		xp += roundi(Data.xp_to_next(int(Data.CH_REF_LEVEL.get(world.chapter, 10))) * Data.KING_XP_LEVELS)
-	var r := {"captured": captured, "time": t, "faints": faints, "rating": rating, "money": money, "xp": xp, "species": sp, "age": age, "tempered": tempered}
+	var r := {"captured": captured, "time": t, "faints": faints, "rating": rating, "money": money, "xp": xp, "species": sp, "age": age, "tempered": tempered, "omen": omen, "week": int(info.get("week", 0))}
 	Net.send(0, "htdone", [r])
 	_on_done(r)
 
@@ -232,7 +240,7 @@ func _on_done(r: Dictionary) -> void:
 	var tempered := bool(r.get("tempered", false))
 	# 猎过一次这种灵兽，猎灵榜上就有它的历战王
 	Profile.stats["hunted_" + sp] = int(Profile.stats.get("hunted_" + sp, 0)) + 1
-	if Data.BEASTS.has(sp) and Gear.roll_core(sp, bool(r["captured"]), 3.0 if tempered else 1.0):
+	if Data.BEASTS.has(sp) and Gear.roll_core(sp, bool(r["captured"]), 3.0 if tempered or str(r.get("omen", "")) == "gold" else 1.0):
 		world.hud.feed("+ %s灵核" % str(Data.BEASTS[sp]["name"]), UiKit.GOLD)
 		Sfx.play("rare", -2.0)
 	var key := "hunt_best_%s_%d%s" % [str(r["species"]), int(r["age"]), "_t" if tempered else ""]
@@ -243,6 +251,12 @@ func _on_done(r: Dictionary) -> void:
 		Profile.mark_dirty()
 	r["best"] = int(Profile.stats[key])
 	r["new_best"] = new_best
+	# 每周天象：本周最快（猎灵榜上那只的卡片显示）
+	if str(r.get("omen", "")) != "":
+		var wk := "omen_best_%d_%d" % [int(r.get("week", 0)), world.chapter]
+		if int(Profile.stats.get(wk, 0)) == 0 or int(r["time"]) < int(Profile.stats[wk]):
+			Profile.stats[wk] = int(r["time"])
+			Profile.mark_dirty()
 	Sfx.play("quest_done", 0.0)
 	_show_panel(true, r, "")
 

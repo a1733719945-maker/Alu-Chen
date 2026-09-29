@@ -62,6 +62,7 @@ var pin_t := 0.0
 const STAR_PART_K := 1.5
 ## 历战王：怒气涨得快、更难打晕（Hunt.host_spawn_trip_target 设）
 var rage_k := 1.0
+var omen_speed := 1.0           # 每周天象「疾影」
 
 
 ## 房主：给猎物挂上
@@ -348,7 +349,7 @@ func pose(kind: String, t: float) -> void:
 
 
 func speed_k() -> float:
-	return (0.55 if mood == "tired" else 1.0) * (0.6 if pin_t > 0.0 else 1.0)
+	return (0.55 if mood == "tired" else 1.0) * (0.6 if pin_t > 0.0 else 1.0) * omen_speed
 
 
 func bind_k() -> float:
@@ -412,7 +413,7 @@ func _on_event(kind: String, arg: String) -> void:
 			# 不弹横幅、不解释断了有什么用（用户：描述得太详细）——看得见那截飞出去就够了
 			if near:
 				# 历战王的部位材料翻倍
-				Profile.add_part(b.species, arg, 2 if bool(world.hunting.get("tempered", false)) else 1)
+				Profile.add_part(b.species, arg, 2 if bool(world.hunting.get("tempered", false)) or str(world.hunting.get("omen", "")) == "gold" else 1)
 				hud.feed("+ %s" % what, UiKit.GOLD)
 			Sfx.play_at("snap", b.global_position, 8.0, 0.05, 0.7)
 			Sfx.play_at("slam", b.global_position, 4.0, 0.05, 0.8)

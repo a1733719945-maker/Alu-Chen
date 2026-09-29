@@ -57,7 +57,7 @@ func _ready() -> void:
 			_plan = ["phys", "hunt:burrow,meadow,flowers,water,reel", "shop", "recoil", "sniper", "ring", "boss", "boat", "hunt:den,swamp,mud", "boss", "boat",
 				"hunt:glade,roost,thicket,nest,bog", "boss", "boat",
 				"hunt:snowden,frostgrove,icefield,icecave,icelake", "boss", "boat",
-				"hunt:beach,cliff,reef,deep,abyss", "boss", "dungeon", "chase", "musou", "huntrun", "huntfail", "touch", "feel", "hunt2", "garts", "gear", "tempered", "done"]
+				"hunt:beach,cliff,reef,deep,abyss", "boss", "dungeon", "chase", "musou", "huntrun", "huntfail", "touch", "feel", "hunt2", "garts", "gear", "tempered", "omen", "done"]
 			# 新暗器测试放在第一章买完暗器后面（要第一章的草地摆靶子；第五章归墟没有草地）
 			_plan.insert(_plan.find("shop") + 1, "guns2")
 			_plan.insert(_plan.find("guns2") + 1, "pills")
@@ -315,6 +315,8 @@ func _process(dt: float) -> void:
 			_run_gearshot()
 		"tempered":
 			_run_tempered()
+		"omen":
+			_run_omen()
 		"hunt2shot":
 			_run_hunt2shot()
 		"fpshot":
@@ -4922,6 +4924,50 @@ func _run_tempered() -> void:
 			if b:
 				b.root_t = 0.0
 			_next_phase()
+
+
+## 每周天象：这一周的天象每次算都一样、猎灵榜上有那一栏；在猎场里的话按血月 / 疾影各刷一只看效果
+func _run_omen() -> void:
+	var w := _ready_world()
+	if not w or _step_t < 0.5:
+		return
+	var o := w.hunt.omen()
+	if not _check(not o.is_empty() and o == w.hunt.omen() and Hunt.OMENS.has(str(o["omen"])), "这一周的天象算不出来 / 每次不一样（%s）" % str(o)):
+		return
+	var notes := "本周（第 %d 周）天象：%s·%s" % [int(o["week"]), str(Hunt.OMENS[str(o["omen"])]["name"]), str(Data.BEASTS[str(o["species"])]["name"])]
+	if w.island.hunting and Net.is_host():
+		w.hunting["tempered"] = false
+		w.hunting["omen"] = "blood"
+		w.hunt.host_spawn_trip_target()
+		var b: Beast = w.beasts.get(w.hunt.target_id)
+		b.feel.host_tick(0.1)
+		if not _check(b.feel.mood == "rage", "血月的王没有一出来就暴怒（%s）" % b.feel.mood):
+			return
+		w.hunting["omen"] = "swift"
+		w.hunt.host_spawn_trip_target()
+		b = w.beasts.get(w.hunt.target_id)
+		if not _check(b.feel.speed_k() > 1.2, "疾影的王没变快"):
+			return
+		w.hunting["omen"] = ""
+		notes += "；血月一出来就暴怒、疾影更快"
+	# 猎灵榜上那一栏
+	var was := w.hunting.duplicate()
+	var tid := w.hunt.target_id
+	w.hunting = {}
+	w.hunt.target_id = 0
+	w.hud.open_board()
+	w.hunting = was
+	w.hunt.target_id = tid
+	var found := false
+	var nm := str(Hunt.OMENS[str(o["omen"])]["name"])
+	for n in w.hud._board.find_children("*", "Button", true, false):
+		if str((n as Button).text).begins_with("去猎" + nm):
+			found = true
+	w.hud._close_board()
+	if not _check(found, "猎灵榜上没有本周天象那一栏"):
+		return
+	_note(notes + "；猎灵榜上有")
+	_next_phase()
 
 
 ## 锻造页截图（接在 gear 后面：材料和护具是 gear 给的）
