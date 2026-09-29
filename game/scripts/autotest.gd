@@ -5206,6 +5206,14 @@ func _run_fps() -> void:
 	_next_phase()
 
 
+func _kings_hp_near(w: World, at: Vector3) -> float:
+	var t := 0.0
+	for b: Beast in w.beasts.values():
+		if b.alive() and b.temper == "elite" and b.global_position.distance_to(at) < 30.0:
+			t += b.hp
+	return t
+
+
 ## 灵宠：带上一只 → 跟着走 → 在猎场里咬猎物 → 单人倒下被海鸥叼走，它把海鸥撞下来、人站起来 → 灵宠页
 func _run_pet() -> void:
 	var w := _ready_world()
@@ -5245,19 +5253,23 @@ func _run_pet() -> void:
 			var at := b.global_position + Vector3(5.0, 0.0, 0.0)
 			at.y = w.island.height_at(at.x, at.z) + 0.4
 			p.teleport(at)
-			_mem["hp0"] = b.hp
+			# 前面的阶段在同一个老窝刷过好几只王：灵宠咬最近的那只，不一定是这只——附近所有王的血加起来比
+			_mem["hp0"] = _kings_hp_near(w, at)
 			_mem["bid"] = b.id
+			_mem["at"] = at
 			_next(2)
 		2:
 			if _step_t < 4.0:
 				return
 			var b: Beast = w.beasts.get(int(_mem["bid"]))
-			if not _check(b != null and b.hp < float(_mem["hp0"]), "灵宠没咬猎物（%.0f → %.0f）" % [float(_mem["hp0"]), b.hp if b else -1.0]):
+			var hp1 := _kings_hp_near(w, _mem["at"])
+			if not _check(hp1 < float(_mem["hp0"]), "灵宠没咬猎物（附近的王 %.0f → %.0f）" % [float(_mem["hp0"]), hp1]):
 				return
-			_mem["pet_bite"] = "咬了猎物 %.0f 血" % (float(_mem["hp0"]) - b.hp)
-			b.root_t = 0.0
-			if b.arts:
-				b.arts.cd = 2.0
+			_mem["pet_bite"] = "咬了猎物 %.0f 血" % (float(_mem["hp0"]) - hp1)
+			if b:
+				b.root_t = 0.0
+				if b.arts:
+					b.arts.cd = 2.0
 			_next(3)
 		3:
 			# 单人倒下：海鸥叼走 → 灵宠撞下来
