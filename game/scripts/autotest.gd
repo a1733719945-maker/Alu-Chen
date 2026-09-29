@@ -309,6 +309,8 @@ func _process(dt: float) -> void:
 			_run_fpshot()
 		"gripshot":
 			_run_gripshot()
+		"beastshot":
+			_run_beastshot()
 		"musou":
 			_run_musou()
 		"dgshot":
@@ -4147,6 +4149,66 @@ func _trial_enter(w: World, T: Trial, m: String) -> bool:
 			_note("进了试炼 · %s" % Trial.MODES[m]["name"])
 			return true
 	return false
+
+
+## AI 灵兽模型（StaticBeast）的动作截图：一排摆在面前（侧面），各自固定一种状态：待机 / 跑（两个相位）/ 扑咬 / 空中
+func _run_beastshot() -> void:
+	var w := _ready_world()
+	if not w:
+		return
+	var p := w.player
+	match _step:
+		0:
+			if _step_t < 1.0:
+				return
+			var m := w.island.habitat("meadow")
+			var c: Vector2 = m["center"]
+			var base := Vector3(c.x, w.island.height_at(c.x, c.y), c.y)
+			p.teleport(base + Vector3(0, 0.5, 9.5))
+			var root := Node3D.new()
+			w.add_child(root)
+			root.global_position = base
+			var list: Array = []
+			var states := [["idle", 0.0, false, 0.0], ["run", 8.0, false, 0.0], ["run", 8.0, false, PI], ["lunge", 2.0, false, 0.0], ["air", 4.0, true, 0.0]]
+			for sp in ["wolf", "rabbit"]:
+				if StaticBeast.path(sp) == "":
+					continue
+				# 狼一排在后面，兔子一排在前面
+				var x := -6.4 if sp == "wolf" else -4.0
+				var z := 0.0 if sp == "wolf" else 4.5
+				for st in states:
+					if sp == "rabbit" and str(st[0]) == "run" and float(st[3]) > 0.0:
+						continue
+					var mdl := BeastModels.build(sp, 0)
+					root.add_child(mdl)
+					var yb := BeastModels.body_size(sp).y * float(Data.AGES[0]["scale"])
+					mdl.position = Vector3(x, yb * 0.5 + (0.5 if bool(st[2]) else 0.0), z)
+					mdl.rotation.y = -PI / 2
+					var sh: Node3D = mdl.get_meta("static")
+					sh.set_meta("gait", float(st[3]))
+					list.append([mdl, st])
+					x += 3.2 if sp == "wolf" else 2.0
+			_mem["bs_list"] = list
+			_mem["bs_root"] = root
+			_aim(p, base + Vector3(-0.5, 0.6, 0))
+			_next(1)
+		1:
+			for e in _mem["bs_list"]:
+				var mdl: Node3D = e[0]
+				var st: Array = e[1]
+				var sh: Node3D = mdl.get_meta("static")
+				if str(st[0]) == "lunge" and _step_t > 1.4 and not sh.has_meta("lunged"):
+					sh.set_meta("lunged", true)
+					BeastModels.play_attack(mdl)
+				# 相位固定：每帧把相位拨回去（只看这一个姿势）
+				sh.set_meta("gait", float(st[3]))
+				sh.set_meta("last_t", _t)
+				BeastModels.animate(mdl, _t, bool(st[2]), float(st[1]))
+			if _step_t > 1.62:
+				_next(2)
+				await _shot("beasts")
+				(_mem["bs_root"] as Node).queue_free()
+				_next_phase()
 
 
 ## 握把标定：每把暗器从右侧正交看（z 横着、y 竖着），画 5 厘米的格子和坐标，红点 = 右手 GripR，蓝点 = 左手 GripL

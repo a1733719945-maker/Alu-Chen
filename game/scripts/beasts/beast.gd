@@ -420,6 +420,7 @@ func take_hit(dmg: float, impulse: Vector3, local_point: Vector3, headshot: bool
 		world.king_sleep(self, false, shooter)
 	if feel:
 		real = feel.host_hit(real, local_point, headshot)
+	BeastModels.play_hurt(model)
 	hp -= real
 	damagers[shooter] = float(damagers.get(shooter, 0.0)) + real
 	if root_t <= 0.0:
@@ -1351,6 +1352,7 @@ func _update_status_fx() -> void:
 
 func flinch(impulse: Vector3) -> void:
 	_flinch_v += impulse.limit_length(6.0) * 1.2
+	BeastModels.play_hurt(model)
 
 
 func _interpolate() -> void:

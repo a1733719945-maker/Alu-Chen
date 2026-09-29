@@ -215,7 +215,13 @@ static func build(species: String, age: int) -> Node3D:
 	root.name = "Model"
 	root.set_meta("species", species)
 	var cfg: Dictionary = Data.BEASTS[species]
-	if has_model(cfg):
+	if StaticBeast.path(species) != "":
+		# AI 生成的灵兽（没骨骼，动作靠着色器）
+		var sh := StaticBeast.build(species, cfg)
+		root.add_child(sh)
+		root.set_meta("static", sh)
+		root.set_meta("rig", str(StaticBeast.FIT[species]["rig"]))
+	elif has_model(cfg):
 		var holder := instance_model(cfg)
 		root.add_child(holder)
 		root.set_meta("holder", holder)
@@ -595,6 +601,9 @@ static func _snake(root: Node3D) -> void:
 # ------------------------------------------------------------------ 动画（不管是房主算的还是客人看到的，都用这个）
 
 static func animate(model: Node3D, t: float, airborne: bool, speed := 0.0) -> void:
+	if model.has_meta("static"):
+		StaticBeast.animate(model.get_meta("static"), t, airborne, speed, str(model.get_meta("rig", "quad")))
+		return
 	if model.has_meta("holder"):
 		_animate_model(model.get_meta("holder"), airborne, speed, str(model.get_meta("motion", "")))
 		return
@@ -685,9 +694,18 @@ static func _animate_model(holder: Node3D, airborne: bool, speed: float, motion:
 
 ## 攻击动作（咬、撞、扔）
 static func play_attack(model: Node3D) -> void:
+	if model != null and model.has_meta("static"):
+		StaticBeast.attack(model.get_meta("static"))
+		return
 	if model == null or not model.has_meta("holder"):
 		return
 	play_role(model.get_meta("holder"), "attack")
+
+
+## 挨打闪一下（只有 AI 模型的灵兽有）
+static func play_hurt(model: Node3D) -> void:
+	if model != null and model.has_meta("static"):
+		StaticBeast.hurt(model.get_meta("static"))
 
 
 static func has_death(holder: Node3D) -> bool:
